@@ -1,0 +1,7 @@
+name: Spartan
+version: '1.0-SNAPSHOT'
+main: dev.alepando.spartan.Spartan
+api-version: '1.21'
+prefix: LootEngine
+load: STARTUP
+authors: [ Alepando ]
