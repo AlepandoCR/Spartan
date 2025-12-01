@@ -1,13 +1,13 @@
-package dev.alepando.spartan.ai.deeplearning.brain
+package dev.alepando.spartan.ai.dqn.brain
 
 import dev.alepando.spartan.ai.brain.Brain
 import dev.alepando.spartan.ai.context.GameContext
-import dev.alepando.spartan.ai.deeplearning.QNetwork
-import dev.alepando.spartan.ai.deeplearning.batch.ModelBatch
-import dev.alepando.spartan.ai.deeplearning.buffer.ReplayBuffer
-import dev.alepando.spartan.ai.deeplearning.models.ModelType
-import dev.alepando.spartan.ai.deeplearning.training.DqnTrainer
-import dev.alepando.spartan.ai.deeplearning.training.Transition
+import dev.alepando.spartan.ai.context.features.FeatureExtractor
+import dev.alepando.spartan.ai.dqn.QNetwork
+import dev.alepando.spartan.ai.dqn.buffer.ReplayBuffer
+import dev.alepando.spartan.ai.dqn.models.ModelType
+import dev.alepando.spartan.ai.dqn.training.DqnTrainer
+import dev.alepando.spartan.ai.dqn.training.Transition
 import dev.alepando.spartan.ai.input.QAction
 import dev.alepando.spartan.ai.input.actions.set.ActionSet
 import kotlin.random.Random
@@ -24,20 +24,21 @@ import kotlin.random.Random
  * * [decisionFrequency]: How often (in ticks) the AI selects a new action.
  * Value of 4 (approx 200ms) allows physics to resolve before next decision.
  */
-class DeepQBrain(
-    private val modelBatch: ModelBatch<out ModelType>,
+class DeepQBrain<C: GameContext>(
+    modelType: ModelType,
+    neuronsIn: FeatureExtractor<C>,
     actionSet: ActionSet,
+    samplesPerTrainingStep: Int = 32,
     private val gamma: Double = 0.99,
-    private val batchSize: Int = 32,
     learningRate: Double = 0.001,
     private var epsilon: Double = 1.0,
     private val epsilonDecay: Double = 0.995,
     private val epsilonMin: Double = 0.05,
     private val decisionFrequency: Int = 4
-) : Brain() {
+) : Brain<C>() {
 
     private val buffer = ReplayBuffer(capacity = 10000)
-    private val model: QNetwork
+    private val model: QNetwork = QNetwork(neuronsIn.size, actions, modelType)
     private val trainer: DqnTrainer
 
     // State persistence variables to handle the time gap between ticks
@@ -47,12 +48,10 @@ class DeepQBrain(
 
     init {
         registerSet(actionSet)
-        // Ensure the ModelBatch provides a compatible QNetwork
-        model = modelBatch.getModel()
-        trainer = DqnTrainer(model, buffer, gamma, batchSize, learningRate)
+        trainer = DqnTrainer(model, buffer, gamma, samplesPerTrainingStep, learningRate)
     }
 
-    override fun tick(context: GameContext) {
+    override fun tick(context: C) {
         ticksAlive++
 
         // Observation (State t)
@@ -85,8 +84,6 @@ class DeepQBrain(
         if (isTerminal) {
             lastState = null
             lastAction = null
-            // Update global model stats periodically
-            modelBatch.updateModel(model, buffer.averageReward())
             return
         }
 

@@ -1,7 +1,7 @@
-package dev.alepando.spartan.ai.deeplearning.training
+package dev.alepando.spartan.ai.dqn.training
 
-import dev.alepando.spartan.ai.deeplearning.Activation
-import dev.alepando.spartan.ai.deeplearning.QNetwork
+import dev.alepando.spartan.ai.dqn.Activation
+import dev.alepando.spartan.ai.dqn.QNetwork
 
 /**
  * Implements **Mini-Batch Stochastic Gradient Descent (SGD)**.
@@ -33,11 +33,11 @@ class Optimizer(
     private val clipThreshold: Double = 1.0
 ) {
     // Accumulators for Mini-Batch averaging (Zeroed at initialization)
-    private val accOutputWeights = Array(network.output.outputSize) { DoubleArray(network.output.inputSize) }
-    private val accOutputBiases = DoubleArray(network.output.outputSize)
+    private val accOutputWeights = Array(network.output.neuronsOut) { DoubleArray(network.output.neuronsIn) }
+    private val accOutputBiases = DoubleArray(network.output.neuronsOut)
 
-    private val accHiddenWeights = Array(network.hidden.outputSize) { DoubleArray(network.hidden.inputSize) }
-    private val accHiddenBiases = DoubleArray(network.hidden.outputSize)
+    private val accHiddenWeights = Array(network.hidden.neuronsOut) { DoubleArray(network.hidden.neuronsIn) }
+    private val accHiddenBiases = DoubleArray(network.hidden.neuronsOut)
 
     /**
      * Calculates gradients for a single sample and adds them to the accumulators.
@@ -59,14 +59,14 @@ class Optimizer(
         // -------------------------------------------------------
         // Backward Pass: Output Layer Gradients
         // -------------------------------------------------------
-        val outputGradients = DoubleArray(outputLayer.outputSize)
+        val outputGradients = DoubleArray(outputLayer.neuronsOut)
         outputGradients[actionIndex] = error.coerceIn(-clipThreshold, clipThreshold)
 
         // Accumulate Output Gradients (dL/dW and dL/db)
-        for (i in 0 until outputLayer.outputSize) {
+        for (i in 0 until outputLayer.neuronsOut) {
             val grad = outputGradients[i]
             if (grad != 0.0) { // Optimization: skip if gradient is zero
-                for (j in 0 until outputLayer.inputSize) {
+                for (j in 0 until outputLayer.neuronsIn) {
                     accOutputWeights[i][j] += grad * hiddenLayer.lastOutput[j]
                 }
                 accOutputBiases[i] += grad
@@ -76,12 +76,12 @@ class Optimizer(
         // -------------------------------------------------------
         // Backward Pass: Hidden Layer Gradients
         // -------------------------------------------------------
-        val hiddenGradients = DoubleArray(hiddenLayer.outputSize)
+        val hiddenGradients = DoubleArray(hiddenLayer.neuronsOut)
 
         // Propagate error backwards: δ_h = (W_out^T · δ_out) ⊙ f'(z)
-        for (k in 0 until hiddenLayer.outputSize) {
+        for (k in 0 until hiddenLayer.neuronsOut) {
             var sum = 0.0
-            for (i in 0 until outputLayer.outputSize) {
+            for (i in 0 until outputLayer.neuronsOut) {
                 sum += outputLayer.weights[i][k] * outputGradients[i]
             }
 
@@ -96,10 +96,10 @@ class Optimizer(
         }
 
         // Accumulate Hidden Gradients
-        for (k in 0 until hiddenLayer.outputSize) {
+        for (k in 0 until hiddenLayer.neuronsOut) {
             val grad = hiddenGradients[k]
             if (grad != 0.0) {
-                for (j in 0 until hiddenLayer.inputSize) {
+                for (j in 0 until hiddenLayer.neuronsIn) {
                     accHiddenWeights[k][j] += grad * state[j]
                 }
                 accHiddenBiases[k] += grad
@@ -121,8 +121,8 @@ class Optimizer(
         val scale = learningRate / batchSize // Pre-calculate scaling factor
 
         // Apply Output Layer Updates
-        for (i in 0 until outputLayer.outputSize) {
-            for (j in 0 until outputLayer.inputSize) {
+        for (i in 0 until outputLayer.neuronsOut) {
+            for (j in 0 until outputLayer.neuronsIn) {
                 outputLayer.weights[i][j] -= accOutputWeights[i][j] * scale
                 accOutputWeights[i][j] = 0.0 // Reset immediately
             }
@@ -131,8 +131,8 @@ class Optimizer(
         }
 
         // Apply Hidden Layer Updates
-        for (k in 0 until hiddenLayer.outputSize) {
-            for (j in 0 until hiddenLayer.inputSize) {
+        for (k in 0 until hiddenLayer.neuronsOut) {
+            for (j in 0 until hiddenLayer.neuronsIn) {
                 hiddenLayer.weights[k][j] -= accHiddenWeights[k][j] * scale
                 accHiddenWeights[k][j] = 0.0 // Reset immediately
             }

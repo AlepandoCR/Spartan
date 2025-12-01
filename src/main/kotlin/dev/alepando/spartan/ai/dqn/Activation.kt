@@ -1,4 +1,4 @@
-package dev.alepando.spartan.ai.deeplearning
+package dev.alepando.spartan.ai.dqn
 
 import kotlin.math.exp
 import kotlin.math.tanh

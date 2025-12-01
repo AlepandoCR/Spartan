@@ -1,8 +1,9 @@
-package dev.alepando.spartan.ai.deeplearning
+package dev.alepando.spartan.ai.dqn
 
-import dev.alepando.spartan.ai.deeplearning.models.ModelType
+import ModelStore
+import dev.alepando.spartan.ai.dqn.models.ModelType
 import dev.alepando.spartan.ai.input.QAction
-import dev.alepando.spartan.database.store.ModelStore
+import dev.alepando.spartan.database.data.DqnDto
 import org.bukkit.Bukkit
 
 /**
@@ -22,17 +23,19 @@ import org.bukkit.Bukkit
  */
 class QNetwork(
     /** Input feature vector size (must match observation size). */
-    val inputSize: Int,
+    val neuronsIn: Int,
     /** Action space available to this network. */
-    val actions: List<QAction>
+    val actions: List<QAction>,
+
+    val modelType: ModelType,
 ) {
-    private val actionCount = actions.size
+    private val neuronsOut = actions.size
 
     // Internal Layers using the optimized DenseLayer implementation
-    // Hidden Layer: Fixed at 64 neurons as per current architecture constraints
-    val hidden = DenseLayer(inputSize, 64, activation = Activation.RELU)
+    // Hidden Layer
+    val hidden = DenseLayer(neuronsIn, neuronsOut, activation = Activation.RELU)
     // Output Layer: Maps hidden features to Q-values for each action
-    val output = DenseLayer(64, actionCount, activation = Activation.LINEAR)
+    val output = DenseLayer(neuronsIn, neuronsOut, activation = Activation.LINEAR)
 
     /**
      * Computes Q(s,·) for the given state using a forward pass.
@@ -74,7 +77,7 @@ class QNetwork(
      * Essential for creating the **Target Network** in DQN to stabilize training.
      */
     fun copy(): QNetwork {
-        val network = QNetwork(inputSize, actions)
+        val network = QNetwork(neuronsIn, actions, modelType)
         // Manually clone weights to ensure deep copy (avoid reference sharing)
         network.hidden.weights = hidden.weights.map { it.clone() }.toTypedArray()
         network.hidden.biases = hidden.biases.clone()
@@ -91,7 +94,7 @@ class QNetwork(
      * @param store The persistence layer.
      * @param performance Scalar metric (e.g., average reward) to track model quality.
      */
-    fun save(modelType: ModelType, store: ModelStore, performance: Double) {
+    fun save(store: ModelStore, performance: Double) {
         // Safety Check: Ensure no NaN or Infinite weights exist
         val hiddenWeightsFinite = hidden.weights.all { row -> row.all { it.isFinite() } }
         val hiddenBiasesFinite = hidden.biases.all { it.isFinite() }
@@ -103,14 +106,24 @@ class QNetwork(
             return
         }
 
-        store.save(modelType.hash, ModelStore.ModelSnapshot(
-            inputSize = inputSize,
+        val dto = toDto(performance)
+
+        store.save(dto)
+    }
+
+    private fun toDto(
+        performance: Double
+    ): DqnDto {
+        val dto = DqnDto(
+            hash = modelType.hash,
+            inputSize = neuronsIn,
             hiddenWeights = hidden.weights.map { it.toList() },
             hiddenBiases = hidden.biases.toList(),
             outputWeights = output.weights.map { it.toList() },
             outputBiases = output.biases.toList(),
             performance = performance
-        ))
+        )
+        return dto
     }
 
     companion object {
@@ -126,7 +139,7 @@ class QNetwork(
             val snapshot = store.load(modelType.hash) ?: return null
 
             // Reconstruct topology
-            val network = QNetwork(snapshot.inputSize, actions)
+            val network = QNetwork(snapshot.inputSize, actions, modelType)
 
             // Restore weights and biases
             // Note: Assumes standard List<List<Double>> to Array<DoubleArray> conversion

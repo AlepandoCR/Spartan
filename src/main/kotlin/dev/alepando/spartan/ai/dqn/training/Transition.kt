@@ -1,4 +1,4 @@
-package dev.alepando.spartan.ai.deeplearning.training
+package dev.alepando.spartan.ai.dqn.training
 
 import dev.alepando.spartan.ai.input.QAction
 

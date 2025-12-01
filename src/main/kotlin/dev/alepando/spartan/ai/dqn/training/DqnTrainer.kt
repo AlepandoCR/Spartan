@@ -1,7 +1,7 @@
-package dev.alepando.spartan.ai.deeplearning.training
+package dev.alepando.spartan.ai.dqn.training
 
-import dev.alepando.spartan.ai.deeplearning.QNetwork
-import dev.alepando.spartan.ai.deeplearning.buffer.ReplayBuffer
+import dev.alepando.spartan.ai.dqn.QNetwork
+import dev.alepando.spartan.ai.dqn.buffer.ReplayBuffer
 
 /**
  * Orchestrates the **Double Deep Q-Learning (DDQN)** training loop.
@@ -26,7 +26,7 @@ class DqnTrainer(
     private val model: QNetwork,
     private val replayBuffer: ReplayBuffer,
     private val gamma: Double,
-    private val batchSize: Int,
+    private val samplesPerTrainingStep: Int,
     learningRate: Double,
     private val targetUpdateFrequency: Int = 100
 ) {
@@ -49,41 +49,41 @@ class DqnTrainer(
      * @param epsilon Current exploration rate used only for logging/monitoring purposes.
      */
     fun train(epsilon: Double) {
-        if (replayBuffer.size() < batchSize) return
+        if (replayBuffer.size() < samplesPerTrainingStep) return
         var batchLoss = 0.0
-        val batch = replayBuffer.sample(batchSize)
+        val batch = replayBuffer.sample(samplesPerTrainingStep)
 
-        for (t in batch) {
+        for (transition in batch) {
             //Prediction for current state (to compute error later)
-            val qValues = model.predict(t.state)
+            val qValues = model.predict(transition.state)
 
             //Double DQN Logic for Target Calculation
             val futureQ: Double
-            if (t.done) {
+            if (transition.done) {
                 futureQ = 0.0
             } else {
                 // Select best action using Online Network (θ)
-                val qNextOnline = model.predict(t.nextState)
+                val qNextOnline = model.predict(transition.nextState)
                 val bestActionIdx = qNextOnline.indices.maxByOrNull { qNextOnline[it] } ?: 0
 
                 // Evaluate that specific action using Target Network (θ⁻)
-                val qNextTarget = targetModel.predict(t.nextState)
+                val qNextTarget = targetModel.predict(transition.nextState)
                 val doubleQValue = qNextTarget[bestActionIdx]
 
                 futureQ = if (doubleQValue.isFinite()) doubleQValue else 0.0
             }
 
             //Compute Target (Bellman Equation)
-            val target = (t.reward + gamma * futureQ).coerceIn(-1.0, 1.0)
+            val target = (transition.reward + gamma * futureQ).coerceIn(-1.0, 1.0)
 
             //Calculate Error & Update
-            val actionIndex = model.getActionIndex(t.action)
+            val actionIndex = model.getActionIndex(transition.action)
             if (actionIndex == -1) continue
 
             val error = qValues[actionIndex] - target
             batchLoss += error * error
 
-            optimizer.accumulateGradients(t.state, actionIndex, target)
+            optimizer.accumulateGradients(transition.state, actionIndex, target)
         }
 
         //Apply accumulated gradients after processing the batch
@@ -91,7 +91,7 @@ class DqnTrainer(
 
 
         // Logging & Sync Logic
-        totalLoss += batchLoss / batchSize
+        totalLoss += batchLoss / samplesPerTrainingStep
         trainSteps++
 
         if (trainSteps % targetUpdateFrequency == 0) {

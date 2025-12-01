@@ -5,7 +5,7 @@ import dev.alepando.spartan.ai.input.actions.set.ActionSet
 import dev.alepando.spartan.ai.context.GameContext
 
 /** Base class for agent brains managing action registration and decision ticks. */
-abstract class Brain {
+abstract class Brain<C: GameContext> {
     /** Registered actions available for selection. */
     protected val actions = mutableListOf<QAction>()
 
@@ -16,5 +16,5 @@ abstract class Brain {
     fun registerSet(actionSet: ActionSet) { actions.addAll(actionSet.get()) }
 
     /** Advances one decision step using the provided [context]. */
-    abstract fun tick(context: GameContext)
+    abstract fun tick(context: C)
 }

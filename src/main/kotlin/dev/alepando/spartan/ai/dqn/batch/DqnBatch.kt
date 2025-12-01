@@ -1,16 +1,16 @@
-package dev.alepando.spartan.ai.deeplearning.batch
+package dev.alepando.spartan.ai.dqn.batch
 
-import dev.alepando.spartan.ai.deeplearning.QNetwork
-import dev.alepando.spartan.ai.deeplearning.models.ModelType
+import ModelStore
+import dev.alepando.spartan.ai.dqn.QNetwork
+import dev.alepando.spartan.ai.dqn.models.ModelType
 import dev.alepando.spartan.ai.input.actions.set.ActionSet
-import dev.alepando.spartan.database.store.ModelStore
 import dev.alepando.spartan.util.async
 
 /**
  * Manages multiple Q-network instances and tracks their scores.
  * Supports loading/saving via ModelStore.
  */
-class ModelBatch<T : ModelType>(
+class DqnBatch<T : ModelType>(
     private val modelType: T,
     private val store: ModelStore,
     private val actionSet: ActionSet,
@@ -19,10 +19,12 @@ class ModelBatch<T : ModelType>(
     private val models = mutableListOf<QNetwork>()
     private val scores = mutableListOf<Double>()
 
-    /** Loads an existing model or creates a new one bound to the current actions. */
+    /** Loads an existing model or creates a new one bound to the current actions.
+     *  adds the model to the model list
+     * */
     fun getModel(): QNetwork {
         val actions = actionSet.get()
-        val model = QNetwork.load(modelType, store, actions) ?: QNetwork(inputSize, actions)
+        val model = QNetwork.load(modelType, store, actions) ?: QNetwork(inputSize, actions, modelType)
         models.add(model)
         scores.add(0.0)
         return model
@@ -44,7 +46,7 @@ class ModelBatch<T : ModelType>(
             val bestModelIndex = scores.indices.maxByOrNull { scores[it] } ?: 0
             val bestModel = models[bestModelIndex]
             val bestScore = scores[bestModelIndex]
-            bestModel.save(modelType, store, bestScore)
+            bestModel.save(store, bestScore)
         }
     }
 }
