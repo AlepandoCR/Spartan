@@ -2,14 +2,12 @@
 
 using namespace org::spartan::core;
 
-// Global instance of the engine to maintain state (DQN memory, etc.)
 static SpartanEngine engine;
 
 extern "C" {
 
+    //TODO add contracts once c++26 is supported by all major compilers
     /**
-     * Native function exported to Java.
-     * Receives a C-String (pointer) and passes it to the C++ Core.
      * @param msg A null-terminated C string (UTF-8).
      */
     __declspec(dllexport) void spartan_log(const char* msg) {
@@ -21,8 +19,7 @@ extern "C" {
     }
 
     /**
-     * Initializes the native backend.
-     * Called once when the plugin enables.
+     *  Check for bridged connecting to the engine. This can be used for health checks.
      */
     __declspec(dllexport) void spartan_init() {
         std::println("[Spartan-Core] Detected C++ Spartan Core...");
