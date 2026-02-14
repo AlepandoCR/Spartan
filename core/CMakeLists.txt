@@ -8,26 +8,21 @@ if(MSVC)
     add_compile_options(/std:c++latest /utf-8)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 
-    # Note: MSVC still struggles with the ':' syntax in contracts as of Feb 2026.
-    # Keep using the Macros (Require/Ensure) defined in SpartanCore.hpp.
-
 elseif(MINGW OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     # MinGW (GCC) Configuration
 
-    # 1. Enforce C++26 Standard
+    #Enforce C++26 Standard
     set(CMAKE_CXX_STANDARD 26)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-    # 2. Enable C++26 Contracts (Experimental)
-    # This flag is required to recognize [[pre:]] and [[post:]] attributes
+    # experimental contracts (not used atm, until full support is available)
     add_compile_options(-fcontracts)
 
-    # 3. Static Linking (CRITICAL for Minecraft)
-    # This bakes the C++ runtime into your DLL so Java doesn't crash looking for them.
+    # runtime in dll, not static
     add_link_options(-static-libgcc -static-libstdc++ -static)
 
-    # 4. Optimizations for AI/DQN (Optional but recommended)
-    # add_compile_options(-O3 -march=native)
+    # optimize for native architecture
+    add_compile_options(-O3 -march=native)
 
     message(STATUS "Configuring for MinGW with C++26 and Contracts support.")
 endif()
