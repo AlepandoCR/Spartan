@@ -51,6 +51,17 @@ tasks {
         filteringCharset = "UTF-8"
         filesMatching("plugin.yml") {
             expand(props)
+
+
+        }
+
+        val coreLibrarySource = rootProject.projectDir.resolve("core/cmake-build-debug/bin")
+
+        val libraryDestinationPath = "native"
+        // copy dll files from cmake build for FFM bindings
+        from(coreLibrarySource) {
+            include("*.dll", "*.so", "*.dylib")
+            into(libraryDestinationPath)
         }
     }
 
