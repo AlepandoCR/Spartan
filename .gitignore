@@ -1,6 +1,7 @@
 # Project exclude paths
 /.gradle/
 /build/
+/.idea/
 /build/classes/kotlin/main/
 
 # Python
