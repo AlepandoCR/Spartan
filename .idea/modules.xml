@@ -2,7 +2,9 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/Spartan.main.iml" filepath="$PROJECT_DIR$/.idea/modules/Spartan.main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/Spartan.iml" filepath="$PROJECT_DIR$/.idea/modules/Spartan.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/api/Spartan.api.main.iml" filepath="$PROJECT_DIR$/.idea/modules/api/Spartan.api.main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/internal/Spartan.internal.main.iml" filepath="$PROJECT_DIR$/.idea/modules/internal/Spartan.internal.main.iml" />
     </modules>
   </component>
 </project>

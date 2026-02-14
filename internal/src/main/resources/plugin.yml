@@ -1,0 +1,4 @@
+name: Spartan
+version: '1.0-SNAPSHOT'
+main: org.spartan.internal.SpartanApiImpl
+api-version: '1.21'

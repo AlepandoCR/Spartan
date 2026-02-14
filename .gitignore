@@ -2,3 +2,15 @@
 /.gradle/
 /build/
 /build/classes/kotlin/main/
+
+# Python
+*.egg-info/
+__pycache__/
+.venv/
+*.pyc
+
+# Project exclude paths
+/api/build/
+/api/build/classes/java/main/
+/internal/build/
+/internal/build/classes/java/main/
