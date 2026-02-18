@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(spartan_core CXX)
+project(spartan_core CXX) #package name is just core
 
 # --- Compiler Configuration ---
 
@@ -29,12 +29,22 @@ endif()
 
 # --- Source Definitions ---
 
-set(SRC_PATH src/org/spartan/core)
+set(SRC_PATH src/org/spartan)
+
+set(API_PATH ${SRC_PATH}/api)
+
+set(CORE_PATH ${SRC_PATH}/core)
+
+
 
 add_library(spartan_core SHARED
-        ${SRC_PATH}/SpartanAPI.cpp
-        ${SRC_PATH}/SpartanCore.hpp
+        ${API_PATH}/SpartanApi.cpp
+        ${CORE_PATH}/SpartanCore.hpp
 )
+
+# --- target libraries ---
+
+target_link_libraries(spartan_core PRIVATE stdc++exp)
 
 # --- Include Directories ---
 

@@ -1,4 +1,4 @@
-#include "SpartanCore.hpp"
+#include "../core/SpartanCore.hpp"
 
 using namespace org::spartan::core;
 
