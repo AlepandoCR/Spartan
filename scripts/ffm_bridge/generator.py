@@ -5,11 +5,10 @@ Main orchestrator that coordinates parsing, type resolution, and code generation
 """
 
 import os
-from pathlib import Path
 
 from .config import BridgeConfig, DEFAULT_CONFIG
-from .parser import ASTParser, NativeFunction
 from .emitters import MethodHandleEmitter, AsyncMethodEmitter
+from .parser import ASTParser, NativeFunction
 from .templates import JavaClassTemplate
 from .types import TYPE_REGISTRY
 
