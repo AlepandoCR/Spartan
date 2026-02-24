@@ -90,7 +90,8 @@ class SyncMethodEmitter(CodeEmitter):
 
     def _build_method_body(self, func: NativeFunction) -> str:
         """Build the method body with appropriate marshalling."""
-        has_marshalling = func.has_string_params or func.has_list_params
+        # Only STRING params require marshalling now
+        has_marshalling = func.has_string_params
 
         invoke_args = self._build_invoke_args(func)
         args_str = ", ".join(invoke_args)
@@ -109,21 +110,18 @@ class SyncMethodEmitter(CodeEmitter):
         for param in func.parameters:
             if param.type_desc.marshal_strategy == MarshalStrategy.STRING:
                 args.append(f"{param.name}Segment")
-            elif param.type_desc.marshal_strategy == MarshalStrategy.LIST:
-                args.append(f"{param.name}Segment")
             else:
+                # Direct pass-through for MemorySegment and primitives
                 args.append(param.name)
         return args
 
     def _build_marshalled_body(self, func: NativeFunction, invoke_args: list[str], return_stmt: str, cast: str) -> str:
-        """Build method body with Arena-based marshalling."""
+        """Build method body with Arena-based marshalling for STRING only."""
         conversions = []
 
         for param in func.parameters:
             if param.type_desc.marshal_strategy == MarshalStrategy.STRING:
                 conversions.append(self._i(3) + f"var {param.name}Segment = arena.allocateFrom({param.name});")
-            elif param.type_desc.marshal_strategy == MarshalStrategy.LIST:
-                conversions.extend(self._build_list_marshalling(param))
 
         conversions_str = "\n".join(conversions)
         args_str = ", ".join(invoke_args)
@@ -138,17 +136,6 @@ class SyncMethodEmitter(CodeEmitter):
         ]
         return "\n".join(lines)
 
-    def _build_list_marshalling(self, param: FunctionParameter) -> list[str]:
-        """Generate list-to-native marshalling code."""
-        elem_type = param.type_desc.element_type
-        elem_layout = elem_type.ffm_layout if elem_type else "ValueLayout.ADDRESS"
-
-        return [
-            self._i(3) + f"var {param.name}Segment = arena.allocate({elem_layout}, {param.name}.size());",
-            self._i(3) + f"for (int i = 0; i < {param.name}.size(); i++) {{",
-            self._i(4) + f"{param.name}Segment.setAtIndex({elem_layout}, i, {param.name}.get(i));",
-            self._i(3) + "}"
-        ]
 
     def _build_direct_body(self, func: NativeFunction, args_str: str, return_stmt: str, cast: str) -> str:
         """Build direct invocation body without marshalling."""
@@ -208,7 +195,8 @@ class AsyncMethodEmitter(CodeEmitter):
 
     def _build_async_body(self, func: NativeFunction) -> str:
         """Build the async method body with native invocation."""
-        has_marshalling = func.has_string_params or func.has_list_params
+        # Only STRING params require marshalling now
+        has_marshalling = func.has_string_params
 
         invoke_args = self._build_invoke_args(func)
         args_str = ", ".join(invoke_args)
@@ -227,21 +215,18 @@ class AsyncMethodEmitter(CodeEmitter):
         for param in func.parameters:
             if param.type_desc.marshal_strategy == MarshalStrategy.STRING:
                 args.append(f"{param.name}Segment")
-            elif param.type_desc.marshal_strategy == MarshalStrategy.LIST:
-                args.append(f"{param.name}Segment")
             else:
+                # Direct pass-through for MemorySegment and primitives
                 args.append(param.name)
         return args
 
     def _build_marshalled_body(self, func: NativeFunction, invoke_args: list[str], return_stmt: str, cast: str) -> str:
-        """Build method body with Arena-based marshalling."""
+        """Build method body with Arena-based marshalling for STRING only."""
         conversions = []
 
         for param in func.parameters:
             if param.type_desc.marshal_strategy == MarshalStrategy.STRING:
                 conversions.append(self._i(4) + f"var {param.name}Segment = arena.allocateFrom({param.name});")
-            elif param.type_desc.marshal_strategy == MarshalStrategy.LIST:
-                conversions.extend(self._build_list_marshalling(param))
 
         conversions_str = "\n".join(conversions)
         args_str = ", ".join(invoke_args)
@@ -256,17 +241,6 @@ class AsyncMethodEmitter(CodeEmitter):
         ]
         return "\n".join(lines)
 
-    def _build_list_marshalling(self, param: FunctionParameter) -> list[str]:
-        """Generate list-to-native marshalling code."""
-        elem_type = param.type_desc.element_type
-        elem_layout = elem_type.ffm_layout if elem_type else "ValueLayout.ADDRESS"
-
-        return [
-            self._i(4) + f"var {param.name}Segment = arena.allocate({elem_layout}, {param.name}.size());",
-            self._i(4) + f"for (int i = 0; i < {param.name}.size(); i++) {{",
-            self._i(5) + f"{param.name}Segment.setAtIndex({elem_layout}, i, {param.name}.get(i));",
-            self._i(4) + "}"
-        ]
 
     def _build_direct_body(self, func: NativeFunction, args_str: str, return_stmt: str, cast: str) -> str:
         """Build direct invocation body without marshalling."""

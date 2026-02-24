@@ -35,11 +35,18 @@ set(API_PATH ${SRC_PATH}/api)
 
 set(CORE_PATH ${SRC_PATH}/core)
 
+set(MATH_PATH ${CORE_PATH}/math)
+
+set(MEMORY_PATH ${CORE_PATH}/memory)
+
 
 
 add_library(spartan_core SHARED
         ${API_PATH}/SpartanApi.cpp
         ${CORE_PATH}/SpartanCore.hpp
+        ${MATH_PATH}/fuzzy/SpartanFuzzyMath.h
+        ${MATH_PATH}/reinforcement/SpartanReinforcement.h
+        ${MEMORY_PATH}/ArrayCleaners.h
 )
 
 # --- target libraries ---
@@ -54,6 +61,7 @@ target_include_directories(spartan_core PRIVATE ${SRC_PATH})
 
 set_target_properties(spartan_core PROPERTIES
         WINDOWS_EXPORT_ALL_SYMBOLS ON
+        PREFIX ""
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )

@@ -33,7 +33,7 @@ val generateNativeBindings by tasks.registering(Exec::class) {
     group = "build"
 
     workingDir = rootProject.projectDir.resolve("core")
-    commandLine("python", rootProject.projectDir.resolve("scripts/generate_ffm_spartan_bridge.py").absolutePath)
+    commandLine("py", rootProject.projectDir.resolve("scripts/generate_ffm_spartan_bridge.py").absolutePath)
 
     inputs.file(rootProject.projectDir.resolve("core/src/org/spartan/api/SpartanApi.cpp"))
     outputs.file(project.projectDir.resolve("src/main/java/org/spartan/core/bridge/SpartanNative.java"))
@@ -58,7 +58,7 @@ tasks {
         val coreLibrarySource = rootProject.projectDir.resolve("core/cmake-build-debug/bin")
 
         val libraryDestinationPath = "native"
-        // copy dll files from cmake build for FFM bindings
+        // copy library files from cmake build for FFM bindings
         from(coreLibrarySource) {
             include("*.dll", "*.so", "*.dylib")
             into(libraryDestinationPath)

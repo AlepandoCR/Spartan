@@ -138,41 +138,42 @@ class StringTypeMapper(TypeMapper):
 
 class ArrayTypeMapper(TypeMapper):
     """
-    Maps C++ double pointers (T**) to Java List<T>.
-    Also handles explicit array parameters with size.
+    Maps C++ pointers and arrays directly to Java MemorySegment
+    for true Zero-Copy FFM interoperability.
     """
+
+    NUMERIC_PRIMITIVES = {
+        TypeKind.BOOL, TypeKind.SHORT, TypeKind.USHORT,
+        TypeKind.INT, TypeKind.UINT, TypeKind.LONG, TypeKind.ULONG,
+        TypeKind.LONGLONG, TypeKind.ULONGLONG,
+        TypeKind.FLOAT, TypeKind.DOUBLE
+    }
 
     def __init__(self, type_registry: 'TypeRegistry'):
         self.registry = type_registry
 
     def can_map(self, clang_type) -> bool:
-        if clang_type.kind != TypeKind.POINTER:
-            return False
-        pointee = clang_type.get_pointee()
-        # Double pointer detection (T**)
-        if pointee.kind == TypeKind.POINTER:
+        if clang_type.kind in (TypeKind.INCOMPLETEARRAY, TypeKind.CONSTANTARRAY):
             return True
-        # Incomplete array type
-        if clang_type.kind == TypeKind.INCOMPLETEARRAY:
-            return True
+        if clang_type.kind == TypeKind.POINTER:
+            pointee = clang_type.get_pointee()
+            # Single pointer to numeric primitive
+            if pointee.kind in self.NUMERIC_PRIMITIVES:
+                return True
+            # Double pointer detection (T**)
+            if pointee.kind == TypeKind.POINTER:
+                return True
         return False
 
     def map(self, clang_type) -> TypeDescriptor:
-        pointee = clang_type.get_pointee()
-        inner_pointee = pointee.get_pointee()
-
-        # Resolve inner element type
-        element_desc = self.registry.resolve(inner_pointee)
-
+        # Zero-Copy: Always return MemorySegment with no marshalling
         return TypeDescriptor(
-            java_type=f"List<{element_desc.java_wrapper}>",
-            java_wrapper=f"List<{element_desc.java_wrapper}>",
+            java_type="MemorySegment",
+            java_wrapper="MemorySegment",
             ffm_layout="ValueLayout.ADDRESS",
-            marshal_strategy=MarshalStrategy.LIST,
-            element_type=element_desc,
+            marshal_strategy=MarshalStrategy.NONE,
             needs_nullable=True
         )
-
 
 class OpaquePointerMapper(TypeMapper):
     """Maps generic C++ pointers to Java MemorySegment."""

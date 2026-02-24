@@ -6,6 +6,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.spartan.api.SpartanApi;
 import org.spartan.core.bridge.SpartanNative;
 
+import java.util.Objects;
+
 public class SpartanApiImpl extends JavaPlugin implements SpartanApi
 {
 
@@ -20,7 +22,6 @@ public class SpartanApiImpl extends JavaPlugin implements SpartanApi
     {
         getComponentLogger().info(Component.text("Spartan Enabling...", NamedTextColor.GREEN));
         SpartanNative.spartanLog("Logging from Spartan Java to C++!");
-
     }
 
     @Override

@@ -7,6 +7,7 @@ static SpartanEngine engine;
 extern "C" {
 
     //TODO add contracts once c++26 is supported by all major compilers
+
     /**
      * @param msg A null-terminated C string (UTF-8).
      */
@@ -16,6 +17,18 @@ extern "C" {
             return;
         }
         engine.log(msg);
+    }
+
+    __declspec(dllexport) long spartan_test_vector_union(double* setA, double* setB, int sizeA, int sizeB) {
+        if (setA == nullptr || setB == nullptr) {
+            engine.log("[Error] Received null pointer for setA or setB.");
+            return -1;
+        }
+        if (sizeA <= 0 || sizeB <= 0) {
+            engine.log("[Error] Received non-positive size for setA or setB.");
+            return -1;
+        }
+        return SpartanEngine::testVectorUnion(setA, setB, sizeA, sizeB);
     }
 
     /**

@@ -19,8 +19,6 @@ import java.lang.invoke.MethodHandle;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -88,8 +86,8 @@ public class {class_name} {{
     // --- FFM Method Handles ---
 {handle_declarations}
 
-    // --- Native API (Async) ---
-{async_methods}
+    // --- Native API ---
+{sync_methods}
 }}
 '''
 
@@ -100,7 +98,7 @@ public class {class_name} {{
         self,
         handle_declarations: str,
         handle_initializations: str,
-        async_methods: str
+        sync_methods: str
     ) -> str:
         """Render the complete Java class."""
         return self.HEADER.format(
@@ -109,7 +107,7 @@ public class {class_name} {{
             lib_name=self.config.lib_name,
             handle_declarations=handle_declarations,
             handle_initializations=handle_initializations,
-            async_methods=async_methods
+            sync_methods=sync_methods
         )
 
 

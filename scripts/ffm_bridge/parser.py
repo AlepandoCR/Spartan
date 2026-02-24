@@ -57,9 +57,9 @@ class NativeFunction:
 
     @property
     def has_list_params(self) -> bool:
-        """Check if any parameter requires list marshalling."""
+        """Check if any parameter requires list/array marshalling."""
         from .types import MarshalStrategy
-        return any(p.type_desc.marshal_strategy == MarshalStrategy.LIST for p in self.parameters)
+        return any(p.type_desc.marshal_strategy in (MarshalStrategy.LIST, MarshalStrategy.ARRAY) for p in self.parameters)
 
     @property
     def params_declaration(self) -> str:

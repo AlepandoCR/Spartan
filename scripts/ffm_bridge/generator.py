@@ -7,7 +7,7 @@ Main orchestrator that coordinates parsing, type resolution, and code generation
 import os
 
 from .config import BridgeConfig, DEFAULT_CONFIG
-from .emitters import MethodHandleEmitter, AsyncMethodEmitter
+from .emitters import MethodHandleEmitter, SyncMethodEmitter
 from .parser import ASTParser, NativeFunction
 from .templates import JavaClassTemplate
 from .types import TYPE_REGISTRY
@@ -26,7 +26,7 @@ class FFMBridgeGenerator:
         self.config = config
         self.parser = ASTParser(TYPE_REGISTRY)
         self.handle_emitter = MethodHandleEmitter()
-        self.async_emitter = AsyncMethodEmitter()
+        self.sync_emitter = SyncMethodEmitter()
         self.template = JavaClassTemplate(config)
 
     def generate(self) -> bool:
@@ -47,13 +47,13 @@ class FFMBridgeGenerator:
             # Generate code components
             handle_decls = self._generate_handle_declarations(functions)
             handle_inits = self._generate_handle_initializations(functions)
-            async_methods = self._generate_async_methods(functions)
+            sync_methods = self._generate_sync_methods(functions)
 
             # Render final class
             java_code = self.template.render(
                 handle_declarations=handle_decls,
                 handle_initializations=handle_inits,
-                async_methods=async_methods
+                sync_methods=sync_methods
             )
 
             # Write output
@@ -80,10 +80,10 @@ class FFMBridgeGenerator:
             for func in functions
         )
 
-    def _generate_async_methods(self, functions: list[NativeFunction]) -> str:
-        """Generate all async wrapper methods."""
+    def _generate_sync_methods(self, functions: list[NativeFunction]) -> str:
+        """Generate all sync wrapper methods."""
         return "\n".join(
-            self.async_emitter.emit(func)
+            self.sync_emitter.emit(func)
             for func in functions
         )
 
