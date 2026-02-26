@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace org::spartan::core::math::metric {
+namespace org::spartan::internal::math::metric {
 
     double VectorMetrics::cosineSimilarity(const double* firstVector, const double* secondVector, const int arrayLength) {
         __m256d simdDotProductAccumulator = _mm256_setzero_pd();

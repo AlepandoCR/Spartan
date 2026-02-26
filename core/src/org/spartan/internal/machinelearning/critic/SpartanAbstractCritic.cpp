@@ -4,7 +4,7 @@
 
 #include "SpartanAbstractCritic.h"
 
-namespace org::spartan::core::machinelearning {
+namespace org::spartan::internal::machinelearning {
 
     SpartanAbstractCritic::SpartanAbstractCritic(const std::span<double> weights)
         : weights_(weights) {}

@@ -4,7 +4,7 @@
 
 #include "SpartanBaseModel.h"
 
-namespace org::spartan::core::machinelearning {
+namespace org::spartan::internal::machinelearning {
 
 
     SpartanBaseModel::SpartanBaseModel(

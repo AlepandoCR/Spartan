@@ -2,11 +2,13 @@
 // Created by Alepando on 25/2/2026.
 //
 
-#include "../core/SpartanCore.h"
+#include "../internal/SpartanEngine.h"
 
 #include <cstdint>
 
-using namespace org::spartan::core;
+#include "internal/SpartanEngine.h"
+
+using namespace org::spartan::internal;
 
 /** @brief Single engine instance for the lifetime of the shared library. */
 static SpartanEngine engine;

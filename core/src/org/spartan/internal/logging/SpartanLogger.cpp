@@ -6,7 +6,7 @@
 
 #include <print>
 
-namespace org::spartan::core::logging {
+namespace org::spartan::internal::logging {
 
     void SpartanLogger::info(const std::string_view message) {
         std::println("[Spartan-Core] >> {}", message);

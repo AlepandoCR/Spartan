@@ -17,7 +17,7 @@
  *       it holds a non-owning std::span over weight memory allocated and
  *       managed by the JVM via FFM.
  */
-namespace org::spartan::core::machinelearning {
+namespace org::spartan::internal::machinelearning {
 
     /**
      * @class SpartanAbstractCritic

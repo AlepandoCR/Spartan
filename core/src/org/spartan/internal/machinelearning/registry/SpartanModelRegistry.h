@@ -12,13 +12,13 @@
 #include <optional>
 #include <vector>
 
-#include "core/machinelearning/model/SpartanBaseModel.h"
+#include "internal/machinelearning/model/SpartanBaseModel.h"
 
 /**
  * @file SpartanModelRegistry.h
  * @brief Registry for managing active AI agents within the Spartan engine.
  */
-namespace org::spartan::core::machinelearning {
+namespace org::spartan::internal::machinelearning {
 
     /**
      * @class SpartanModelRegistry

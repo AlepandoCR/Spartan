@@ -8,7 +8,7 @@
  * @namespace org::spartan::core::math::reinforcement
  * @brief Reinforcement Learning mathematical operations and gradient adjustments.
  */
-namespace org::spartan::core::math::reinforcement {
+namespace org::spartan::internal::math::reinforcement {
 
     /**
      * @class GradientOps

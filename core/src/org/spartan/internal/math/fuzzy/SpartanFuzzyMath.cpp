@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace org::spartan::core::math::fuzzy {
+namespace org::spartan::internal::math::fuzzy {
 
     // --- FuzzySetOps ---
 

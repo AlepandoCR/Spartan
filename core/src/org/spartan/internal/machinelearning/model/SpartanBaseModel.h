@@ -6,7 +6,7 @@
 #include "../ModelHyperparameterConfig.h"
 #include "../critic/SpartanAbstractCritic.h"
 
-namespace org::spartan::core::machinelearning {
+namespace org::spartan::internal::machinelearning {
 
     class SpartanBaseModel {
     public:

@@ -6,7 +6,7 @@
 
 #include <immintrin.h>
 
-namespace org::spartan::core::math::reinforcement {
+namespace org::spartan::internal::math::reinforcement {
 
     void GradientOps::applyRemorseUpdate(double* weights, const double* features, const double remorse, const double learningRate, const int arrayLength) {
 

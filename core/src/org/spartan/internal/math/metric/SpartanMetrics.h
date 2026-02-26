@@ -8,7 +8,7 @@
  * @namespace org::spartan::core::math::metric
  * @brief Hardware-accelerated distance and similarity metrics for vector spaces.
  */
-namespace org::spartan::core::math::metric {
+namespace org::spartan::internal::math::metric {
 
     /**
      * @class VectorMetrics

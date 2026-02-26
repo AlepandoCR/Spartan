@@ -6,7 +6,7 @@
 
 #include <cstring>
 
-namespace org::spartan::core::memory {
+namespace org::spartan::internal::memory {
 
     std::span<double> MemoryUtils::cleanView(double* rawBufferPointer, const int validElementCount) {
         // We trust the caller since the object comes from Java,

@@ -15,7 +15,7 @@
  * place without touching callers.
  *
  */
-namespace org::spartan::core::logging {
+namespace org::spartan::internal::logging {
 
     /**
      * @class SpartanLogger

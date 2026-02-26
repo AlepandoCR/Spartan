@@ -9,9 +9,9 @@
 #include <algorithm>
 #include <ranges>
 
-#include "core/machinelearning/model/SpartanBaseModel.h"
+#include "internal/machinelearning/model/SpartanBaseModel.h"
 
-namespace org::spartan::core::machinelearning {
+namespace org::spartan::internal::machinelearning {
 
     void SpartanModelRegistry::registerModel(std::unique_ptr<SpartanBaseModel> model) {
         std::lock_guard lock(registryMutex_);

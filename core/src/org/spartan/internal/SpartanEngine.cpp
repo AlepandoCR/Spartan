@@ -1,7 +1,7 @@
 //
 // Created by Alepando on 25/2/2026.
 //
-#include "SpartanCore.h"
+#include "SpartanEngine.h"
 #include <memory>
 #include <span>
 #include <format>
@@ -9,7 +9,7 @@
 #include "math/fuzzy/SpartanFuzzyMath.h"
 #include "memory/ArrayCleaners.h"
 
-namespace org::spartan::core {
+namespace org::spartan::internal {
     long SpartanEngine::computeFuzzySetUnion(double* targetFuzzySet,
                                              double* sourceFuzzySet,
                                              const int targetSetSize,

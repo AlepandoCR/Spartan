@@ -14,14 +14,14 @@
 #include "machinelearning/ModelHyperparameterConfig.h"
 
 /**
- * @file SpartanCore.h
+ * @file SpartanEngine.h
  * @brief Top-level engine facade for the Spartan native core.
  *
  * SpartanEngine is the single root object that owns every subsystem
  * (model registry, math utilities, etc.).  The API layer (extern "C")
  * holds one static instance and delegates all domain logic here.
  */
-namespace org::spartan::core {
+namespace org::spartan::internal {
 
     /**
      * @class SpartanEngine

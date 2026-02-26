@@ -12,7 +12,7 @@
  * to process 4 double-precision floats (256 bits) per clock cycle.
  * Designed to operate directly on raw memory pointers provided by the JVM via FFM.
  */
-namespace org::spartan::core::math::fuzzy {
+namespace org::spartan::internal::math::fuzzy {
 
     /**
      * @class FuzzySetOps
