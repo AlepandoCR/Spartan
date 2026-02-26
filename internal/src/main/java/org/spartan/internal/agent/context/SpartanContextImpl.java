@@ -4,30 +4,51 @@ import org.jetbrains.annotations.NotNull;
 import org.spartan.api.agent.context.SpartanContext;
 import org.spartan.api.agent.context.element.SpartanContextElement;
 
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Implementation of SpartanContext using MemorySegment for shared memory with native code.
+ * The data is stored in a MemorySegment that C++ can directly read/write.
+ * Elements are ordered by index to ensure consistent data order for model training.
+ */
 public class SpartanContextImpl implements SpartanContext {
+
+    private static final int DEFAULT_INITIAL_CAPACITY = 128;
+    private static final ValueLayout.OfDouble DOUBLE_LAYOUT = ValueLayout.JAVA_DOUBLE;
 
     private final Map<Class<? extends SpartanContextElement>, Collection<SpartanContextElement>> elementsByType;
     private final Map<String, Collection<SpartanContextElement>> elementsByIdentifier;
-    private final Collection<SpartanContextElement> allElements;
+    private final TreeMap<Integer, SpartanContextElement> elementsByIndex;
     private final String identifier;
-    private final int index;
-    private double [] masterBuffer = new double[128];
+    private final Arena arena;
+
+    private MemorySegment dataSegment;
+    private int capacity;
     private int validDataSize = 0;
 
-    public SpartanContextImpl(@NotNull String identifier, int index) {
+    public SpartanContextImpl(@NotNull String identifier, @NotNull Arena arena) {
+        this(identifier, arena, DEFAULT_INITIAL_CAPACITY);
+    }
+
+    public SpartanContextImpl(@NotNull String identifier, @NotNull Arena arena, int initialCapacity) {
         this.identifier = identifier;
-        this.index = index;
+        this.arena = arena;
+        this.capacity = initialCapacity;
         this.elementsByIdentifier = new ConcurrentHashMap<>();
         this.elementsByType = new ConcurrentHashMap<>();
-        this.allElements = ConcurrentHashMap.newKeySet();
+        this.elementsByIndex = new TreeMap<>();
+
+        // Allocate initial MemorySegment
+        this.dataSegment = arena.allocate(DOUBLE_LAYOUT, capacity);
     }
 
     @Override
-    public double @NotNull [] getData() {
-        return masterBuffer;
+    public @NotNull MemorySegment getData() {
+        return dataSegment;
     }
 
     @Override
@@ -36,35 +57,79 @@ public class SpartanContextImpl implements SpartanContext {
     }
 
     @Override
-    public void update() {
-        int totalSize = 0;
-        for (SpartanContextElement element : allElements) {
-            element.update();
-            totalSize += element.getSize();
+    public double readDouble(int index) {
+        if (index < 0 || index >= validDataSize) {
+            throw new IndexOutOfBoundsException("Index " + index + " out of bounds for size " + validDataSize);
         }
-
-        if (totalSize > masterBuffer.length) {
-            int newCapacity = Math.max(masterBuffer.length * 2, totalSize);
-            masterBuffer = Arrays.copyOf(masterBuffer, newCapacity);
-        }
-
-        int offset = 0;
-        for (SpartanContextElement element : allElements) {
-            double[] elementData = element.getData();
-            int size = element.getSize();
-
-            // Copy element data into master buffer, make sure we check the size
-            // to avoid copying uninitialized data from variable elements
-            System.arraycopy(elementData, 0, masterBuffer, offset, size);
-            offset += size;
-        }
-
-        validDataSize = totalSize;
+        return dataSegment.getAtIndex(DOUBLE_LAYOUT, index);
     }
 
     @Override
-    public void addElement(@NotNull SpartanContextElement element) {
-        allElements.add(element);
+    public double[] readDoubles(int startIndex, int length) {
+        if (startIndex < 0 || startIndex + length > validDataSize) {
+            throw new IndexOutOfBoundsException("Range [" + startIndex + ", " + (startIndex + length) + ") out of bounds for size " + validDataSize);
+        }
+        double[] result = new double[length];
+        for (int i = 0; i < length; i++) {
+            result[i] = dataSegment.getAtIndex(DOUBLE_LAYOUT, startIndex + i);
+        }
+        return result;
+    }
+
+    @Override
+    public void update() {
+        int totalValidSize = 0;
+        // TreeMap guarantees iteration in key (index) order
+        for (SpartanContextElement element : elementsByIndex.values()) {
+            element.update();
+            totalValidSize += element.getSize();
+        }
+
+        ensureCapacity(totalValidSize);
+
+        long offsetBytes = 0;
+        for (SpartanContextElement element : elementsByIndex.values()) {
+            double[] elementData = element.getData();
+            int validSize = element.getSize();
+
+            if (validSize > 0) {
+                long bytesToCopy = validSize * DOUBLE_LAYOUT.byteSize();
+                MemorySegment.copy(
+                        MemorySegment.ofArray(elementData), 0,
+                        dataSegment, offsetBytes,
+                        bytesToCopy
+                );
+                offsetBytes += bytesToCopy;
+            }
+        }
+
+        validDataSize = totalValidSize;
+    }
+
+    private void ensureCapacity(int requiredCapacity) {
+        if (requiredCapacity > capacity) {
+            int newCapacity = Math.max(capacity * 2, requiredCapacity);
+
+            // Allocate new segment
+            MemorySegment newSegment = arena.allocate(DOUBLE_LAYOUT, newCapacity);
+
+            // Copy existing data if any
+            if (validDataSize > 0) {
+                MemorySegment.copy(dataSegment, 0, newSegment, 0, validDataSize * DOUBLE_LAYOUT.byteSize());
+            }
+
+            dataSegment = newSegment;
+            capacity = newCapacity;
+        }
+    }
+
+    @Override
+    public void addElement(@NotNull SpartanContextElement element, int index) {
+        if (elementsByIndex.containsKey(index)) {
+            throw new IllegalArgumentException("Element already exists at index " + index);
+        }
+
+        elementsByIndex.put(index, element);
 
         // Register by identifier
         elementsByIdentifier
@@ -81,7 +146,17 @@ public class SpartanContextImpl implements SpartanContext {
 
     @Override
     public void removeElement(@NotNull SpartanContextElement element) {
-        allElements.remove(element);
+        // Find and remove from index map
+        Integer indexToRemove = null;
+        for (Map.Entry<Integer, SpartanContextElement> entry : elementsByIndex.entrySet()) {
+            if (entry.getValue().equals(element)) {
+                indexToRemove = entry.getKey();
+                break;
+            }
+        }
+        if (indexToRemove != null) {
+            elementsByIndex.remove(indexToRemove);
+        }
 
         // Remove from identifier map
         Collection<SpartanContextElement> byIdentifier = elementsByIdentifier.get(element.getIdentifier());
@@ -113,7 +188,8 @@ public class SpartanContextImpl implements SpartanContext {
         Collection<SpartanContextElement> elements = elementsByIdentifier.remove(identifier);
         if (elements != null) {
             for (SpartanContextElement element : elements) {
-                allElements.remove(element);
+                // Remove from index map
+                elementsByIndex.values().remove(element);
                 removeElementsFromTypeCache(element);
             }
         }
@@ -131,7 +207,7 @@ public class SpartanContextImpl implements SpartanContext {
 
     @Override
     public @NotNull Collection<SpartanContextElement> getElements() {
-        return Collections.unmodifiableCollection(allElements);
+        return Collections.unmodifiableCollection(elementsByIndex.values());
     }
 
     @Override
@@ -164,10 +240,6 @@ public class SpartanContextImpl implements SpartanContext {
         return identifier;
     }
 
-    @Override
-    public int getIndex() {
-        return index;
-    }
 
     /**
      * Extracts all types (class and interfaces) that extend SpartanContextElement from the element's hierarchy.

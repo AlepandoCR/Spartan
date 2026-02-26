@@ -2,3 +2,9 @@ name: Spartan
 version: '1.0-SNAPSHOT'
 main: org.spartan.internal.SpartanApiImpl
 api-version: '1.21'
+
+commands:
+  spartan:
+    description: Test command to demonstrate SpartanContext with various element types
+    usage: /<command>
+    permission: spartan.admin

@@ -2,50 +2,64 @@ package org.spartan.api.agent.context;
 
 import org.jetbrains.annotations.NotNull;
 import org.spartan.api.agent.context.element.SpartanContextElement;
+import org.spartan.api.agent.context.element.variable.SpartanVariableContextElement;
 
+import java.lang.foreign.MemorySegment;
 import java.util.Collection;
 
+/**
+ * Represents an AI context that holds elements with shared memory backing.
+ * The data is stored in a MemorySegment that can be directly accessed by native code (C++).
+ * Any modifications made by C++ are instantly visible in Java without copying.
+ */
 public interface SpartanContext {
 
     /**
-     * flattens the elements in {@link #getElements()} into a single collection of doubles
-     * @return the flattened data of the context
-     * This data WILL be full of garbage, so it is important to only iterate over {@link #getSize()} elements in the returned array
-     * Call {@link #update()} before calling this method to ensure the data is up to date
+     * Gets the MemorySegment containing the flattened data of all elements.
+     * This segment is directly accessible by native code - changes made by C++ are visible instantly.
+     * Call {@link #update()} before accessing to ensure data is current.
+     *
+     * @return the MemorySegment containing the context data
      */
-    double @NotNull [] getData();
+    @NotNull MemorySegment getData();
 
+    /**
+     * @return the number of valid doubles in the data segment
+     */
     int getSize();
+
 
     /**
      * Updates all elements in this context by calling {@link SpartanContextElement#update()} on each element.
-     * Updates held data for the context
+     * Copies element data into the shared MemorySegment.
      */
     void update();
 
     /**
      * Adds an element to this context.
      * @param element the element to add
+     * @param index index at which the element's data should be written, this is essential for model learning
+     * @apiNote {@link SpartanContext#update()} cleans {@link SpartanVariableContextElement} data so order could be any
      */
-    void addElement(SpartanContextElement element);
+    void addElement(@NotNull SpartanContextElement element, int index);
 
     /**
      * Removes an element from this context.
      * @param element the element to remove
      */
-    void removeElement(SpartanContextElement element);
+    void removeElement(@NotNull SpartanContextElement element);
 
     /**
      * Removes all elements with the specified identifier from this context.
      * @param identifier the identifier of the elements to remove
      */
-    void removeElementsByIdentifier(String identifier);
+    void removeElementsByIdentifier(@NotNull String identifier);
 
     /**
      * Removes all elements of the specified type from this context.
      * @param type the type of elements to remove
      */
-    void removeElementsOfType(Class<? extends SpartanContextElement> type);
+    void removeElementsOfType(@NotNull Class<? extends SpartanContextElement> type);
 
     /**
      * @return the elements that make up this context
@@ -59,7 +73,7 @@ public interface SpartanContext {
      * @param <SpartanContextElementType> the type of elements to retrieve
      * @return the elements of the specified type
      */
-    <SpartanContextElementType extends SpartanContextElement> @NotNull Collection<SpartanContextElementType> getElementsOfType(Class<SpartanContextElementType> type);
+    <SpartanContextElementType extends SpartanContextElement> @NotNull Collection<SpartanContextElementType> getElementsOfType(@NotNull Class<SpartanContextElementType> type);
 
 
     /**
@@ -67,7 +81,7 @@ public interface SpartanContext {
      * @param identifier the identifier of the element(s) to retrieve
      * @return the element(s) with the specified identifier
      */
-    @NotNull Collection<SpartanContextElement> getElementByIdentifier(String identifier);
+    @NotNull Collection<SpartanContextElement> getElementByIdentifier(@NotNull String identifier);
 
     /**
      * @return an identifier for this context group
@@ -75,8 +89,22 @@ public interface SpartanContext {
     @NotNull String getIdentifier();
 
     /**
-     * @return the index this context will be placed in the context array passed to the agent
+     * Reads a double value from the shared memory at the specified index.
+     * This reflects any changes made by native code.
+     *
+     * @param index the index of the double to read
+     * @return the double value at the specified index
      */
-    int getIndex();
+    double readDouble(int index);
+
+    /**
+     * Reads multiple double values from the shared memory starting at the specified index.
+     * This reflects any changes made by native code.
+     *
+     * @param startIndex the starting index
+     * @param length the number of doubles to read
+     * @return an array containing the read values
+     */
+    double[] readDoubles(int startIndex, int length);
 
 }
