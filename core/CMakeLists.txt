@@ -39,14 +39,54 @@ set(MATH_PATH ${CORE_PATH}/math)
 
 set(MEMORY_PATH ${CORE_PATH}/memory)
 
+set(LOGGING_PATH ${CORE_PATH}/logging)
+
+set(ML_PATH ${CORE_PATH}/machinelearning)
+
 
 
 add_library(spartan_core SHARED
+        # --- API ---
         ${API_PATH}/SpartanApi.cpp
-        ${CORE_PATH}/SpartanCore.hpp
+
+        # --- Core ---
+        ${CORE_PATH}/SpartanCore.h
+        ${CORE_PATH}/SpartanCore.cpp
+
+        # --- Logging ---
+        ${LOGGING_PATH}/SpartanLogger.h
+        ${LOGGING_PATH}/SpartanLogger.cpp
+
+        # --- Math: Fuzzy ---
         ${MATH_PATH}/fuzzy/SpartanFuzzyMath.h
+        ${MATH_PATH}/fuzzy/SpartanFuzzyMath.cpp
+
+        # --- Math: Reinforcement ---
         ${MATH_PATH}/reinforcement/SpartanReinforcement.h
+        ${MATH_PATH}/reinforcement/SpartanReinforcement.cpp
+
+        # --- Math: Metrics ---
+        ${MATH_PATH}/metric/SpartanMetrics.h
+        ${MATH_PATH}/metric/SpartanMetrics.cpp
+
+        # --- Memory ---
         ${MEMORY_PATH}/ArrayCleaners.h
+        ${MEMORY_PATH}/ArrayCleaners.cpp
+
+        # --- Machine Learning: Config ---
+        ${ML_PATH}/ModelHyperparameterConfig.h
+
+        # --- Machine Learning: Critic ---
+        ${ML_PATH}/critic/SpartanAbstractCritic.h
+        ${ML_PATH}/critic/SpartanAbstractCritic.cpp
+
+        # --- Machine Learning: Model ---
+        ${ML_PATH}/model/SpartanBaseModel.h
+        ${ML_PATH}/model/SpartanBaseModel.cpp
+
+        # --- Machine Learning: Registry ---
+        ${ML_PATH}/registry/SpartanModelRegistry.h
+        ${ML_PATH}/registry/SpartanModelRegistry.cpp
 )
 
 # --- target libraries ---
