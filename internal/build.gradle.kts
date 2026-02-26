@@ -32,11 +32,11 @@ val generateNativeBindings by tasks.registering(Exec::class) {
     description = "Generates Java FFM bindings from C++ source"
     group = "build"
 
-    workingDir = rootProject.projectDir.resolve("core")
+    workingDir = rootProject.projectDir.resolve("internal")
     commandLine("py", rootProject.projectDir.resolve("scripts/generate_ffm_spartan_bridge.py").absolutePath)
 
     inputs.file(rootProject.projectDir.resolve("core/src/org/spartan/api/SpartanApi.cpp"))
-    outputs.file(project.projectDir.resolve("src/main/java/org/spartan/core/bridge/SpartanNative.java"))
+    outputs.file(project.projectDir.resolve("src/main/java/org/spartan/internal/bridge/SpartanNative.java"))
 }
 
 tasks {

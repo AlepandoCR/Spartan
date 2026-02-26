@@ -19,7 +19,7 @@ class BridgeConfig:
     java_output: Path = field(default_factory=lambda: Path("../internal/src/main/java/org/spartan/internal/bridge"))
 
     # Java package configuration
-    java_package: str = "org.spartan.core.bridge"
+    java_package: str = "org.spartan.internal.bridge"
 
     # Native library name (without prefix/extension)
     lib_name: str = "spartan_core"
