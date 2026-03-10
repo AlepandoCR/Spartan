@@ -7,12 +7,10 @@
 #include <unordered_map>
 #include <memory>
 #include <mutex>
-#include <span>
 #include <cstdint>
-#include <optional>
 #include <vector>
 
-#include "internal/machinelearning/model/SpartanBaseModel.h"
+#include "internal/machinelearning/model/SpartanModel.h"
 
 /**
  * @file SpartanModelRegistry.h
@@ -34,7 +32,7 @@ namespace org::spartan::internal::machinelearning {
         SpartanModelRegistry() = default;
         ~SpartanModelRegistry() = default;
 
-        // Non-copyable / non-movable — owns unique_ptrs internally.
+        // Non-copyable / non-movable  -  owns unique_ptrs internally.
         SpartanModelRegistry(const SpartanModelRegistry&) = delete;
         SpartanModelRegistry& operator=(const SpartanModelRegistry&) = delete;
         SpartanModelRegistry(SpartanModelRegistry&&) = delete;
@@ -44,11 +42,11 @@ namespace org::spartan::internal::machinelearning {
          * @brief Registers a new model.
          *
          * C++ takes ownership of the C++ object, but **not** the underlying
-         * memory buffers — the JVM retains ownership of those.
+         * memory buffers  -  the JVM retains ownership of those.
          *
          * @param model Unique pointer to the constructed model.
          */
-        void registerModel(std::unique_ptr<SpartanBaseModel> model);
+        void registerModel(std::unique_ptr<SpartanModel> model);
 
         /**
          * @brief Unregisters a model
@@ -73,16 +71,18 @@ namespace org::spartan::internal::machinelearning {
         * @return A unique_ptr to the model, or nullptr if the pool is empty.
         * @warning The caller takes ownership and MUST rebind/re-register it.
         */
-        [[nodiscard]] std::unique_ptr<SpartanBaseModel> getIdleModelToRebind() noexcept;
+        [[nodiscard]] std::unique_ptr<SpartanModel> getIdleModelToRebind() noexcept;
+
+        void updateModelContext(uint64_t agentIdentifier, std::span<const double> newPtr);
     private:
         /** @brief Guards concurrent access to the model map. */
         mutable std::mutex registryMutex_;
 
         /** @brief Map from agent identifier to its owned model instance. */
-        std::unordered_map<uint64_t, std::unique_ptr<SpartanBaseModel>> activeModels_;
+        std::unordered_map<uint64_t, std::unique_ptr<SpartanModel>> activeModels_;
 
         /** @brief Pool of idle models ready for reuse to minimize allocations. */
-        std::vector<std::unique_ptr<SpartanBaseModel>> idleModels_;
+        std::vector<std::unique_ptr<SpartanModel>> idleModels_;
     };
 
 } // namespace org::spartan::core::machinelearning

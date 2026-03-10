@@ -33,15 +33,15 @@ set(SRC_PATH src/org/spartan)
 
 set(API_PATH ${SRC_PATH}/api)
 
-set(CORE_PATH ${SRC_PATH}/core)
+set(INTERNAL_PATH ${SRC_PATH}/internal)
 
-set(MATH_PATH ${CORE_PATH}/math)
+set(MATH_PATH ${INTERNAL_PATH}/math)
 
-set(MEMORY_PATH ${CORE_PATH}/memory)
+set(MEMORY_PATH ${INTERNAL_PATH}/memory)
 
-set(LOGGING_PATH ${CORE_PATH}/logging)
+set(LOGGING_PATH ${INTERNAL_PATH}/logging)
 
-set(ML_PATH ${CORE_PATH}/machinelearning)
+set(ML_PATH ${INTERNAL_PATH}/machinelearning)
 
 
 
@@ -49,9 +49,9 @@ add_library(spartan_core SHARED
         # --- API ---
         ${API_PATH}/SpartanApi.cpp
 
-        # --- Core ---
-        ${CORE_PATH}/SpartanCore.h
-        ${CORE_PATH}/SpartanCore.cpp
+        # --- Engine ---
+        ${INTERNAL_PATH}/SpartanEngine.h
+        ${INTERNAL_PATH}/SpartanEngine.cpp
 
         # --- Logging ---
         ${LOGGING_PATH}/SpartanLogger.h
@@ -76,13 +76,25 @@ add_library(spartan_core SHARED
         # --- Machine Learning: Config ---
         ${ML_PATH}/ModelHyperparameterConfig.h
 
-        # --- Machine Learning: Critic ---
-        ${ML_PATH}/critic/SpartanAbstractCritic.h
-        ${ML_PATH}/critic/SpartanAbstractCritic.cpp
+        # --- Machine Learning: Internal Networks (CRTP — Frontier B) ---
+        ${ML_PATH}/network/SpartanAbstractCritic.h
+        ${ML_PATH}/network/ContinuousQNetwork.h
+        ${ML_PATH}/network/GaussianPolicyNetwork.h
+        ${ML_PATH}/network/GatedRecurrentUnitLayer.h
 
-        # --- Machine Learning: Model ---
-        ${ML_PATH}/model/SpartanBaseModel.h
-        ${ML_PATH}/model/SpartanBaseModel.cpp
+        # --- Machine Learning: Model Hierarchy (Frontier A) ---
+        ${ML_PATH}/model/SpartanModel.h
+        ${ML_PATH}/model/SpartanModel.cpp
+        ${ML_PATH}/model/SpartanAgent.h
+        ${ML_PATH}/model/SpartanCritic.h
+        ${ML_PATH}/model/SpartanCompressor.h
+        ${ML_PATH}/model/DefaultSpartanAgent.h
+        ${ML_PATH}/model/RecurrentSoftActorCriticSpartanModel.h
+        ${ML_PATH}/model/RecurrentSoftActorCriticSpartanModel.cpp
+        ${ML_PATH}/model/DoubleDeepQNetworkSpartanModel.h
+        ${ML_PATH}/model/DoubleDeepQNetworkSpartanModel.cpp
+        ${ML_PATH}/model/AutoEncoderCompressorSpartanModel.h
+        ${ML_PATH}/model/AutoEncoderCompressorSpartanModel.cpp
 
         # --- Machine Learning: Registry ---
         ${ML_PATH}/registry/SpartanModelRegistry.h

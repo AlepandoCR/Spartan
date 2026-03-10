@@ -5,7 +5,7 @@
 #pragma once
 
 /**
- * @namespace org::spartan::core::math::metric
+ * @namespace org::spartan::internal::math::metric
  * @brief Hardware-accelerated distance and similarity metrics for vector spaces.
  */
 namespace org::spartan::internal::math::metric {

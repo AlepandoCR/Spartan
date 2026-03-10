@@ -5,7 +5,7 @@
 #pragma once
 
 /**
- * @namespace org::spartan::core::math::fuzzy
+ * @namespace org::spartan::internal::math::fuzzy
  * @brief Provides high-performance Zero-Allocation Fuzzy Logic operations.
  *
  * All operations utilize AVX2 (Advanced Vector Extensions) SIMD instructions

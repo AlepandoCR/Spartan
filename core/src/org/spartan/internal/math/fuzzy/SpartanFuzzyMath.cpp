@@ -10,8 +10,6 @@
 
 namespace org::spartan::internal::math::fuzzy {
 
-    // --- FuzzySetOps ---
-
     void FuzzySetOps::unionSets(double* targetSet, const double* sourceSet, const int arrayLength) {
         int elementIndex = 0;
         for (; elementIndex <= arrayLength - 4; elementIndex += 4) {

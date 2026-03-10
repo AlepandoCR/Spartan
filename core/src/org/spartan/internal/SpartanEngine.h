@@ -11,7 +11,6 @@
 
 #include "logging/SpartanLogger.h"
 #include "machinelearning/registry/SpartanModelRegistry.h"
-#include "machinelearning/ModelHyperparameterConfig.h"
 
 /**
  * @file SpartanEngine.h
@@ -35,7 +34,7 @@ namespace org::spartan::internal {
         SpartanEngine() = default;
         ~SpartanEngine() = default;
 
-        // Non-copyable / non-movable — owns the registry.
+        // Non-copyable / non-movable  -  owns the registry.
         SpartanEngine(const SpartanEngine&) = delete;
         SpartanEngine& operator=(const SpartanEngine&) = delete;
         SpartanEngine(SpartanEngine&&) = delete;
@@ -81,21 +80,21 @@ namespace org::spartan::internal {
          *
          * All memory segments (hyperparameters, weights, action buffer) are
          * owned by the JVM.  The C++ side wraps them into non-owning
-         * std::span views — **zero copy, zero allocation**.
+         * std::span views  -  **zero copy, zero allocation**.
          *
-         * @param agentIdentifier       Unique 64-bit identifier for the agent.
-         * @param hyperparameterConfig  Pointer to a JVM-owned config struct.
-         * @param criticWeightsBuffer   Pointer to the critic's weight array.
-         * @param criticWeightsCount    Number of doubles in @p criticWeightsBuffer.
-         * @param modelWeightsBuffer    Pointer to the model's weight array.
-         * @param modelWeightsCount     Number of doubles in @p modelWeightsBuffer.
-         * @param actionOutputBuffer    Pointer to the action output array.
-         * @param contextBuffer         Pointer to the context/state input array.
-         * @param contextCount          Number of doubles in @p contextBuffer.
-         * @param actionOutputCount     Number of doubles in @p actionOutputBuffer.
+         * @param agentIdentifier              Unique 64-bit identifier for the agent.
+         * @param opaqueHyperparameterConfig   Opaque pointer to a JVM-owned config struct.
+         * @param criticWeightsBuffer          Pointer to the critic's weight array.
+         * @param criticWeightsCount           Number of doubles in @p criticWeightsBuffer.
+         * @param modelWeightsBuffer           Pointer to the model's weight array.
+         * @param modelWeightsCount            Number of doubles in @p modelWeightsBuffer.
+         * @param contextBuffer                Pointer to the context/state input array.
+         * @param contextCount                 Number of doubles in @p contextBuffer.
+         * @param actionOutputBuffer           Pointer to the action output array.
+         * @param actionOutputCount            Number of doubles in @p actionOutputBuffer.
          */
         void registerAgent(uint64_t agentIdentifier,
-                           ModelHyperparameterConfig* hyperparameterConfig,
+                           void* opaqueHyperparameterConfig,
                            double* criticWeightsBuffer,
                            int32_t criticWeightsCount,
                            double* modelWeightsBuffer,
@@ -123,10 +122,12 @@ namespace org::spartan::internal {
          */
         void tickAllAgents(double* globalRewardsBuffer, int32_t globalRewardsCount);
 
+        void updateContextPointer(uint64_t agentIdentifier, double* newPointer, int newCapacity);
+
     private:
         /** @brief The model registry owned by this engine instance. */
         machinelearning::SpartanModelRegistry modelRegistry_;
     };
 
-} // namespace org::spartan::core
+}
 

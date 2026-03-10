@@ -8,7 +8,7 @@
 #include <vector>
 
 /**
- * @namespace org::spartan::core::memory
+ * @namespace org::spartan::internal::memory
  * @brief Zero-cost and high-speed memory utilities for FFM buffers.
  */
 namespace org::spartan::internal::memory {

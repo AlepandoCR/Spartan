@@ -124,7 +124,7 @@ public class SpartanContextImpl implements SpartanContext {
     }
 
     @Override
-    public void addElement(@NotNull SpartanContextElement element, int index) {
+    public void     addElement(@NotNull SpartanContextElement element, int index) {
         if (elementsByIndex.containsKey(index)) {
             throw new IllegalArgumentException("Element already exists at index " + index);
         }

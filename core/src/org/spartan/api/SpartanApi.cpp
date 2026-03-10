@@ -2,7 +2,6 @@
 // Created by Alepando on 25/2/2026.
 //
 
-#include "../internal/SpartanEngine.h"
 
 #include <cstdint>
 
@@ -74,24 +73,24 @@ extern "C" {
      *
      * The JVM allocates all memory segments (hyperparameters, critic weights,
      * model weights, action buffer) via the Foreign Function & Memory API and
-     * passes raw pointers plus sizes.  All domain logic is delegated to
-     * SpartanEngine — this function only validates inputs and logs errors.
+     * passes raw pointers plus sizes.  The config pointer is opaque (@c void*)
+     * because each model type expects a different Standard Layout struct.
      *
-     * @param agentIdentifier       Unique 64-bit identifier for the agent.
-     * @param hyperparameterConfig  Pointer to a JVM-owned ModelHyperparameterConfig.
-     * @param criticWeightsBuffer   Pointer to the critic's weight array (JVM-owned).
-     * @param criticWeightsCount    Number of doubles in @p criticWeightsBuffer.
-     * @param modelWeightsBuffer    Pointer to the model's weight array (JVM-owned).
-     * @param modelWeightsCount     Number of doubles in @p modelWeightsBuffer.
-     * @param contextBuffer         Pointer to the context/state input array (JVM-owned).
-     * @param contextCount          Number of doubles in @p contextBuffer.
-     * @param actionOutputBuffer    Pointer to the action output array (JVM-owned).
-     * @param actionOutputCount     Number of doubles in @p actionOutputBuffer.
+     * @param agentIdentifier              Unique 64-bit identifier for the agent.
+     * @param opaqueHyperparameterConfig   Opaque pointer to a JVM-owned config struct.
+     * @param criticWeightsBuffer          Pointer to the critic's weight array (JVM-owned).
+     * @param criticWeightsCount           Number of doubles in @p criticWeightsBuffer.
+     * @param modelWeightsBuffer           Pointer to the model's weight array (JVM-owned).
+     * @param modelWeightsCount            Number of doubles in @p modelWeightsBuffer.
+     * @param contextBuffer                Pointer to the context/state input array (JVM-owned).
+     * @param contextCount                 Number of doubles in @p contextBuffer.
+     * @param actionOutputBuffer           Pointer to the action output array (JVM-owned).
+     * @param actionOutputCount            Number of doubles in @p actionOutputBuffer.
      * @return 0 on success, -1 on invalid arguments.
      */
     __declspec(dllexport) int spartan_register_model(
             const uint64_t agentIdentifier,
-            ModelHyperparameterConfig* hyperparameterConfig,
+            void* opaqueHyperparameterConfig,
             double* criticWeightsBuffer,
             const int32_t criticWeightsCount,
             double* modelWeightsBuffer,
@@ -101,8 +100,8 @@ extern "C" {
             double* actionOutputBuffer,
             const int32_t actionOutputCount) {
 
-        if (hyperparameterConfig == nullptr) {
-            SpartanEngine::logError("spartan_register_model: hyperparameterConfig is null.");
+        if (opaqueHyperparameterConfig == nullptr) {
+            SpartanEngine::logError("spartan_register_model: opaqueHyperparameterConfig is null.");
             return -1;
         }
         if (criticWeightsBuffer == nullptr || criticWeightsCount <= 0) {
@@ -123,13 +122,13 @@ extern "C" {
         }
 
         engine.registerAgent(agentIdentifier,
-                             hyperparameterConfig,
+                             opaqueHyperparameterConfig,
                              criticWeightsBuffer,
                              criticWeightsCount,
                              modelWeightsBuffer,
                              modelWeightsCount,
-                                contextBuffer,
-                                    contextCount,
+                             contextBuffer,
+                             contextCount,
                              actionOutputBuffer,
                              actionOutputCount);
         return 0;
@@ -162,6 +161,15 @@ extern "C" {
 
         engine.tickAllAgents(globalRewardsBuffer, globalRewardsCount);
         return 0;
+    }
+
+
+    __declspec(dllexport) void updateContextPointer(const uint64_t agentIdentifier, double* newPointer, const int newCapacity) {
+        if (newPointer == nullptr || newCapacity <= 0) {
+            SpartanEngine::logError("updateContextPointer: invalid new pointer or capacity.");
+            return;
+        }
+        engine.updateContextPointer(agentIdentifier, newPointer, newCapacity);
     }
 
 }

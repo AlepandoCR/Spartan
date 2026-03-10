@@ -7,37 +7,43 @@
 #include <vector>
 #include <execution>
 #include <algorithm>
+#include <format>
 #include <ranges>
 
-#include "internal/machinelearning/model/SpartanBaseModel.h"
+#include "internal/logging/SpartanLogger.h"
+#include "internal/machinelearning/model/SpartanModel.h"
 
 namespace org::spartan::internal::machinelearning {
 
-    void SpartanModelRegistry::registerModel(std::unique_ptr<SpartanBaseModel> model) {
+    void SpartanModelRegistry::registerModel(std::unique_ptr<SpartanModel> model) {
         std::lock_guard lock(registryMutex_);
-        activeModels_[model->getId()] = std::move(model);
+        activeModels_[model->getIdentifier()] = std::move(model);
     }
 
     void SpartanModelRegistry::unregisterModel(const uint64_t agentIdentifier) {
         std::lock_guard lock(registryMutex_);
-        activeModels_.erase(agentIdentifier);
+
+        if (const auto iterator = activeModels_.find(agentIdentifier); iterator != activeModels_.end()) {
+            iterator->second->unbind();
+            idleModels_.push_back(std::move(iterator->second));
+            activeModels_.erase(iterator);
+        }
     }
 
     void SpartanModelRegistry::tickAll() {
         std::lock_guard lock(registryMutex_);
 
-        // Extract raw pointers for iteration
-        std::vector<SpartanBaseModel*> modelsToTick;
+        // the map structure; each model's processTick() is thread-safe by contract
+        std::vector<SpartanModel*> modelsToTick;
         modelsToTick.reserve(activeModels_.size());
-        for (auto &val: activeModels_ | std::views::values) {
-            modelsToTick.push_back(val.get());
+        for (auto& modelEntry : activeModels_ | std::views::values) {
+            modelsToTick.push_back(modelEntry.get());
         }
 
-        // use parallel execution policy to process all models concurrently
+        // Single virtual call per model  -  Frontier A overhead is O(1) per agent.
         std::for_each(std::execution::par, modelsToTick.begin(), modelsToTick.end(),
-            [&](SpartanBaseModel* model) {
-                // TODO: calc the correct slice of the global state and reward buffers for this model based on its agentId and hyperparameters
-                // model->tick;
+            [](SpartanModel* model) {
+                model->processTick();
             });
     }
 
@@ -46,7 +52,7 @@ namespace org::spartan::internal::machinelearning {
         return !idleModels_.empty();
     }
 
-    std::unique_ptr<SpartanBaseModel> SpartanModelRegistry::getIdleModelToRebind() noexcept {
+    std::unique_ptr<SpartanModel> SpartanModelRegistry::getIdleModelToRebind() noexcept {
         std::lock_guard lock(registryMutex_);
 
         if (idleModels_.empty()) {
@@ -59,5 +65,20 @@ namespace org::spartan::internal::machinelearning {
         return model;
     }
 
+    void SpartanModelRegistry::updateModelContext(const uint64_t agentIdentifier, const std::span<const double> newPtr) {
+        std::lock_guard lock(registryMutex_);
 
-} // namespace org::spartan::core::machinelearning
+        bool foundModel = false;
+
+        if (const auto it = activeModels_.find(agentIdentifier); it != activeModels_.end()) {
+            foundModel = true;
+            it->second->setContextBuffer(newPtr);
+        }
+
+        if (!foundModel) {
+            logging::SpartanLogger::error(std::format("Failed to update context pointer: No active model found for agent ID {}", agentIdentifier));
+        }
+    }
+
+
+}
