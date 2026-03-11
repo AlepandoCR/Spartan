@@ -3,29 +3,30 @@
 //
 
 #include "SpartanReinforcement.h"
-
-#include <immintrin.h>
+#include "../../simd/SpartanSimd.h"
 
 namespace org::spartan::internal::math::reinforcement {
 
+    using namespace org::spartan::internal::math::simd;
+
     void GradientOps::applyRemorseUpdate(double* weights, const double* features, const double remorse, const double learningRate, const int arrayLength) {
 
-        // pre multiply the remorse and learning rate to save some cycles in the loop
+        // Pre-multiply the remorse and learning rate to save some cycles in the loop
         const double adjustmentFactor = learningRate * remorse;
-        const __m256d simdAdjustmentFactor = _mm256_set1_pd(adjustmentFactor);
+        const SimdFloat simdAdjustmentFactor = simdBroadcast(adjustmentFactor);
 
         int elementIndex = 0;
-        for (; elementIndex <= arrayLength - 4; elementIndex += 4) {
-            const __m256d currentWeights = _mm256_loadu_pd(&weights[elementIndex]);
-            const __m256d currentFeatures = _mm256_loadu_pd(&features[elementIndex]);
+        for (; elementIndex <= arrayLength - simdLaneCount; elementIndex += simdLaneCount) {
+            const SimdFloat currentWeights = simdLoad(&weights[elementIndex]);
+            const SimdFloat currentFeatures = simdLoad(&features[elementIndex]);
 
             // weightDelta = adjustmentFactor * features
-            const __m256d weightDelta = _mm256_mul_pd(simdAdjustmentFactor, currentFeatures);
+            const SimdFloat weightDelta = simdMultiply(simdAdjustmentFactor, currentFeatures);
 
             // updatedWeights = currentWeights + weightDelta
-            const __m256d updatedWeights = _mm256_add_pd(currentWeights, weightDelta);
+            const SimdFloat updatedWeights = simdAdd(currentWeights, weightDelta);
 
-            _mm256_storeu_pd(&weights[elementIndex], updatedWeights);
+            simdStore(&weights[elementIndex], updatedWeights);
         }
 
         for (; elementIndex < arrayLength; ++elementIndex) {

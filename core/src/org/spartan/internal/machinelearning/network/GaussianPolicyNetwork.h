@@ -58,15 +58,22 @@ namespace org::spartan::internal::machinelearning {
          * @param observationState   Read-only span over the current state vector.
          * @param actionMeanOutput   Writable span where the action means are stored.
          * @param actionLogStdOutput Writable span where the log-std values are stored.
+         * @param additionalArgs     Dynamic buffers and configs passed from the agent.
          */
+        template <typename... AdditionalArgs>
         void computePolicyOutput(
                 const std::span<const double> observationState,
                 const std::span<double> actionMeanOutput,
-                const std::span<double> actionLogStdOutput) const {
+                const std::span<double> actionLogStdOutput,
+                AdditionalArgs&&... additionalArgs) const {
+
             static_cast<const DerivedPolicy*>(this)
-                ->computePolicyOutputImpl(observationState,
-                                          actionMeanOutput,
-                                          actionLogStdOutput);
+                ->computePolicyOutputImpl(
+                    observationState,
+                    actionMeanOutput,
+                    actionLogStdOutput,
+                    std::forward<AdditionalArgs>(additionalArgs)...
+                );
         }
 
         /**
@@ -80,6 +87,12 @@ namespace org::spartan::internal::machinelearning {
             policyWeights_ = newPolicyWeights;
             policyBiases_ = newPolicyBiases;
         }
+
+        /** @brief Returns a mutable span over the policy weights for optimizer updates. */
+        [[nodiscard]] std::span<double> getPolicyWeights() noexcept { return policyWeights_; }
+
+        /** @brief Returns a mutable span over the policy biases for optimizer updates. */
+        [[nodiscard]] std::span<double> getPolicyBiases() noexcept { return policyBiases_; }
 
     protected:
         std::span<double> policyWeights_;

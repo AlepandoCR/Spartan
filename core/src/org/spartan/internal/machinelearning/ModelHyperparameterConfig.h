@@ -23,6 +23,51 @@
 
 extern "C" {
 
+    /** @brief Maximum number of nested AutoEncoder slots per agent. */
+    constexpr int32_t SPARTAN_MAX_NESTED_ENCODER_SLOTS = 16;
+
+    //
+    //  Nested Encoder Slot Descriptor  -  used inside agent configs
+    //
+
+    /**
+     * @struct NestedEncoderSlotDescriptor
+     * @brief Describes where a single nested AutoEncoder reads from the context buffer.
+     *
+     * Java populates an array of these descriptors contiguously inside the
+     * agent's hyperparameter config.  C++ reads them during construction to
+     * build the internal encoder bank.  Pure POD, Standard Layout.
+     */
+    struct NestedEncoderSlotDescriptor {
+
+        /** @brief Zero-based index into the context buffer where this encoder's input slice begins. */
+        int32_t contextSliceStartIndex;
+
+        /** @brief Number of double-precision elements this encoder reads from the context. */
+        int32_t contextSliceElementCount;
+
+        /** @brief Dimensionality of the compressed latent output vector. */
+        int32_t latentDimensionSize;
+
+        /** @brief Number of hidden neurons in the encoder's dense layer. */
+        int32_t hiddenNeuronCount;
+    };
+
+    /**
+     * @enum SpartanModelType
+     * @brief Discriminator identifying which model family a config belongs to.
+     *
+     * Java sets this as the first field of every config struct so that the
+     * C++ registration logic can determine which concrete model to construct
+     * without inspecting the full struct layout.
+     */
+    enum SpartanModelType : int32_t {
+        SPARTAN_MODEL_TYPE_DEFAULT                       = 0,
+        SPARTAN_MODEL_TYPE_RECURRENT_SOFT_ACTOR_CRITIC   = 1,
+        SPARTAN_MODEL_TYPE_DOUBLE_DEEP_Q_NETWORK         = 2,
+        SPARTAN_MODEL_TYPE_AUTO_ENCODER_COMPRESSOR       = 3,
+    };
+
     //
     //  Base Configuration  -  shared by every model type
     //
@@ -35,6 +80,16 @@ extern "C" {
      * that Java only needs to lay out a single contiguous @c MemorySegment.
      */
     struct BaseHyperparameterConfig {
+
+        /**
+         * @brief Discriminator identifying the concrete model family.
+         *
+         * This MUST be the first field in every config struct (by virtue of
+         * composition) so that the engine can read it via a simple
+         * @c static_cast<BaseHyperparameterConfig*>(opaquePtr)->modelTypeIdentifier
+         * without knowing the full struct type.
+         */
+        int32_t modelTypeIdentifier;
 
         /** @brief Step size for gradient descent updates. Typical range: [1e-5, 1e-1]. */
         double learningRate;
@@ -68,9 +123,6 @@ extern "C" {
     /**
      * @struct RecurrentSoftActorCriticHyperparameterConfig
      * @brief Extended config for the Recurrent SAC model family.
-     *
-     * Contains the base config by composition, plus parameters for the
-     * GRU recurrent layer, dual Soft Q-Networks, and entropy tuning.
      */
     struct RecurrentSoftActorCriticHyperparameterConfig {
 
@@ -80,26 +132,51 @@ extern "C" {
         /** @brief Dimensionality of the GRU hidden state vector. */
         int32_t hiddenStateSize;
 
-        /** @brief Soft target-network update coefficient (Polyak averaging). Range: [0.001, 0.05]. */
+        /** @brief Number of recurrent layers stacked in the GRU. */
+        int32_t recurrentLayerDepth;
+
+        /** @brief Number of neurons in the dense layers of the Actor. */
+        int32_t actorHiddenLayerNeuronCount;
+
+        /** @brief Number of dense layers in the Actor after the GRU. */
+        int32_t actorHiddenLayerCount;
+
+        /** @brief Number of neurons in the dense layers of the Critics. */
+        int32_t criticHiddenLayerNeuronCount;
+
+        /** @brief Number of dense layers in the Critics. */
+        int32_t criticHiddenLayerCount;
+
+        /** @brief Soft target-network update coefficient. */
         double targetSmoothingCoefficient;
 
-        /** @brief Weight for the entropy bonus in the SAC objective. Auto-tuned when negative. */
+        /** @brief Weight for the entropy bonus. */
         double entropyTemperatureAlpha;
 
-        /** @brief Learning rate for the first Soft Q-Network critic. */
+        /** @brief Learning rates for the different networks. */
         double firstCriticLearningRate;
-
-        /** @brief Learning rate for the second Soft Q-Network critic. */
         double secondCriticLearningRate;
-
-        /** @brief Learning rate for the Gaussian policy (actor) network. */
         double policyNetworkLearningRate;
 
         /** @brief Number of input features fed into the GRU layer. */
         int32_t recurrentInputFeatureCount;
 
-        /** @brief Number of recurrent layers stacked in the GRU. */
-        int32_t recurrentLayerDepth;
+        /** @brief Number of nested AutoEncoder compressors owned by this agent. Zero if none. */
+        int32_t nestedEncoderCount;
+
+        /** @brief Maximum number of ticks the Remorse Trace ring buffer can store. */
+        int32_t remorseTraceBufferCapacity;
+
+        /** @brief Minimum cosine similarity threshold for blame assignment. Range: [0.0, 1.0]. */
+        double remorseMinimumSimilarityThreshold;
+
+        /**
+         * @brief Descriptors for each nested encoder slot.
+         *
+         * Java lays these out contiguously. C++ reads nestedEncoderCount entries.
+         * Unused slots beyond nestedEncoderCount are ignored.
+         */
+        NestedEncoderSlotDescriptor encoderSlots[SPARTAN_MAX_NESTED_ENCODER_SLOTS];
     };
 
     //

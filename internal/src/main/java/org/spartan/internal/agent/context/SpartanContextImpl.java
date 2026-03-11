@@ -3,6 +3,8 @@ package org.spartan.internal.agent.context;
 import org.jetbrains.annotations.NotNull;
 import org.spartan.api.agent.context.SpartanContext;
 import org.spartan.api.agent.context.element.SpartanContextElement;
+import org.spartan.api.agent.context.element.variable.SpartanVariableContextElement;
+import org.spartan.internal.bridge.SpartanNative;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -14,11 +16,23 @@ import java.util.concurrent.ConcurrentHashMap;
  * Implementation of SpartanContext using MemorySegment for shared memory with native code.
  * The data is stored in a MemorySegment that C++ can directly read/write.
  * Elements are ordered by index to ensure consistent data order for model training.
+ * <p>
+ * Memory Architecture:
+ * <ul>
+ *   <li>{@code dataSegment}: Contiguous buffer of doubles - flattened element data</li>
+ *   <li>{@code cleanSizesSegment}: Int array for variable element sizes (dynamic slicing)</li>
+ *   <li>{@code agentIdSegment}: Cached agent identifier for native calls</li>
+ *   <li>{@code slotCountSegment}: Cached variable element count for native calls</li>
+ * </ul>
+ * <p>
+ * Zero-GC Hot Path: The {@link #update()} method is designed to run at high frequency
+ * without allocating objects. All iteration uses pre-cached arrays indexed by position.
  */
 public class SpartanContextImpl implements SpartanContext {
 
     private static final int DEFAULT_INITIAL_CAPACITY = 128;
     private static final ValueLayout.OfDouble DOUBLE_LAYOUT = ValueLayout.JAVA_DOUBLE;
+    private static final ValueLayout.OfInt INT_LAYOUT = ValueLayout.JAVA_INT;
 
     private final Map<Class<? extends SpartanContextElement>, Collection<SpartanContextElement>> elementsByType;
     private final Map<String, Collection<SpartanContextElement>> elementsByIdentifier;
@@ -26,9 +40,57 @@ public class SpartanContextImpl implements SpartanContext {
     private final String identifier;
     private final Arena arena;
 
+    // Primary data buffer (doubles for context data)
     private MemorySegment dataSegment;
     private int capacity;
     private int validDataSize = 0;
+
+    // Dynamic Slicing Support
+    // These fields support variable-length element sizes communicated to C++
+
+    /**
+     * Buffer holding the "clean" (valid) size of each variable element.
+     * Layout: [size0, size1, size2, ...] where each entry is an int (4 bytes).
+     * C++ uses this to know how many valid doubles exist in each variable slice.
+     */
+    private MemorySegment cleanSizesSegment;
+
+    /**
+     * Cached agent identifier segment for native calls.
+     * Allocated once, reused every update to avoid allocation in hot path.
+     */
+    private MemorySegment agentIdSegment;
+
+    /**
+     * Cached slot count segment for spartanUpdateCleanSizes.
+     * Holds the number of variable elements in this context.
+     */
+    private MemorySegment slotCountSegment;
+
+    // ==================== Zero-GC Caches ====================
+    // Pre-allocated arrays to avoid iterator/object allocation in update()
+
+    /**
+     * Cached array of all elements in index order.
+     * Rebuilt only when elements are added/removed (structural modification).
+     */
+    private SpartanContextElement[] elementsCache;
+
+    /**
+     * Cached array of variable elements only (for clean sizes update).
+     * Indices correspond to cleanSizesSegment slots.
+     */
+    private SpartanVariableContextElement[] variableElementsCache;
+
+    /**
+     * Number of variable elements (length of variableElementsCache).
+     */
+    private int variableElementCount = 0;
+
+    /**
+     * Flag indicating the element caches need rebuilding.
+     */
+    private boolean cachesDirty = true;
 
     public SpartanContextImpl(@NotNull String identifier, @NotNull Arena arena) {
         this(identifier, arena, DEFAULT_INITIAL_CAPACITY);
@@ -42,8 +104,11 @@ public class SpartanContextImpl implements SpartanContext {
         this.elementsByType = new ConcurrentHashMap<>();
         this.elementsByIndex = new TreeMap<>();
 
-        // Allocate initial MemorySegment
+        // Allocate initial data segment
         this.dataSegment = arena.allocate(DOUBLE_LAYOUT, capacity);
+
+        // Allocate agent ID segment (reused for all native calls)
+        this.agentIdSegment = arena.allocateFrom(identifier);
     }
 
     @Override
@@ -76,19 +141,45 @@ public class SpartanContextImpl implements SpartanContext {
         return result;
     }
 
+    /**
+     * Updates all elements and flattens their data into the shared dataSegment.
+     * <p>
+     * Algorithm:
+     * <ol>
+     *   <li>Rebuild caches if structural modifications occurred</li>
+     *   <li>Call update() on each element (computes new data)</li>
+     *   <li>Calculate total valid size from all elements</li>
+     *   <li>Ensure dataSegment has sufficient capacity</li>
+     *   <li>Copy each element's data into dataSegment at correct offset</li>
+     *   <li>Write variable element sizes to cleanSizesSegment</li>
+     * </ol>
+     * <p>
+     * Zero-GC: Uses pre-cached arrays with indexed loops. No iterators, no boxing,
+     * no intermediate allocations. Safe to call 20+ times per second per agent.
+     */
     @Override
     public void update() {
+        // Rebuild caches if elements were added/removed
+        if (cachesDirty) {
+            rebuildCaches();
+        }
+
+        // Update all elements and calculate total size
         int totalValidSize = 0;
-        // TreeMap guarantees iteration in key (index) order
-        for (SpartanContextElement element : elementsByIndex.values()) {
+        final int elementCount = elementsCache.length;
+        for (SpartanContextElement element : elementsCache) {
             element.update();
             totalValidSize += element.getSize();
         }
 
+        //Ensure buffer capacity
         ensureCapacity(totalValidSize);
 
+        // Copy element data into dataSegment (contiguous layout)
+        // Offset is in BYTES for MemorySegment.copy
         long offsetBytes = 0;
-        for (SpartanContextElement element : elementsByIndex.values()) {
+        for (int i = 0; i < elementCount; i++) {
+            SpartanContextElement element = elementsCache[i];
             double[] elementData = element.getData();
             int validSize = element.getSize();
 
@@ -104,6 +195,75 @@ public class SpartanContextImpl implements SpartanContext {
         }
 
         validDataSize = totalValidSize;
+
+        // Update clean sizes for variable elements
+        // This tells C++ how many valid values each variable slot contains
+        if (variableElementCount > 0) {
+            for (int i = 0; i < variableElementCount; i++) {
+                int size = variableElementsCache[i].getSize();
+                cleanSizesSegment.setAtIndex(INT_LAYOUT, i, size);
+            }
+        }
+    }
+
+    /**
+     * Synchronizes the clean sizes buffer with the native engine.
+     * Call this after {@link #update()} when the agent is registered with C++.
+     * <p>
+     * This communicates the valid data sizes for each variable element slot,
+     * allowing C++ to process only the meaningful portion of variable-length arrays.
+     *
+     * @param agentIdentifier the unique identifier for this agent in the native registry
+     */
+    public void syncCleanSizes(long agentIdentifier) {
+        if (variableElementCount == 0) {
+            return; // No variable elements, nothing to sync
+        }
+
+        // Update the cached agent ID segment if needed
+        // Note: For string-based identifiers, we use the pre-allocated agentIdSegment
+        SpartanNative.spartanUpdateCleanSizes(agentIdSegment, cleanSizesSegment, slotCountSegment);
+    }
+
+    /**
+     * Rebuilds the element caches from the TreeMap.
+     * Called only when elements are added/removed (not on every update).
+     */
+    private void rebuildCaches() {
+        // Count total elements and variable elements
+        int totalCount = elementsByIndex.size();
+        int varCount = 0;
+
+        // First pass: count variable elements
+        for (SpartanContextElement element : elementsByIndex.values()) {
+            if (element instanceof SpartanVariableContextElement) {
+                varCount++;
+            }
+        }
+
+        // Allocate/reallocate caches
+        elementsCache = new SpartanContextElement[totalCount];
+        variableElementsCache = new SpartanVariableContextElement[varCount];
+        variableElementCount = varCount;
+
+        // Second pass: populate caches
+        int elementIdx = 0;
+        int varIdx = 0;
+        for (SpartanContextElement element : elementsByIndex.values()) {
+            elementsCache[elementIdx++] = element;
+            if (element instanceof SpartanVariableContextElement varElement) {
+                variableElementsCache[varIdx++] = varElement;
+            }
+        }
+
+        // Allocate/reallocate cleanSizesSegment if variable element count changed
+        if (varCount > 0) {
+            cleanSizesSegment = arena.allocate(INT_LAYOUT, varCount);
+            slotCountSegment = arena.allocate(INT_LAYOUT);
+            slotCountSegment.set(INT_LAYOUT, 0, varCount);
+        }
+
+        cachesDirty = false;
     }
 
     private void ensureCapacity(int requiredCapacity) {
@@ -124,12 +284,13 @@ public class SpartanContextImpl implements SpartanContext {
     }
 
     @Override
-    public void     addElement(@NotNull SpartanContextElement element, int index) {
+    public void addElement(@NotNull SpartanContextElement element, int index) {
         if (elementsByIndex.containsKey(index)) {
             throw new IllegalArgumentException("Element already exists at index " + index);
         }
 
         elementsByIndex.put(index, element);
+        cachesDirty = true; // Mark caches for rebuild
 
         // Register by identifier
         elementsByIdentifier
@@ -156,6 +317,7 @@ public class SpartanContextImpl implements SpartanContext {
         }
         if (indexToRemove != null) {
             elementsByIndex.remove(indexToRemove);
+            cachesDirty = true; // Mark caches for rebuild
         }
 
         // Remove from identifier map

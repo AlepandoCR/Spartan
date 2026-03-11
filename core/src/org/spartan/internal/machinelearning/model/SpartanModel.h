@@ -68,6 +68,20 @@ namespace org::spartan::internal::machinelearning {
         }
 
         /**
+         * @brief Updates the clean sizes buffer for dynamic context slicing.
+         *
+         * Java writes one int32_t per nested encoder slot, indicating the actual
+         * number of valid (non-padding) elements that were populated this tick.
+         * Models that use nested encoders read this buffer to create clean views
+         * over only the valid portion of each variable-length context slice.
+         *
+         * @param newCleanSizesBuffer Read-only span over the JVM-owned clean sizes array.
+         */
+        void setCleanSizesBuffer(const std::span<const int32_t> newCleanSizesBuffer) {
+            cleanSizesBuffer_ = newCleanSizesBuffer;
+        }
+
+        /**
          * @brief Rebinds every Java Virtual Machine-owned buffer to a new set of pointers.
          *
          * The config pointer is @c void* because each concrete model type
@@ -108,6 +122,11 @@ namespace org::spartan::internal::machinelearning {
         /** @brief Returns the unique agent identifier bound to this model. */
         [[nodiscard]] uint64_t getIdentifier() const noexcept { return agentIdentifier_; }
 
+        /** @brief Returns a read-only view of the model's weight buffer for persistence. */
+        [[nodiscard]] std::span<const double> getModelWeights() const noexcept {
+            return {modelWeights_.data(), modelWeights_.size()};
+        }
+
     protected:
         /**
          * @brief Protected constructor  -  only concrete subclasses can instantiate.
@@ -141,6 +160,9 @@ namespace org::spartan::internal::machinelearning {
         std::span<double> modelWeights_;
         std::span<const double> contextBuffer_;
         std::span<double> actionOutputBuffer_;
+
+        /** @brief Per-encoder clean element counts for dynamic context slicing (JVM-owned). */
+        std::span<const int32_t> cleanSizesBuffer_;
     };
 
 }

@@ -61,13 +61,22 @@ namespace org::spartan::internal::machinelearning {
         SpartanAbstractCritic& operator=(SpartanAbstractCritic&&) noexcept = default;
 
         /**
-         * @brief Estimates the value of the given state via static dispatch.
-         *
-         * @param observationState A read-only span over the current observation vector.
-         * @return The estimated scalar value V(state).
-         */
-        [[nodiscard]] double evaluate(const std::span<const double> observationState) const {
-            return static_cast<const DerivedCritic*>(this)->evaluateImpl(observationState);
+          * @brief Estimates the value of the given state via static dispatch.
+          *
+          * @param observationState A read-only span over the current observation vector.
+          * @param additionalArgs   Dynamic buffers and configs passed from the agent.
+          * @return The estimated scalar value V(state).
+          */
+        template <typename... AdditionalArgs>
+        [[nodiscard]] double evaluate(
+                const std::span<const double> observationState,
+                AdditionalArgs&&... additionalArgs) const {
+
+            return static_cast<const DerivedCritic*>(this)
+                ->evaluateImpl(
+                    observationState,
+                    std::forward<AdditionalArgs>(additionalArgs)...
+                );
         }
 
         /**

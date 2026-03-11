@@ -56,9 +56,30 @@ namespace org::spartan::internal::machinelearning {
         void unregisterModel(uint64_t agentIdentifier);
 
         /**
-         * @brief processes all agents in parallel.
+         * @brief Processes all agents in parallel.
          */
         void tickAll();
+
+        /**
+         * @brief Distributes global reward signals to agents that support learning.
+         *
+         * Iterates over all active models. For each model that is a SpartanAgent,
+         * calls applyReward with the corresponding element from the rewards buffer.
+         * The rewards buffer is indexed by insertion order. Models that are not
+         * agents (e.g., compressors) are silently skipped.
+         *
+         * @param globalRewardsBuffer Read-only span over the JVM-owned reward array.
+         */
+        void applyGlobalRewards(std::span<const double> globalRewardsBuffer);
+
+        /**
+         * @brief Saves a model's weights to a .spartan binary file.
+         *
+         * @param agentIdentifier  The unique ID of the model to save.
+         * @param filePath         Null-terminated path to the output file.
+         * @return True on success, false if the model was not found or I/O failed.
+         */
+        bool saveModelToFile(uint64_t agentIdentifier, const char* filePath);
 
         /**
          * @brief Checks if there are any models in the idle pool ready for recycling.
@@ -74,6 +95,14 @@ namespace org::spartan::internal::machinelearning {
         [[nodiscard]] std::unique_ptr<SpartanModel> getIdleModelToRebind() noexcept;
 
         void updateModelContext(uint64_t agentIdentifier, std::span<const double> newPtr);
+
+        /**
+         * @brief Updates the clean sizes buffer for an agent's variable-length encoder slots.
+         *
+         * @param agentIdentifier   The unique ID of the agent.
+         * @param cleanSizesBuffer  Read-only span over the JVM-owned int32_t array.
+         */
+        void updateModelCleanSizes(uint64_t agentIdentifier, std::span<const int32_t> cleanSizesBuffer);
     private:
         /** @brief Guards concurrent access to the model map. */
         mutable std::mutex registryMutex_;

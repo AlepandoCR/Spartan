@@ -8,8 +8,9 @@
  * @namespace org::spartan::internal::math::fuzzy
  * @brief Provides high-performance Zero-Allocation Fuzzy Logic operations.
  *
- * All operations utilize AVX2 (Advanced Vector Extensions) SIMD instructions
- * to process 4 double-precision floats (256 bits) per clock cycle.
+ * All operations utilize the platform SIMD abstraction layer to process
+ * multiple double-precision floats per clock cycle. Automatically selects
+ * AVX2 on x86_64, NEON on ARM64, or a scalar fallback at compile time.
  * Designed to operate directly on raw memory pointers provided by the JVM via FFM.
  */
 namespace org::spartan::internal::math::fuzzy {

@@ -16,7 +16,7 @@
  * persists across ticks without any heap allocation.
  *
  * No vtable, no virtual overhead - the compiler can inline and
- * auto-vectorise the underlying Advanced Vector Extensions gate computations.
+ * auto-vectorize the underlying Advanced Vector Extensions gate computations.
  *
  * @tparam DerivedLayer The concrete Gated Recurrent Unit layer class.
  */
@@ -61,19 +61,23 @@ namespace org::spartan::internal::machinelearning {
         GatedRecurrentUnitLayer& operator=(GatedRecurrentUnitLayer&&) noexcept = default;
 
         /**
-         * @brief Executes one Gated Recurrent Unit time-step via static dispatch.
-         *
-         * Reads @p inputVector and the current hidden state, computes the
-         * update/reset/candidate gates, and writes the new hidden state
-         * back into @c hiddenStateBuffer_ (in-place, zero-copy to Java).
-         *
-         * @param inputVector      Read-only span over the input features for this tick.
-         * @param hiddenStateInOut Writable span over the hidden state  -  updated in-place.
-         */
+          * @brief Executes the recurrent forward pass via static dispatch.
+          *
+          * @param inputVector      Read-only span over the current input.
+          * @param hiddenStateInOut Writable span over the hidden state - updated in-place.
+          * @param additionalArgs   Dynamic buffers and configs passed from the agent.
+          */
+        template <typename... AdditionalArgs>
         void forwardPass(const std::span<const double> inputVector,
-                         const std::span<double> hiddenStateInOut) const {
+                         const std::span<double> hiddenStateInOut,
+                         AdditionalArgs&&... additionalArgs) const {
+
             static_cast<const DerivedLayer*>(this)
-                ->forwardPassImpl(inputVector, hiddenStateInOut);
+                ->forwardPassImpl(
+                    inputVector,
+                    hiddenStateInOut,
+                    std::forward<AdditionalArgs>(additionalArgs)...
+                );
         }
 
         /**
@@ -98,6 +102,16 @@ namespace org::spartan::internal::machinelearning {
             gateWeights_ = newGateWeights;
             gateBiases_ = newGateBiases;
             hiddenStateBuffer_ = newHiddenStateBuffer;
+        }
+
+        /** @brief Returns a read-only view of the current hidden state for downstream consumers. */
+        [[nodiscard]] std::span<const double> getHiddenState() const noexcept {
+            return hiddenStateBuffer_;
+        }
+
+        /** @brief Returns a mutable span over the hidden state buffer. */
+        [[nodiscard]] std::span<double> getMutableHiddenState() noexcept {
+            return hiddenStateBuffer_;
         }
 
     protected:

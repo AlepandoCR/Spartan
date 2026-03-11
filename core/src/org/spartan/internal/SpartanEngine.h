@@ -124,6 +124,34 @@ namespace org::spartan::internal {
 
         void updateContextPointer(uint64_t agentIdentifier, double* newPointer, int newCapacity);
 
+        /**
+         * @brief Updates the clean sizes buffer for an agent's variable-length encoder slots.
+         *
+         * @param agentIdentifier   The unique ID of the agent.
+         * @param cleanSizesBuffer  Pointer to the JVM-owned int32_t array.
+         * @param slotCount         Number of entries.
+         */
+        void updateCleanSizes(uint64_t agentIdentifier, const int32_t* cleanSizesBuffer, int32_t slotCount);
+
+        /**
+         * @brief Saves a model's complete state to a .spartan binary file.
+         *
+         * @param agentIdentifier  The unique identifier of the model to save.
+         * @param filePath         Null-terminated path to the output file.
+         * @return True on success, false on failure.
+         */
+        bool saveModel(uint64_t agentIdentifier, const char* filePath);
+
+        /**
+         * @brief Loads model weights from a .spartan binary file into a pre-allocated buffer.
+         *
+         * @param filePath             Null-terminated path to the input .spartan file.
+         * @param targetWeightBuffer   Pointer to the JVM-owned weight buffer to populate.
+         * @param targetWeightCount    Number of doubles in the target buffer.
+         * @return True on success and CRC-32 validation, false otherwise.
+         */
+        static bool loadModel(const char* filePath, double* targetWeightBuffer, int32_t targetWeightCount);
+
     private:
         /** @brief The model registry owned by this engine instance. */
         machinelearning::SpartanModelRegistry modelRegistry_;

@@ -172,4 +172,26 @@ extern "C" {
         engine.updateContextPointer(agentIdentifier, newPointer, newCapacity);
     }
 
+    /**
+     * @brief Updates the clean sizes buffer for an active agent's variable-length context slices.
+     *
+     * Java writes one int32_t per nested encoder slot, indicating how many
+     * elements in that slot are valid (non-padding) this tick. The C++ side
+     * uses these sizes to create clean views that ignore dirty padding.
+     *
+     * @param agentIdentifier  The unique ID of the agent.
+     * @param cleanSizesBuffer Pointer to the JVM-owned int32_t array.
+     * @param slotCount        Number of int32_t entries in the buffer.
+     */
+    __declspec(dllexport) void spartan_update_clean_sizes(
+            const uint64_t agentIdentifier,
+            const int32_t* cleanSizesBuffer,
+            const int32_t slotCount) {
+        if (cleanSizesBuffer == nullptr || slotCount <= 0) {
+            SpartanEngine::logError("spartan_update_clean_sizes: invalid buffer or count.");
+            return;
+        }
+        engine.updateCleanSizes(agentIdentifier, cleanSizesBuffer, slotCount);
+    }
+
 }

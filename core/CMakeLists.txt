@@ -81,6 +81,18 @@ add_library(spartan_core SHARED
         ${ML_PATH}/network/ContinuousQNetwork.h
         ${ML_PATH}/network/GaussianPolicyNetwork.h
         ${ML_PATH}/network/GatedRecurrentUnitLayer.h
+        ${ML_PATH}/network/NestedAutoEncoderUnit.h
+
+        # --- Machine Learning: Temporal Credit Assignment ---
+        ${ML_PATH}/trace/RemorseTraceBuffer.h
+        ${ML_PATH}/trace/RemorseTraceBuffer.cpp
+
+        # --- Machine Learning: Experience Replay ---
+        ${ML_PATH}/replay/ExperienceReplayBuffer.h
+
+        # --- Machine Learning: Persistence ---
+        ${ML_PATH}/persistence/SpartanPersistence.h
+        ${ML_PATH}/persistence/SpartanPersistence.cpp
 
         # --- Machine Learning: Model Hierarchy (Frontier A) ---
         ${ML_PATH}/model/SpartanModel.h
@@ -99,6 +111,9 @@ add_library(spartan_core SHARED
         # --- Machine Learning: Registry ---
         ${ML_PATH}/registry/SpartanModelRegistry.h
         ${ML_PATH}/registry/SpartanModelRegistry.cpp
+        src/org/spartan/internal/math/tensor/SpartanTensorMath.h
+        src/org/spartan/internal/math/tensor/SpartanTensorMath.cpp
+        src/org/spartan/internal/simd/SpartanSimd.h
 )
 
 # --- target libraries ---

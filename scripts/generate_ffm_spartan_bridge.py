@@ -23,13 +23,13 @@ def parse_args():
     parser.add_argument(
         "--cpp-source",
         type=Path,
-        default=Path("src/org/spartan/api/SpartanApi.cpp"),
+        default=Path("../core/src/org/spartan/api/SpartanApi.cpp"),
         help="Path to C++ source file"
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("../internal/src/main/java/org/spartan/core/bridge"),
+        default=Path("../internal/src/main/java/org/spartan/internal/bridge"),
         help="Output directory for generated Java files"
     )
     parser.add_argument(

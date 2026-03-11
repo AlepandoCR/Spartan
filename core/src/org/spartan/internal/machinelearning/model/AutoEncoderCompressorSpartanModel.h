@@ -6,6 +6,7 @@
 
 #include <span>
 #include <cstdint>
+#include <vector>
 
 #include "SpartanCompressor.h"
 #include "../ModelHyperparameterConfig.h"
@@ -86,6 +87,62 @@ namespace org::spartan::internal::machinelearning {
 
         /** @brief Cached reconstruction loss from the last training tick. */
         double lastReconstructionLoss_ = 0.0;
+
+        /** @brief Training step counter for Adam bias correction. */
+        int32_t trainingStepCounter_ = 0;
+
+        // Pre-allocated scratchpads for forward/backward pass (allocated once in constructor)
+
+        /** @brief Encoder hidden layer activation buffer. */
+        std::vector<double> encoderHiddenActivation_;
+
+        /** @brief Decoder hidden layer activation buffer. */
+        std::vector<double> decoderHiddenActivation_;
+
+        /** @brief Reconstructed output buffer (compared against contextBuffer_ for loss). */
+        std::vector<double> reconstructionBuffer_;
+
+        // Gradient scratchpads for backpropagation
+
+        /** @brief MSE gradient at the reconstruction output layer. */
+        std::vector<double> reconstructionGradient_;
+
+        /** @brief Weight gradients for all encoder weights. */
+        std::vector<double> encoderWeightGradients_;
+
+        /** @brief Weight gradients for all decoder weights. */
+        std::vector<double> decoderWeightGradients_;
+
+        /** @brief Bias gradients for the encoder (one per encoder bias element). */
+        std::vector<double> encoderBiasGradients_;
+
+        /** @brief Bias gradients for the decoder (one per decoder bias element). */
+        std::vector<double> decoderBiasGradients_;
+
+        /** @brief Input gradient scratchpad (propagated back through each layer). */
+        std::vector<double> inputGradientScratchpad_;
+
+        // Adam optimizer state for encoder weights and biases
+
+        /** @brief First moment (momentum) for encoder weights. */
+        std::vector<double> encoderWeightMomentum_;
+        /** @brief Second moment (velocity) for encoder weights. */
+        std::vector<double> encoderWeightVelocity_;
+        /** @brief First moment for encoder biases. */
+        std::vector<double> encoderBiasMomentum_;
+        /** @brief Second moment for encoder biases. */
+        std::vector<double> encoderBiasVelocity_;
+
+        // Adam optimizer state for decoder weights and biases
+
+        /** @brief First moment (momentum) for decoder weights. */
+        std::vector<double> decoderWeightMomentum_;
+        /** @brief Second moment (velocity) for decoder weights. */
+        std::vector<double> decoderWeightVelocity_;
+        /** @brief First moment for decoder biases. */
+        std::vector<double> decoderBiasMomentum_;
+        /** @brief Second moment for decoder biases. */
+        std::vector<double> decoderBiasVelocity_;
     };
 
 }

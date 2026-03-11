@@ -13,7 +13,7 @@ class BridgeConfig:
     """Configuration container for the FFM bridge generator."""
 
     # Source paths
-    cpp_source: Path = field(default_factory=lambda: Path("src/org/spartan/api/SpartanApi.cpp"))
+    cpp_source: Path = field(default_factory=lambda: Path("core/src/org/spartan/api/SpartanApi.cpp"))
 
     # Output paths
     java_output: Path = field(default_factory=lambda: Path("../internal/src/main/java/org/spartan/internal/bridge"))
