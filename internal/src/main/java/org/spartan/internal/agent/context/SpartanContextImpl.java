@@ -55,18 +55,6 @@ public class SpartanContextImpl implements SpartanContext {
      */
     private MemorySegment cleanSizesSegment;
 
-    /**
-     * Cached agent identifier segment for native calls.
-     * Allocated once, reused every update to avoid allocation in hot path.
-     */
-    private MemorySegment agentIdSegment;
-
-    /**
-     * Cached slot count segment for spartanUpdateCleanSizes.
-     * Holds the number of variable elements in this context.
-     */
-    private MemorySegment slotCountSegment;
-
     // ==================== Zero-GC Caches ====================
     // Pre-allocated arrays to avoid iterator/object allocation in update()
 
@@ -106,9 +94,6 @@ public class SpartanContextImpl implements SpartanContext {
 
         // Allocate initial data segment
         this.dataSegment = arena.allocate(DOUBLE_LAYOUT, capacity);
-
-        // Allocate agent ID segment (reused for all native calls)
-        this.agentIdSegment = arena.allocateFrom(identifier);
     }
 
     @Override
@@ -220,9 +205,8 @@ public class SpartanContextImpl implements SpartanContext {
             return; // No variable elements, nothing to sync
         }
 
-        // Update the cached agent ID segment if needed
-        // Note: For string-based identifiers, we use the pre-allocated agentIdSegment
-        SpartanNative.spartanUpdateCleanSizes(agentIdSegment, cleanSizesSegment, slotCountSegment);
+        // Pass primitive values directly - no MemorySegment wrapper needed
+        SpartanNative.spartanUpdateCleanSizes(agentIdentifier, cleanSizesSegment, variableElementCount);
     }
 
     /**
@@ -259,8 +243,6 @@ public class SpartanContextImpl implements SpartanContext {
         // Allocate/reallocate cleanSizesSegment if variable element count changed
         if (varCount > 0) {
             cleanSizesSegment = arena.allocate(INT_LAYOUT, varCount);
-            slotCountSegment = arena.allocate(INT_LAYOUT);
-            slotCountSegment.set(INT_LAYOUT, 0, varCount);
         }
 
         cachesDirty = false;

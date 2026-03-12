@@ -61,16 +61,23 @@ namespace org::spartan::internal::machinelearning {
         void tickAll();
 
         /**
-         * @brief Distributes global reward signals to agents that support learning.
+         * @brief Distributes reward signals to specific agents by identifier.
          *
-         * Iterates over all active models. For each model that is a SpartanAgent,
-         * calls applyReward with the corresponding element from the rewards buffer.
-         * The rewards buffer is indexed by insertion order. Models that are not
-         * agents (e.g., compressors) are silently skipped.
+         * Uses parallel arrays of agent identifiers and reward values.
+         * For each pair, the corresponding model is looked up in the registry.
+         * If the model exists and is a SpartanAgent, applyReward is invoked
+         * with the associated reward signal. Non-agent models and unknown
+         * identifiers are silently skipped.
          *
-         * @param globalRewardsBuffer Read-only span over the JVM-owned reward array.
+         * This approach is safe with unordered containers because distribution
+         * is driven by explicit identifier lookup rather than iteration order.
+         *
+         * @param agentIdentifiers Read-only span over the JVM-owned agent ID array.
+         * @param rewardSignals    Read-only span over the JVM-owned reward array.
+         *                         Must have the same length as @p agentIdentifiers.
          */
-        void applyGlobalRewards(std::span<const double> globalRewardsBuffer);
+        void distributeRewardsByIdentifier(std::span<const uint64_t> agentIdentifiers,
+                                           std::span<const double> rewardSignals);
 
         /**
          * @brief Saves a model's weights to a .spartan binary file.
@@ -103,6 +110,30 @@ namespace org::spartan::internal::machinelearning {
          * @param cleanSizesBuffer  Read-only span over the JVM-owned int32_t array.
          */
         void updateModelCleanSizes(uint64_t agentIdentifier, std::span<const int32_t> cleanSizesBuffer);
+
+        /**
+         * @brief Triggers exploration decay for a specific agent.
+         *
+         * Looks up the model by identifier.  If the model is a SpartanAgent,
+         * invokes its decayExploration() method.  Non-agent models and unknown
+         * identifiers are silently skipped.
+         *
+         * @param agentIdentifier The unique ID of the agent.
+         */
+        void decayExplorationForAgent(uint64_t agentIdentifier);
+
+        /**
+         * @brief Applies a reward and executes a single tick for one specific agent.
+         *
+         * Locks the registry for lookup, applies the reward if the model is a
+         * SpartanAgent, then calls processTick().  The JVM guarantees that the
+         * same agent is never ticked concurrently from multiple threads.
+         *
+         * @param agentIdentifier The unique ID of the agent to tick.
+         * @param rewardSignal    The scalar reward to apply before inference.
+         * @return True if the agent was found and ticked, false otherwise.
+         */
+        bool tickSingleAgent(uint64_t agentIdentifier, double rewardSignal);
     private:
         /** @brief Guards concurrent access to the model map. */
         mutable std::mutex registryMutex_;

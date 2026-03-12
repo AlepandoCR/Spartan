@@ -6,7 +6,6 @@
 
 #include <fstream>
 #include <cstring>
-#include <vector>
 
 namespace org::spartan::internal::machinelearning::persistence {
 
@@ -194,22 +193,40 @@ namespace org::spartan::internal::machinelearning::persistence {
             return false;
         }
 
-        // Read and validate the CRC-32 checksum
+        // Read the stored CRC-32 checksum (immediately follows the weight blob)
         uint32_t storedChecksum = 0;
         inputStream.read(reinterpret_cast<char*>(&storedChecksum), sizeof(uint32_t));
 
-        // Rewind and compute CRC over the full payload (header + TOC + weights)
-        const size_t totalPayloadSize =
-            sizeof(SpartanFileHeader) +
-            (header.subModelCount * sizeof(SubModelTopologyEntry)) +
-            header.weightBlobTotalByteSize;
-
-        std::vector<uint8_t> fullPayload(totalPayloadSize);
+        // Validate by re-reading and accumulating CRC over each section sequentially.
+        // This avoids allocating a full-payload-sized std::vector.
         inputStream.seekg(0);
-        inputStream.read(reinterpret_cast<char*>(fullPayload.data()),
-                         static_cast<std::streamsize>(totalPayloadSize));
+        if (!inputStream.good()) {
+            return false;
+        }
 
-        const uint32_t computedChecksum = computeCrc32(fullPayload.data(), totalPayloadSize);
+        // Accumulate CRC over the header (48 bytes, stack-allocated read)
+        SpartanFileHeader rereadHeader{};
+        inputStream.read(reinterpret_cast<char*>(&rereadHeader), sizeof(SpartanFileHeader));
+        uint32_t runningCrc = 0xFFFFFFFF;
+        runningCrc = accumulateCrc32(runningCrc,
+            reinterpret_cast<const uint8_t*>(&rereadHeader),
+            sizeof(SpartanFileHeader));
+
+        // Accumulate CRC over the TOC entries (64 bytes each, read one at a time on the stack)
+        for (uint32_t tocIndex = 0; tocIndex < header.subModelCount; ++tocIndex) {
+            SubModelTopologyEntry tocEntry{};
+            inputStream.read(reinterpret_cast<char*>(&tocEntry), sizeof(SubModelTopologyEntry));
+            runningCrc = accumulateCrc32(runningCrc,
+                reinterpret_cast<const uint8_t*>(&tocEntry),
+                sizeof(SubModelTopologyEntry));
+        }
+
+        // Accumulate CRC over the weight blob (already in targetWeightBuffer, zero-copy)
+        runningCrc = accumulateCrc32(runningCrc,
+            reinterpret_cast<const uint8_t*>(targetWeightBuffer.data()),
+            header.weightBlobTotalByteSize);
+
+        const uint32_t computedChecksum = ~runningCrc;
 
         return computedChecksum == storedChecksum;
     }

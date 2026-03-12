@@ -223,6 +223,14 @@ namespace org::spartan::internal::machinelearning {
         void applyReward(double rewardSignal) override;
         void decayExploration() override;
 
+        /**
+         * @brief Returns the target network weight buffer for persistence.
+         *
+         * The critic weights span contains the target Q-network weights and
+         * biases in a flat contiguous layout mirroring the online network.
+         */
+        [[nodiscard]] std::span<const double> getCriticWeights() const noexcept override;
+
     private:
         [[nodiscard]] const DoubleDeepQNetworkHyperparameterConfig* typedConfig() const noexcept {
             return static_cast<const DoubleDeepQNetworkHyperparameterConfig*>(
@@ -242,6 +250,9 @@ namespace org::spartan::internal::machinelearning {
         // Needed for Polyak updates
         std::span<const double> rawOnlineWeights_;
         std::span<const double> rawOnlineBiases_;
+
+        // Non-owning span over the full JVM-owned target (critic) weight buffer for persistence.
+        std::span<const double> criticWeightsSpan_;
 
         // Experience replay for off-policy learning
         replay::ExperienceReplayBuffer replayBuffer_;

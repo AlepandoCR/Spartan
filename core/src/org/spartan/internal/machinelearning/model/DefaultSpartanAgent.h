@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <cmath>
 #include "SpartanAgent.h"
 #include "../ModelHyperparameterConfig.h"
 
@@ -62,7 +63,14 @@ namespace org::spartan::internal::machinelearning {
             if (!baseConfig || !baseConfig->isTraining) {
                 return;
             }
-            // TODO: Implement inference math logic.
+
+            // Simple test: Echo context values to action outputs
+            // This verifies the Zero-Copy flow: Java writes context -> C++ reads -> C++ writes actions -> Java reads
+            const size_t copyCount = std::min(contextBuffer_.size(), actionOutputBuffer_.size());
+            for (size_t i = 0; i < copyCount; ++i) {
+                // Apply simple transformation: tanh(context[i]) to produce [-1, 1] range
+                actionOutputBuffer_[i] = std::tanh(contextBuffer_[i]);
+            }
         }
 
         // SpartanAgent contract

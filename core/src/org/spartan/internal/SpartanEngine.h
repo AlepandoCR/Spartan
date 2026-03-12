@@ -117,10 +117,18 @@ namespace org::spartan::internal {
         /**
          * @brief Executes a global engine tick across every registered agent.
          *
-         * @param globalRewardsBuffer Pointer to the flat reward array (JVM-owned).
-         * @param globalRewardsCount  Number of doubles in @p globalRewardsBuffer.
+         * Distributes rewards to the correct agents by identifier lookup before
+         * running the parallel inference pass.  Using explicit identifier arrays
+         * avoids any dependency on the iteration order of the internal
+         * @c unordered_map.
+         *
+         * @param agentIdentifiersBuffer Pointer to the JVM-owned agent ID array.
+         * @param rewardSignalsBuffer    Pointer to the JVM-owned reward values array.
+         * @param rewardEntryCount       Number of entries in both parallel arrays.
          */
-        void tickAllAgents(double* globalRewardsBuffer, int32_t globalRewardsCount);
+        void tickAllAgents(const uint64_t* agentIdentifiersBuffer,
+                           const double* rewardSignalsBuffer,
+                           int32_t rewardEntryCount);
 
         void updateContextPointer(uint64_t agentIdentifier, double* newPointer, int newCapacity);
 
@@ -151,6 +159,27 @@ namespace org::spartan::internal {
          * @return True on success and CRC-32 validation, false otherwise.
          */
         static bool loadModel(const char* filePath, double* targetWeightBuffer, int32_t targetWeightCount);
+
+        /**
+         * @brief Triggers exploration decay for a specific agent at episode boundaries.
+         *
+         * @param agentIdentifier The unique ID of the agent.
+         */
+        void decayExploration(uint64_t agentIdentifier);
+
+        /**
+         * @brief Applies a reward and executes a single inference tick for one agent.
+         *
+         * This is the event-driven counterpart to tickAllAgents(). The reward
+         * is applied first (if the model is a SpartanAgent), then processTick()
+         * is invoked. The JVM must guarantee that the same agent is not ticked
+         * concurrently from multiple threads.
+         *
+         * @param agentIdentifier The unique ID of the agent to tick.
+         * @param rewardSignal    The scalar reward to apply before inference.
+         * @return True if the agent was found and ticked, false otherwise.
+         */
+        bool tickAgent(uint64_t agentIdentifier, double rewardSignal);
 
     private:
         /** @brief The model registry owned by this engine instance. */

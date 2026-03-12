@@ -148,18 +148,32 @@ extern "C" {
     /**
      * @brief Executes a global engine tick across every registered agent.
      *
-     * @param globalRewardsBuffer  Pointer to the flat reward array (JVM-owned).
-     * @param globalRewardsCount   Number of doubles in @p globalRewardsBuffer.
+     * Accepts parallel arrays that map each agent identifier to its
+     * corresponding reward signal.  Rewards are distributed by explicit
+     * identifier lookup before the parallel inference pass executes,
+     * eliminating any dependency on the internal map iteration order.
+     *
+     * @param agentIdentifiersBuffer Pointer to the JVM-owned uint64_t agent ID array.
+     * @param rewardSignalsBuffer    Pointer to the JVM-owned double reward array.
+     * @param rewardEntryCount       Number of entries in both parallel arrays.
      * @return 0 on success, -1 on invalid input.
      */
-    __declspec(dllexport) int spartan_tick_all(double* globalRewardsBuffer,
-                                               const int32_t globalRewardsCount) {
-        if (globalRewardsBuffer == nullptr || globalRewardsCount <= 0) {
-            SpartanEngine::logError("spartan_tick_all: invalid global rewards buffer.");
+    __declspec(dllexport) int spartan_tick_all(const uint64_t* agentIdentifiersBuffer,
+                                               const double* rewardSignalsBuffer,
+                                               const int32_t rewardEntryCount) {
+        // Allow empty ticks (count=0) - just tick all agents without rewards
+        if (rewardEntryCount <= 0) {
+            engine.tickAllAgents(nullptr, nullptr, 0);
+            return 0;
+        }
+
+        // For non-empty reward distribution, buffers must be valid
+        if (agentIdentifiersBuffer == nullptr || rewardSignalsBuffer == nullptr) {
+            SpartanEngine::logError("spartan_tick_all: received null pointer for agent identifiers or reward signals.");
             return -1;
         }
 
-        engine.tickAllAgents(globalRewardsBuffer, globalRewardsCount);
+        engine.tickAllAgents(agentIdentifiersBuffer, rewardSignalsBuffer, rewardEntryCount);
         return 0;
     }
 
@@ -192,6 +206,98 @@ extern "C" {
             return;
         }
         engine.updateCleanSizes(agentIdentifier, cleanSizesBuffer, slotCount);
+    }
+
+
+    /**
+     * @brief Saves a model's complete state (model weights + critic weights) to a .spartan file.
+     *
+     * Serializes both the model weight buffer and the critic/secondary weight buffer
+     * into a single binary file with a 48-byte header, table of contents, concatenated
+     * weight blob, and a trailing CRC-32 checksum.
+     *
+     * @param agentIdentifier The unique ID of the agent to save.
+     * @param filePath        Null-terminated path to the output .spartan file.
+     * @return 0 on success, -1 on invalid input or I/O failure.
+     */
+    __declspec(dllexport) int spartan_save_model(const uint64_t agentIdentifier,
+                                                  const char* filePath) {
+        if (filePath == nullptr) {
+            SpartanEngine::logError("spartan_save_model: received null file path.");
+            return -1;
+        }
+
+        const bool success = engine.saveModel(agentIdentifier, filePath);
+        return success ? 0 : -1;
+    }
+
+
+    /**
+     * @brief Loads model weights from a .spartan binary file into a JVM-owned buffer.
+     *
+     * Reads the file header to validate magic bytes and format version,
+     * then copies the weight blob directly into the target buffer.
+     * The trailing CRC-32 checksum is verified without heap allocation.
+     *
+     * @param filePath            Null-terminated path to the input .spartan file.
+     * @param targetWeightBuffer  Pointer to the JVM-owned double array to populate.
+     * @param targetWeightCount   Number of doubles available in the target buffer.
+     * @return 0 on success, -1 on invalid input, CRC mismatch, or I/O failure.
+     */
+    __declspec(dllexport) int spartan_load_model(const char* filePath,
+                                                  double* targetWeightBuffer,
+                                                  const int32_t targetWeightCount) {
+        if (filePath == nullptr) {
+            SpartanEngine::logError("spartan_load_model: received null file path.");
+            return -1;
+        }
+        if (targetWeightBuffer == nullptr || targetWeightCount <= 0) {
+            SpartanEngine::logError("spartan_load_model: invalid target weight buffer.");
+            return -1;
+        }
+
+        const bool success = SpartanEngine::loadModel(filePath, targetWeightBuffer, targetWeightCount);
+        return success ? 0 : -1;
+    }
+
+
+    /**
+     * @brief Triggers exploration rate decay for a specific agent.
+     *
+     * Intended to be called at episode boundaries from the Java host.
+     * For epsilon-greedy agents (Double Deep Q-Network), this decays epsilon.
+     * For entropy-based agents (Recurrent Soft Actor-Critic), this decays the
+     * base exploration parameter and resets the remorse trace buffer.
+     *
+     * @param agentIdentifier The unique ID of the agent.
+     */
+    __declspec(dllexport) void spartan_decay_exploration(const uint64_t agentIdentifier) {
+        engine.decayExploration(agentIdentifier);
+    }
+
+
+    /**
+     * @brief Applies a reward and executes a single inference tick for one agent.
+     *
+     * This is the event-driven counterpart to spartan_tick_all(). It applies
+     * the reward first (if the model supports reward-based learning), then
+     * executes processTick() to produce the next action.
+     *
+     * The JVM must guarantee that the same agent is not ticked concurrently
+     * from multiple threads. Different agents may be ticked in parallel.
+     *
+     * @param agentIdentifier The unique ID of the agent to tick.
+     * @param rewardSignal    The scalar reward to apply before inference.
+     * @return 0 on success, -1 if the agent was not found in the registry.
+     */
+    __declspec(dllexport) int spartan_tick_agent(const uint64_t agentIdentifier,
+                                                  const double rewardSignal) {
+        const bool success = engine.tickAgent(agentIdentifier, rewardSignal);
+        if (!success) {
+            SpartanEngine::logError("spartan_tick_agent: no active model found for the given agent identifier.");
+            return -1;
+        }
+        return 0;
     }
 
 }

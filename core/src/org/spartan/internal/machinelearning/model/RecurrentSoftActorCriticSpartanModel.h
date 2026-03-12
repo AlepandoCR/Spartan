@@ -388,6 +388,15 @@ namespace org::spartan::internal::machinelearning {
         void applyReward(double rewardSignal) override;
         void decayExploration() override;
 
+        /**
+         * @brief Returns the critic weight buffer (GRU + Q1 + Q2) for persistence.
+         *
+         * The critic weights span is the JVM-owned buffer containing all
+         * Gated Recurrent Unit gate weights, gate biases, hidden state,
+         * and both Q-critic weight/bias arrays in a flat contiguous layout.
+         */
+        [[nodiscard]] std::span<const double> getCriticWeights() const noexcept override;
+
     private:
         /**
          * @brief Returns the typed config, cast from the opaque base pointer.
@@ -402,6 +411,18 @@ namespace org::spartan::internal::machinelearning {
         RecurrentSoftActorCriticPolicyNetwork policyNetwork_;
         RecurrentSoftActorCriticFirstQNetwork firstCriticNetwork_;
         RecurrentSoftActorCriticSecondQNetwork secondCriticNetwork_;
+
+        // Target critic networks for stable Bellman bootstrap (Polyak-averaged copies).
+        // Weights are C++ owned (pre-allocated in constructor), not JVM spans.
+        RecurrentSoftActorCriticFirstQNetwork firstTargetCriticNetwork_;
+        RecurrentSoftActorCriticSecondQNetwork secondTargetCriticNetwork_;
+
+        // Pre-allocated storage for target critic weights and biases.
+        // These duplicate the online critic dimensions and are Polyak-synced each tick.
+        std::vector<double> firstTargetCriticWeightStorage_;
+        std::vector<double> firstTargetCriticBiasStorage_;
+        std::vector<double> secondTargetCriticWeightStorage_;
+        std::vector<double> secondTargetCriticBiasStorage_;
 
         // Nested AutoEncoder bank for variable-context compression
         std::vector<NestedAutoEncoderUnit> nestedEncoderBank_;
@@ -446,7 +467,11 @@ namespace org::spartan::internal::machinelearning {
 
         // Gradient scratchpads for critic backward pass
         std::vector<double> criticWeightGradientScratchpad_;
+        std::vector<double> criticBiasGradientScratchpad_;
         std::vector<double> criticInputGradientScratchpad_;
+
+        // Non-owning span over the full JVM-owned critic weight buffer for persistence.
+        std::span<const double> criticWeightsSpan_;
 
         // Running tick counter for remorse trace
         uint64_t currentTickNumber_ = 0;

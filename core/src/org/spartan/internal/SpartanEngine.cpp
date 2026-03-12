@@ -43,6 +43,8 @@ namespace org::spartan::internal {
      *
      * Weight layout in modelWeightsBuffer (JVM side):
      *   [Policy weights | Policy biases | Encoder weight pool (if nestedEncoderCount > 0)]
+     *
+     * IMPORTANT: GRU uses hiddenStateSize, while Actor/Critic networks use their own neuron counts.
      */
     static std::unique_ptr<machinelearning::SpartanModel> constructRecurrentSoftActorCriticModel(
             const uint64_t agentIdentifier,
@@ -59,21 +61,27 @@ namespace org::spartan::internal {
         const auto* config = static_cast<const RecurrentSoftActorCriticHyperparameterConfig*>(
             opaqueHyperparameterConfig);
 
-        const int hiddenSize = config->actorHiddenLayerNeuronCount;
-        const int inputSize = config->recurrentInputFeatureCount > 0
+        // GRU dimensions - use hiddenStateSize for the recurrent hidden state
+        const int gruHiddenSize = config->hiddenStateSize;
+        const int gruInputSize = config->recurrentInputFeatureCount > 0
             ? config->recurrentInputFeatureCount : config->baseConfig.stateSize;
+        const int gruConcatSize = gruHiddenSize + gruInputSize;
+
+        // Actor network dimensions - separate from GRU
+        const int actorHiddenSize = config->actorHiddenLayerNeuronCount;
         const int actionSize = config->baseConfig.actionSize;
+
+        // Critic network dimensions
         const int criticHiddenSize = config->criticHiddenLayerNeuronCount;
-        const int concatSize = hiddenSize + inputSize;
 
         // Slice the critic weights buffer into GRU + Q1 + Q2 sub-spans.
         // GRU has 3 gates (update, reset, candidate), each with weights and biases.
-        const size_t gruGateWeightCount = static_cast<size_t>(3) * hiddenSize * concatSize;
-        const size_t gruGateBiasCount = static_cast<size_t>(3) * hiddenSize;
-        const size_t gruHiddenStateCount = hiddenSize;
+        const size_t gruGateWeightCount = static_cast<size_t>(3) * gruHiddenSize * gruConcatSize;
+        const size_t gruGateBiasCount = static_cast<size_t>(3) * gruHiddenSize;
+        const size_t gruHiddenStateCount = gruHiddenSize;
 
-        // Q-critics: combined input = hidden + action, one hidden layer, one scalar output
-        const size_t criticCombinedInput = hiddenSize + actionSize;
+        // Q-critics: combined input = GRU hidden output + action, one hidden layer, one scalar output
+        const size_t criticCombinedInput = gruHiddenSize + actionSize;
         const size_t criticWeightCountPerNetwork = (criticHiddenSize * criticCombinedInput) + criticHiddenSize;
         const size_t criticBiasCountPerNetwork = criticHiddenSize + 1;
 
@@ -101,13 +109,14 @@ namespace org::spartan::internal {
         auto secondCriticBiases = criticSpan.subspan(criticOffset, criticBiasCountPerNetwork);
 
         // Slice the model weights buffer into Policy + Encoder pool sub-spans.
-        // Policy: input-to-hidden weights + hidden biases + mean-output weights + mean biases
+        // Policy input is GRU hidden output (gruHiddenSize), not actorHiddenSize
+        // Policy: GRU_output-to-actor_hidden weights + actor hidden biases + mean-output weights + mean biases
         //         + log-std-output weights + log-std biases
-        const size_t policyLayer1WeightCount = static_cast<size_t>(hiddenSize) * hiddenSize;
-        const size_t policyMeanWeightCount = static_cast<size_t>(actionSize) * hiddenSize;
-        const size_t policyLogStdWeightCount = static_cast<size_t>(actionSize) * hiddenSize;
+        const size_t policyLayer1WeightCount = static_cast<size_t>(actorHiddenSize) * gruHiddenSize;
+        const size_t policyMeanWeightCount = static_cast<size_t>(actionSize) * actorHiddenSize;
+        const size_t policyLogStdWeightCount = static_cast<size_t>(actionSize) * actorHiddenSize;
         const size_t totalPolicyWeightCount = policyLayer1WeightCount + policyMeanWeightCount + policyLogStdWeightCount;
-        const size_t totalPolicyBiasCount = static_cast<size_t>(hiddenSize) + actionSize + actionSize;
+        const size_t totalPolicyBiasCount = static_cast<size_t>(actorHiddenSize) + actionSize + actionSize;
 
         const auto modelSpan = std::span(modelWeightsBuffer, modelWeightsCount);
         size_t modelOffset = 0;
@@ -204,8 +213,14 @@ namespace org::spartan::internal {
     /**
      * Constructs an AutoEncoder Compressor model by slicing the weight buffers.
      *
-     * Weight layout in modelWeightsBuffer:
-     *   [Encoder weights | Encoder biases | Decoder weights | Decoder biases | Latent buffer]
+     * Weight layout in modelWeightsBuffer (must match processTick() in AutoEncoderCompressorSpartanModel):
+     *   [Encoder weights (2 layers) | Encoder biases (2 layers) |
+     *    Decoder weights (2 layers) | Decoder biases (2 layers) | Latent buffer]
+     *
+     * Encoder Layer 1: stateSize -> hiddenSize
+     * Encoder Layer 2: hiddenSize -> latentSize
+     * Decoder Layer 1: latentSize -> hiddenSize
+     * Decoder Layer 2: hiddenSize -> stateSize
      */
     static std::unique_ptr<machinelearning::SpartanModel> constructAutoEncoderCompressorModel(
             const uint64_t agentIdentifier,
@@ -224,10 +239,18 @@ namespace org::spartan::internal {
         const int latentSize = config->latentDimensionSize;
         const int hiddenSize = config->encoderHiddenNeuronCount;
 
-        const size_t encoderWeightCount = static_cast<size_t>(hiddenSize) * stateSize;
-        const size_t encoderBiasCount = hiddenSize;
-        const size_t decoderWeightCount = static_cast<size_t>(stateSize) * hiddenSize;
-        const size_t decoderBiasCount = stateSize;
+        // Encoder: 2 layers (input->hidden, hidden->latent)
+        const size_t encoderLayer1Weights = static_cast<size_t>(hiddenSize) * stateSize;
+        const size_t encoderLayer2Weights = static_cast<size_t>(latentSize) * hiddenSize;
+        const size_t encoderWeightCount = encoderLayer1Weights + encoderLayer2Weights;
+        const size_t encoderBiasCount = static_cast<size_t>(hiddenSize) + latentSize;
+
+        // Decoder: 2 layers (latent->hidden, hidden->output)
+        const size_t decoderLayer1Weights = static_cast<size_t>(hiddenSize) * latentSize;
+        const size_t decoderLayer2Weights = static_cast<size_t>(stateSize) * hiddenSize;
+        const size_t decoderWeightCount = decoderLayer1Weights + decoderLayer2Weights;
+        const size_t decoderBiasCount = static_cast<size_t>(hiddenSize) + stateSize;
+
         const size_t latentCount = latentSize;
 
         const auto modelSpan = std::span(modelWeightsBuffer, modelWeightsCount);
@@ -351,19 +374,19 @@ namespace org::spartan::internal {
         logging::SpartanLogger::info(std::format("Unregistered agent {}", agentIdentifier));
     }
 
-    void SpartanEngine::tickAllAgents(double* globalRewardsBuffer,
-                                      const int32_t globalRewardsCount) {
-        // Phase 1: Execute parallel inference across all models.
-        modelRegistry_.tickAll();
-
-        // Distribute global rewards to agents that support reward-based learning.
-        // Each element in the rewards buffer corresponds to the agent at the same
-        // index in the registry's iteration order. Agents that are not SpartanAgent
-        // subclasses simply ignore the reward signal.
-        if (globalRewardsBuffer != nullptr && globalRewardsCount > 0) {
-            modelRegistry_.applyGlobalRewards(
-                std::span<const double>(globalRewardsBuffer, globalRewardsCount));
+    void SpartanEngine::tickAllAgents(const uint64_t* agentIdentifiersBuffer,
+                                      const double* rewardSignalsBuffer,
+                                      const int32_t rewardEntryCount) {
+        // Phase 1: Distribute rewards to the correct agents by explicit ID lookup.
+        // This runs sequentially on the calling thread (cheap map lookups + double writes).
+        if (agentIdentifiersBuffer != nullptr && rewardSignalsBuffer != nullptr && rewardEntryCount > 0) {
+            modelRegistry_.distributeRewardsByIdentifier(
+                std::span<const uint64_t>(agentIdentifiersBuffer, rewardEntryCount),
+                std::span<const double>(rewardSignalsBuffer, rewardEntryCount));
         }
+
+        // Phase 2: Execute parallel inference across all models.
+        modelRegistry_.tickAll();
     }
 
     void SpartanEngine::updateContextPointer(const uint64_t agentIdentifier,
@@ -404,6 +427,14 @@ namespace org::spartan::internal {
         logging::SpartanLogger::info(
             std::format("Loaded {} weights from {}", header.totalWeightCount, filePath));
         return true;
+    }
+
+    void SpartanEngine::decayExploration(const uint64_t agentIdentifier) {
+        modelRegistry_.decayExplorationForAgent(agentIdentifier);
+    }
+
+    bool SpartanEngine::tickAgent(const uint64_t agentIdentifier, const double rewardSignal) {
+        return modelRegistry_.tickSingleAgent(agentIdentifier, rewardSignal);
     }
 
 }

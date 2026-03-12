@@ -29,7 +29,9 @@ namespace org::spartan::internal::machinelearning {
           onlineNetwork_(onlineNetworkWeights, onlineNetworkBiases),
           targetNetwork_(targetNetworkWeights, targetNetworkBiases),
           rawOnlineWeights_(onlineNetworkWeights),
-          rawOnlineBiases_(onlineNetworkBiases) {
+          rawOnlineBiases_(onlineNetworkBiases),
+          criticWeightsSpan_(targetNetworkWeights.data(),
+                             targetNetworkWeights.size() + targetNetworkBiases.size()) {
 
         const auto* config = typedConfig();
         if (!config) return;
@@ -274,6 +276,10 @@ namespace org::spartan::internal::machinelearning {
                 rawOnlineWeights_,
                 std::span(onlineWeightGradients_),
                 std::span(inputGradientScratchpad_));
+
+            // Bias gradient for the output layer: dL/dB = dL/dY (the TD error).
+            // Accumulated across the mini-batch (gradients were zeroed before the loop).
+            onlineBiasGradients_[0] += temporalDifferenceError;
         }
 
         // Apply Adam optimizer to online network weights and biases
@@ -302,6 +308,10 @@ namespace org::spartan::internal::machinelearning {
                 mutableConfig->epsilon = mutableConfig->epsilonMin;
             }
         }
+    }
+
+    std::span<const double> DoubleDeepQNetworkSpartanModel::getCriticWeights() const noexcept {
+        return criticWeightsSpan_;
     }
 
 }

@@ -104,10 +104,21 @@ class PrimitiveTypeMapper(TypeMapper):
     }
 
     def can_map(self, clang_type) -> bool:
-        return clang_type.kind in self.PRIMITIVE_MAP
+        # Check direct type first
+        if clang_type.kind in self.PRIMITIVE_MAP:
+            return True
+        # Check canonical type for typedefs like uint64_t, int32_t
+        canonical = clang_type.get_canonical()
+        return canonical.kind in self.PRIMITIVE_MAP
 
     def map(self, clang_type) -> TypeDescriptor:
-        java_type, wrapper, layout = self.PRIMITIVE_MAP[clang_type.kind]
+        # Try direct type first
+        if clang_type.kind in self.PRIMITIVE_MAP:
+            java_type, wrapper, layout = self.PRIMITIVE_MAP[clang_type.kind]
+        else:
+            # Use canonical type for typedefs
+            canonical = clang_type.get_canonical()
+            java_type, wrapper, layout = self.PRIMITIVE_MAP[canonical.kind]
         return TypeDescriptor(
             java_type=java_type,
             java_wrapper=wrapper,

@@ -122,9 +122,32 @@ namespace org::spartan::internal::machinelearning {
         /** @brief Returns the unique agent identifier bound to this model. */
         [[nodiscard]] uint64_t getIdentifier() const noexcept { return agentIdentifier_; }
 
+        /** @brief Returns the opaque hyperparameter config pointer for type introspection. */
+        [[nodiscard]] const void* getOpaqueHyperparameterConfig() const noexcept {
+            return opaqueHyperparameterConfig_;
+        }
+
         /** @brief Returns a read-only view of the model's weight buffer for persistence. */
         [[nodiscard]] std::span<const double> getModelWeights() const noexcept {
             return {modelWeights_.data(), modelWeights_.size()};
+        }
+
+        /**
+         * @brief Returns a read-only view of the critic/secondary weight buffer for persistence.
+         *
+         * Models that store trainable parameters in a separate critic buffer
+         * (e.g., Recurrent Soft Actor-Critic stores GRU + Q1 + Q2 weights,
+         * Double Deep Q-Network stores target network weights) override this
+         * to expose that buffer.  The persistence layer serializes both
+         * getModelWeights() and getCriticWeights() into the .spartan file.
+         *
+         * The default implementation returns an empty span for models that
+         * have no secondary weight buffer (e.g., AutoEncoder).
+         *
+         * @return Read-only span over the critic weight buffer, or empty.
+         */
+        [[nodiscard]] virtual std::span<const double> getCriticWeights() const noexcept {
+            return {};
         }
 
     protected:

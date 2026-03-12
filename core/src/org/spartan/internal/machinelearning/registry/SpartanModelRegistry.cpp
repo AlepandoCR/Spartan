@@ -13,6 +13,7 @@
 #include "internal/logging/SpartanLogger.h"
 #include "internal/machinelearning/model/SpartanModel.h"
 #include "internal/machinelearning/model/SpartanAgent.h"
+#include "internal/machinelearning/ModelHyperparameterConfig.h"
 #include "internal/machinelearning/persistence/SpartanPersistence.h"
 
 namespace org::spartan::internal::machinelearning {
@@ -90,26 +91,65 @@ namespace org::spartan::internal::machinelearning {
         }
     }
 
-    void SpartanModelRegistry::applyGlobalRewards(const std::span<const double> globalRewardsBuffer) {
+    void SpartanModelRegistry::distributeRewardsByIdentifier(
+            const std::span<const uint64_t> agentIdentifiers,
+            const std::span<const double> rewardSignals) {
+
         std::lock_guard lock(registryMutex_);
 
-        // Build a flat snapshot of agent pointers in stable iteration order.
-        // The reward buffer index matches the insertion/iteration order of the map.
-        int32_t rewardIndex = 0;
-        const auto rewardCount = static_cast<int32_t>(globalRewardsBuffer.size());
+        const auto pairCount = static_cast<int32_t>(
+            std::min(agentIdentifiers.size(), rewardSignals.size()));
 
-        for (auto& modelEntry : activeModels_ | std::views::values) {
-            if (rewardIndex >= rewardCount) break;
+        for (int32_t rewardIndex = 0; rewardIndex < pairCount; ++rewardIndex) {
+            const uint64_t agentIdentifier = agentIdentifiers[rewardIndex];
+            const double rewardSignal = rewardSignals[rewardIndex];
+
+            const auto iterator = activeModels_.find(agentIdentifier);
+            if (iterator == activeModels_.end()) {
+                continue;
+            }
 
             // Only SpartanAgent subclasses support reward-based learning.
-            // The dynamic_cast is done once per tick per agent  -  this is the
-            // Frontier A boundary where dynamic dispatch overhead is acceptable.
-            if (auto* agentPointer = dynamic_cast<SpartanAgent*>(modelEntry.get())) {
-                const double rewardSignal = globalRewardsBuffer[rewardIndex];
+            // The dynamic_cast is performed once per reward entry per tick.
+            // This is the Frontier A boundary where dynamic dispatch overhead
+            // is acceptable.
+            if (auto* agentPointer = dynamic_cast<SpartanAgent*>(iterator->second.get())) {
                 agentPointer->applyReward(rewardSignal);
             }
-            ++rewardIndex;
         }
+    }
+
+    void SpartanModelRegistry::decayExplorationForAgent(const uint64_t agentIdentifier) {
+        std::lock_guard lock(registryMutex_);
+
+        const auto iterator = activeModels_.find(agentIdentifier);
+        if (iterator == activeModels_.end()) {
+            return;
+        }
+
+        if (auto* agentPointer = dynamic_cast<SpartanAgent*>(iterator->second.get())) {
+            agentPointer->decayExploration();
+        }
+    }
+
+    bool SpartanModelRegistry::tickSingleAgent(const uint64_t agentIdentifier,
+                                                const double rewardSignal) {
+        std::lock_guard lock(registryMutex_);
+
+        const auto iterator = activeModels_.find(agentIdentifier);
+        if (iterator == activeModels_.end()) {
+            return false;
+        }
+
+        SpartanModel* model = iterator->second.get();
+
+        // Apply reward if the model supports reward-based learning.
+        if (auto* agentPointer = dynamic_cast<SpartanAgent*>(model)) {
+            agentPointer->applyReward(rewardSignal);
+        }
+
+        model->processTick();
+        return true;
     }
 
     bool SpartanModelRegistry::saveModelToFile(const uint64_t agentIdentifier, const char* filePath) {
@@ -124,27 +164,55 @@ namespace org::spartan::internal::machinelearning {
 
         const SpartanModel* model = iterator->second.get();
 
-        // The model's full weight buffer (modelWeights_) contains all trainable
-        // parameters in a flat contiguous layout. We save the entire blob.
-        const std::span<const double> weightBlob = model->getModelWeights();
+        // Retrieve both weight buffers for full model persistence.
+        const std::span<const double> modelWeightBlob = model->getModelWeights();
+        const std::span<const double> criticWeightBlob = model->getCriticWeights();
 
-        // For now we write a single TOC entry representing the full model.
-        // Future phases will decompose into sub-model entries.
-        persistence::SubModelTopologyEntry topologyEntry{};
-        topologyEntry.subModelRole = persistence::SUB_MODEL_GAUSSIAN_POLICY;
-        topologyEntry.subModelIndex = 0;
-        topologyEntry.weightByteOffsetRelative = 0;
-        topologyEntry.weightElementCount = weightBlob.size();
-        topologyEntry.biasesByteOffsetRelative = 0;
-        topologyEntry.biasElementCount = 0;
+        // Build TOC entries: one for model weights, one for critic weights (if present).
+        persistence::SubModelTopologyEntry modelTopologyEntry{};
+        modelTopologyEntry.subModelRole = persistence::SUB_MODEL_GAUSSIAN_POLICY;
+        modelTopologyEntry.subModelIndex = 0;
+        modelTopologyEntry.weightByteOffsetRelative = 0;
+        modelTopologyEntry.weightElementCount = modelWeightBlob.size();
+        modelTopologyEntry.biasesByteOffsetRelative = 0;
+        modelTopologyEntry.biasElementCount = 0;
 
-        const auto entries = std::span<const persistence::SubModelTopologyEntry>(&topologyEntry, 1);
+        std::vector<persistence::SubModelTopologyEntry> topologyEntries;
+        topologyEntries.push_back(modelTopologyEntry);
+
+        if (!criticWeightBlob.empty()) {
+            persistence::SubModelTopologyEntry criticTopologyEntry{};
+            criticTopologyEntry.subModelRole = persistence::SUB_MODEL_Q_CRITIC_FIRST;
+            criticTopologyEntry.subModelIndex = 1;
+            criticTopologyEntry.weightByteOffsetRelative =
+                modelWeightBlob.size() * sizeof(double);
+            criticTopologyEntry.weightElementCount = criticWeightBlob.size();
+            criticTopologyEntry.biasesByteOffsetRelative = 0;
+            criticTopologyEntry.biasElementCount = 0;
+            topologyEntries.push_back(criticTopologyEntry);
+        }
+
+        // Concatenate model and critic weights into a single contiguous blob.
+        // This allocation is acceptable because persistence is a cold-path operation.
+        std::vector<double> concatenatedWeightBlob;
+        concatenatedWeightBlob.reserve(modelWeightBlob.size() + criticWeightBlob.size());
+        concatenatedWeightBlob.insert(concatenatedWeightBlob.end(),
+            modelWeightBlob.begin(), modelWeightBlob.end());
+        concatenatedWeightBlob.insert(concatenatedWeightBlob.end(),
+            criticWeightBlob.begin(), criticWeightBlob.end());
+
+        // Determine the model type from the base config for the file header.
+        const auto* baseConfig = static_cast<const BaseHyperparameterConfig*>(
+            model->getOpaqueHyperparameterConfig());
+        const uint32_t modelType = baseConfig
+            ? static_cast<uint32_t>(baseConfig->modelTypeIdentifier)
+            : persistence::MODEL_TYPE_RECURRENT_SOFT_ACTOR_CRITIC;
 
         return persistence::saveModel(
             filePath,
-            persistence::MODEL_TYPE_RECURRENT_SOFT_ACTOR_CRITIC,
-            entries,
-            weightBlob);
+            modelType,
+            std::span<const persistence::SubModelTopologyEntry>(topologyEntries),
+            std::span<const double>(concatenatedWeightBlob));
     }
 
 

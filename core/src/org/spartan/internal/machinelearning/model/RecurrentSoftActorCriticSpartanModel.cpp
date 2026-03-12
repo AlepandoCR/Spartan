@@ -37,6 +37,8 @@ namespace org::spartan::internal::machinelearning {
           policyNetwork_(policyWeights, policyBiases),
           firstCriticNetwork_(firstCriticWeights, firstCriticBiases),
           secondCriticNetwork_(secondCriticWeights, secondCriticBiases),
+          firstTargetCriticNetwork_(firstCriticWeights, firstCriticBiases),
+          secondTargetCriticNetwork_(secondCriticWeights, secondCriticBiases),
           remorseTraceBuffer_(0, 0) {
 
         const auto* config = typedConfig();
@@ -188,7 +190,30 @@ namespace org::spartan::internal::machinelearning {
 
         // Gradient scratchpads for critic backward pass
         criticWeightGradientScratchpad_.resize(criticWeightCount);
+        criticBiasGradientScratchpad_.resize(criticBiasCount);
         criticInputGradientScratchpad_.resize(maxScratchSize);
+
+        // Pre-allocate target critic weight/bias storage as C++-owned copies.
+        // Initialise from the online critic weights so target starts identical.
+        firstTargetCriticWeightStorage_.assign(firstCriticWeights.begin(), firstCriticWeights.end());
+        firstTargetCriticBiasStorage_.assign(firstCriticBiases.begin(), firstCriticBiases.end());
+        secondTargetCriticWeightStorage_.assign(secondCriticWeights.begin(), secondCriticWeights.end());
+        secondTargetCriticBiasStorage_.assign(secondCriticBiases.begin(), secondCriticBiases.end());
+
+        // Rebind the target critic networks to point at the C++-owned storage.
+        firstTargetCriticNetwork_.rebindNetworkBuffers(
+            std::span(firstTargetCriticWeightStorage_),
+            std::span(firstTargetCriticBiasStorage_));
+        secondTargetCriticNetwork_.rebindNetworkBuffers(
+            std::span(secondTargetCriticWeightStorage_),
+            std::span(secondTargetCriticBiasStorage_));
+
+        // Store a non-owning view over the full JVM-owned critic buffer for persistence.
+        criticWeightsSpan_ = std::span<const double>(
+            gruGateWeights.data(),
+            static_cast<size_t>(gruGateWeights.size() + gruGateBiases.size() + gruHiddenState.size()
+                + firstCriticWeights.size() + firstCriticBiases.size()
+                + secondCriticWeights.size() + secondCriticBiases.size()));
     }
 
     void RecurrentSoftActorCriticSpartanModel::processTick() {
@@ -357,6 +382,33 @@ namespace org::spartan::internal::machinelearning {
                 hiddenSize);
         }
 
+        //
+        // Phase H (training only): Sync online critics -> target critics via Polyak averaging.
+        //
+        if (config->baseConfig.isTraining) {
+            constexpr double targetCriticSmoothingCoefficient = 0.005;
+
+            TensorOps::applyPolyakAveraging(
+                std::span<const double>(firstCriticNetwork_.getNetworkWeights()),
+                std::span(firstTargetCriticWeightStorage_),
+                targetCriticSmoothingCoefficient);
+
+            TensorOps::applyPolyakAveraging(
+                std::span<const double>(firstCriticNetwork_.getNetworkBiases()),
+                std::span(firstTargetCriticBiasStorage_),
+                targetCriticSmoothingCoefficient);
+
+            TensorOps::applyPolyakAveraging(
+                std::span<const double>(secondCriticNetwork_.getNetworkWeights()),
+                std::span(secondTargetCriticWeightStorage_),
+                targetCriticSmoothingCoefficient);
+
+            TensorOps::applyPolyakAveraging(
+                std::span<const double>(secondCriticNetwork_.getNetworkBiases()),
+                std::span(secondTargetCriticBiasStorage_),
+                targetCriticSmoothingCoefficient);
+        }
+
         ++currentTickNumber_;
     }
 
@@ -399,18 +451,15 @@ namespace org::spartan::internal::machinelearning {
         //
         // Train both Q-critics using Temporal Difference error.
         //
-        // The TD target for SAC is:
-        //   y = r + gamma * (min(Q1_target, Q2_target)(s', a') - alpha * log pi(a'|s'))
+        // The TD target for SAC uses separate target networks for stable bootstrap:
+        //   y = r + gamma * (min(Q1_target, Q2_target)(s, a) - alpha * entropy)
         //
-        // Since we don't have separate target networks for the critics yet (future phase),
-        // we use the current Q-values as a self-consistent bootstrap:
-        //   y = r + gamma * min(Q1, Q2) - alpha * entropy_estimate
-        //
-        // Each critic is updated independently to minimize (Q_i(s, a) - y)^2.
+        // Each online critic is updated independently to minimize (Q_i(s, a) - y)^2.
         //
         const std::span<const double> hiddenStateView = recurrentLayer_.getHiddenState();
         const std::span<const double> actionView(actionOutputBuffer_.data(), actionSize);
 
+        // Evaluate online critics for the current state-action pair.
         const double firstQValue = firstCriticNetwork_.computeQValue(
             hiddenStateView, actionView, config,
             std::span(inferenceScratchpadA_),
@@ -421,7 +470,18 @@ namespace org::spartan::internal::machinelearning {
             std::span(inferenceScratchpadA_),
             std::span(inferenceScratchpadB_));
 
-        const double minimumQValue = std::min(firstQValue, secondQValue);
+        // Evaluate TARGET critics for the bootstrap (stable TD target).
+        const double firstTargetQValue = firstTargetCriticNetwork_.computeQValue(
+            hiddenStateView, actionView, config,
+            std::span(inferenceScratchpadA_),
+            std::span(inferenceScratchpadB_));
+
+        const double secondTargetQValue = secondTargetCriticNetwork_.computeQValue(
+            hiddenStateView, actionView, config,
+            std::span(inferenceScratchpadA_),
+            std::span(inferenceScratchpadB_));
+
+        const double minimumTargetQValue = std::min(firstTargetQValue, secondTargetQValue);
 
         // Estimate entropy from the current standard deviations (already exp'd in processTick)
         double entropyEstimate = 0.0;
@@ -431,15 +491,15 @@ namespace org::spartan::internal::machinelearning {
             }
         }
 
-        // TD target: y = r + gamma * (Q_min_bootstrap - alpha * entropy)
+        // TD target: y = r + gamma * (Q_min_target - alpha * entropy)
         const double gamma = config->baseConfig.gamma;
         const double alpha = config->entropyTemperatureAlpha;
         const double temporalDifferenceTarget = rewardSignal
-            + gamma * (minimumQValue - alpha * entropyEstimate);
+            + gamma * (minimumTargetQValue - alpha * entropyEstimate);
 
         ++criticTrainingStepCounter_;
 
-        // Train Q1 critic
+        // Train Q1 critic (weights + biases)
         {
             const double temporalDifferenceErrorQ1 = 2.0 * (firstQValue - temporalDifferenceTarget);
 
@@ -454,6 +514,10 @@ namespace org::spartan::internal::machinelearning {
                 std::span(criticWeightGradientScratchpad_),
                 std::span(inferenceScratchpadA_));
 
+            // Bias gradient for the output layer: dL/dB = dL/dY (the TD error itself).
+            std::ranges::fill(criticBiasGradientScratchpad_, 0.0);
+            criticBiasGradientScratchpad_[0] = temporalDifferenceErrorQ1;
+
             TensorOps::applyAdamUpdate(
                 firstCriticNetwork_.getNetworkWeights(),
                 std::span<const double>(criticWeightGradientScratchpad_),
@@ -461,9 +525,17 @@ namespace org::spartan::internal::machinelearning {
                 std::span(firstCriticWeightVelocity_),
                 config->firstCriticLearningRate, 0.9, 0.999, 1e-8,
                 criticTrainingStepCounter_);
+
+            TensorOps::applyAdamUpdate(
+                firstCriticNetwork_.getNetworkBiases(),
+                std::span<const double>(criticBiasGradientScratchpad_),
+                std::span(firstCriticBiasMomentum_),
+                std::span(firstCriticBiasVelocity_),
+                config->firstCriticLearningRate, 0.9, 0.999, 1e-8,
+                criticTrainingStepCounter_);
         }
 
-        // Train Q2 critic
+        // Train Q2 critic (weights + biases)
         {
             const double temporalDifferenceErrorQ2 = 2.0 * (secondQValue - temporalDifferenceTarget);
 
@@ -478,11 +550,23 @@ namespace org::spartan::internal::machinelearning {
                 std::span(criticWeightGradientScratchpad_),
                 std::span(inferenceScratchpadA_));
 
+            // Bias gradient for the output layer.
+            std::ranges::fill(criticBiasGradientScratchpad_, 0.0);
+            criticBiasGradientScratchpad_[0] = temporalDifferenceErrorQ2;
+
             TensorOps::applyAdamUpdate(
                 secondCriticNetwork_.getNetworkWeights(),
                 std::span<const double>(criticWeightGradientScratchpad_),
                 std::span(secondCriticWeightMomentum_),
                 std::span(secondCriticWeightVelocity_),
+                config->secondCriticLearningRate, 0.9, 0.999, 1e-8,
+                criticTrainingStepCounter_);
+
+            TensorOps::applyAdamUpdate(
+                secondCriticNetwork_.getNetworkBiases(),
+                std::span<const double>(criticBiasGradientScratchpad_),
+                std::span(secondCriticBiasMomentum_),
+                std::span(secondCriticBiasVelocity_),
                 config->secondCriticLearningRate, 0.9, 0.999, 1e-8,
                 criticTrainingStepCounter_);
         }
@@ -505,6 +589,10 @@ namespace org::spartan::internal::machinelearning {
 
         // Reset the remorse trace at episode boundaries
         remorseTraceBuffer_.reset();
+    }
+
+    std::span<const double> RecurrentSoftActorCriticSpartanModel::getCriticWeights() const noexcept {
+        return criticWeightsSpan_;
     }
 
 }
