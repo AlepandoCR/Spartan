@@ -134,16 +134,16 @@ jobs:
           ls -la artifacts/spartan-internal-linux || true
           ls -la artifacts/spartan-internal-macos || true
 
-          API_JAR=$(ls artifacts/spartan-api-linux/*.jar | head -n 1)
+          API_JAR=$(realpath artifacts/spartan-api-linux/*.jar | head -n 1)
           echo "API_JAR=$API_JAR" >> $GITHUB_ENV
 
-          INTERNAL_WIN=$(ls artifacts/spartan-internal-windows/*.jar | head -n 1)
+          INTERNAL_WIN=$(realpath artifacts/spartan-internal-windows/*.jar | head -n 1)
           echo "INTERNAL_WIN=$INTERNAL_WIN" >> $GITHUB_ENV
 
-          INTERNAL_LINUX=$(ls artifacts/spartan-internal-linux/*.jar | head -n 1)
+          INTERNAL_LINUX=$(realpath artifacts/spartan-internal-linux/*.jar | head -n 1)
           echo "INTERNAL_LINUX=$INTERNAL_LINUX" >> $GITHUB_ENV
 
-          INTERNAL_MAC=$(ls artifacts/spartan-internal-macos/*.jar | head -n 1)
+          INTERNAL_MAC=$(realpath artifacts/spartan-internal-macos/*.jar | head -n 1)
           echo "INTERNAL_MAC=$INTERNAL_MAC" >> $GITHUB_ENV
 
       - name: Publish API (generic)
