@@ -59,6 +59,11 @@ jobs:
         run: |
           cmake -S core -B ${{ matrix.cmake_build_dir }} -DCMAKE_BUILD_TYPE=Release
 
+      - name: Ensure Gradle Wrapper Executable
+        if: matrix.os != 'windows-latest'
+        run: |
+          chmod +x ./gradlew
+
       - name: Build Native
         run: |
           cmake --build ${{ matrix.cmake_build_dir }} --config Release
