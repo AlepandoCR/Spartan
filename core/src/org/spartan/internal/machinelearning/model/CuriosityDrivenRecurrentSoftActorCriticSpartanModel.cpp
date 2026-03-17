@@ -66,11 +66,11 @@ namespace org::spartan::internal::machinelearning {
           forwardDynamicsBiases_(forwardDynamicsBiases),
           alignedScratchpadMemory_(nullptr, [](void* ptr) {
               if (ptr) {
-#if defined(_WIN32)
+                #if defined(_WIN32)
                   _aligned_free(ptr);
-#else
+                #else
                   free(ptr);
-#endif
+                #endif
               }
           }) {
 
@@ -132,13 +132,13 @@ namespace org::spartan::internal::machinelearning {
             totalDoublesNeeded, (totalDoublesNeeded * sizeof(double)) / (1024.0 * 1024.0)));
 
         void* rawMemory = nullptr;
-#if defined(_WIN32)
+        #if defined(_WIN32)
         rawMemory = _aligned_malloc(totalDoublesNeeded * sizeof(double), 64);
-#else
+        #else
         if (posix_memalign(&rawMemory, 64, totalDoublesNeeded * sizeof(double)) != 0) {
             rawMemory = nullptr;
         }
-#endif
+        #endif
 
         alignedScratchpadMemory_.reset(rawMemory);
 
