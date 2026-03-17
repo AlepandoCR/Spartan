@@ -13,13 +13,13 @@ if(MSVC)
     add_compile_options(/std:c++latest /utf-8)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 
-elseif(MINGW OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
-    # MinGW/GCC Configuration
+elseif(MINGW)
+    # MinGW Configuration (Windows only)
 
     # experimental contracts (not used atm, until full support is available)
     add_compile_options(-fcontracts)
 
-    # runtime in dll, not static
+    # runtime in dll, not static (only for MinGW on Windows)
     add_link_options(-static-libgcc -static-libstdc++ -static)
 
     # optimize for native architecture
@@ -30,7 +30,37 @@ elseif(MINGW OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
         add_compile_options(-std=gnu++2b)
     endif()
 
-    message(STATUS "Configuring for MinGW/GCC with C++2b fallback.")
+    message(STATUS "Configuring for MinGW with C++2b fallback.")
+
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    # GCC Configuration (Linux/Unix)
+
+    # experimental contracts (not used atm, until full support is available)
+    add_compile_options(-fcontracts)
+
+    # optimize for native architecture
+    add_compile_options(-O3 -march=native)
+
+    # GCC 13/14: use C++2b flag if CXX26 is not known
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "14")
+        add_compile_options(-std=gnu++2b)
+    endif()
+
+    # Use -fPIC for shared libraries on Linux
+    add_compile_options(-fPIC)
+
+    message(STATUS "Configuring for GCC with C++2b fallback and PIC.")
+
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # Clang/LLVM Configuration (macOS, Linux)
+
+    # optimize for native architecture
+    add_compile_options(-O3 -march=native)
+
+    # Use -fPIC for shared libraries
+    add_compile_options(-fPIC)
+
+    message(STATUS "Configuring for Clang/LLVM.")
 endif()
 
 # --- Source Definitions ---
