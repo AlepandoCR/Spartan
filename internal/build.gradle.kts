@@ -102,6 +102,9 @@ fun loadDotEnv(rootDir: File): Properties {
 }
 
 val dotEnv = loadDotEnv(rootProject.projectDir)
+val mavenUrl = System.getenv("MAVEN_URL") ?: dotEnv.getProperty("MAVEN_URL")
+val mavenUser = System.getenv("MAVEN_USERNAME") ?: dotEnv.getProperty("MAVEN_USERNAME")
+val mavenPass = System.getenv("MAVEN_PASSWORD") ?: dotEnv.getProperty("MAVEN_PASSWORD")
 
 publishing {
     publications {
@@ -113,13 +116,12 @@ publishing {
         }
     }
     repositories {
-        val repoUrl = dotEnv.getProperty("MAVEN_URL")
-        if (!repoUrl.isNullOrBlank()) {
+        if (!mavenUrl.isNullOrBlank()) {
             maven {
-                url = uri(repoUrl)
+                url = uri(mavenUrl)
                 credentials {
-                    username = dotEnv.getProperty("MAVEN_USERNAME")
-                    password = dotEnv.getProperty("MAVEN_PASSWORD")
+                    username = mavenUser
+                    password = mavenPass
                 }
             }
         }

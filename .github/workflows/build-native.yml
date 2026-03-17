@@ -102,6 +102,7 @@ jobs:
           SKIP_NATIVE_BINDINGS: "1"
         shell: bash
         run: |
+          echo "Publishing to $MAVEN_URL"
           if [ -z "$MAVEN_URL" ]; then
             echo "MAVEN_URL not set; skipping publish"
             exit 0
