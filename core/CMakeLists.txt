@@ -126,7 +126,9 @@ add_library(spartan_core SHARED
 
 # --- target libraries ---
 
-target_link_libraries(spartan_core PRIVATE stdc++exp)
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    target_link_libraries(spartan_core PRIVATE stdc++exp)
+endif()
 
 # --- Include Directories ---
 

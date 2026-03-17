@@ -5,6 +5,12 @@
 
 #include <cstdint>
 
+#if defined(_WIN32)
+#define SPARTAN_API_EXPORT __declspec(dllexport)
+#else
+#define SPARTAN_API_EXPORT __attribute__((visibility("default")))
+#endif
+
 #include "internal/SpartanEngine.h"
 
 using namespace org::spartan::internal;
@@ -23,7 +29,7 @@ extern "C" {
      * This is the first function the JVM must invoke after loading the shared
      * library.  It performs any one-time global setup required by the engine.
      */
-    __declspec(dllexport) void spartan_init() {
+    SPARTAN_API_EXPORT void spartan_init() {
         logging::SpartanLogger::setDebugEnabled(false);
         SpartanEngine::log("Detected C++ Spartan Core...");
     }
@@ -34,7 +40,7 @@ extern "C" {
      *
      * @param message A null-terminated C string (UTF-8).
      */
-    __declspec(dllexport) void spartan_log(const char* message) {
+    SPARTAN_API_EXPORT void spartan_log(const char* message) {
         if (message == nullptr) {
             SpartanEngine::logError("Received null message pointer.");
             return;
@@ -53,7 +59,7 @@ extern "C" {
      * @param sourceSetSize   Number of elements in @p sourceFuzzySet.
      * @return Elapsed nanoseconds, or -1 on invalid input.
      */
-    __declspec(dllexport) long spartan_test_vector_union(double* targetFuzzySet,
+    SPARTAN_API_EXPORT long spartan_test_vector_union(double* targetFuzzySet,
                                                          double* sourceFuzzySet,
                                                          const int targetSetSize,
                                                          const int sourceSetSize) {
@@ -89,7 +95,7 @@ extern "C" {
      * @param actionOutputCount            Number of doubles in @p actionOutputBuffer.
      * @return 0 on success, -1 on invalid arguments.
      */
-    __declspec(dllexport) int spartan_register_model(
+    SPARTAN_API_EXPORT int spartan_register_model(
             const uint64_t agentIdentifier,
             void* opaqueHyperparameterConfig,
             double* criticWeightsBuffer,
@@ -141,7 +147,7 @@ extern "C" {
      * @param agentIdentifier The unique identifier of the agent to remove.
      * @return 0 on success (or if the agent was already absent).
      */
-    __declspec(dllexport) int spartan_unregister_model(const uint64_t agentIdentifier) {
+    SPARTAN_API_EXPORT int spartan_unregister_model(const uint64_t agentIdentifier) {
         engine.unregisterAgent(agentIdentifier);
         return 0;
     }
@@ -159,7 +165,7 @@ extern "C" {
      * @param rewardEntryCount       Number of entries in both parallel arrays.
      * @return 0 on success, -1 on invalid input.
      */
-    __declspec(dllexport) int spartan_tick_all(const uint64_t* agentIdentifiersBuffer,
+    SPARTAN_API_EXPORT int spartan_tick_all(const uint64_t* agentIdentifiersBuffer,
                                                const double* rewardSignalsBuffer,
                                                const int32_t rewardEntryCount) {
         // Allow empty ticks (count=0) - just tick all agents without rewards
@@ -179,7 +185,7 @@ extern "C" {
     }
 
 
-    __declspec(dllexport) void updateContextPointer(const uint64_t agentIdentifier, double* newPointer, const int newCapacity) {
+    SPARTAN_API_EXPORT void updateContextPointer(const uint64_t agentIdentifier, double* newPointer, const int newCapacity) {
         if (newPointer == nullptr || newCapacity <= 0) {
             SpartanEngine::logError("updateContextPointer: invalid new pointer or capacity.");
             return;
@@ -198,7 +204,7 @@ extern "C" {
      * @param cleanSizesBuffer Pointer to the JVM-owned int32_t array.
      * @param slotCount        Number of int32_t entries in the buffer.
      */
-    __declspec(dllexport) void spartan_update_clean_sizes(
+    SPARTAN_API_EXPORT void spartan_update_clean_sizes(
             const uint64_t agentIdentifier,
             const int32_t* cleanSizesBuffer,
             const int32_t slotCount) {
@@ -221,7 +227,7 @@ extern "C" {
      * @param filePath        Null-terminated path to the output .spartan file.
      * @return 0 on success, -1 on invalid input or I/O failure.
      */
-    __declspec(dllexport) int spartan_save_model(const uint64_t agentIdentifier,
+    SPARTAN_API_EXPORT int spartan_save_model(const uint64_t agentIdentifier,
                                                   const char* filePath) {
         if (filePath == nullptr) {
             SpartanEngine::logError("spartan_save_model: received null file path.");
@@ -245,7 +251,7 @@ extern "C" {
      * @param targetWeightCount   Number of doubles available in the target buffer.
      * @return 0 on success, -1 on invalid input, CRC mismatch, or I/O failure.
      */
-    __declspec(dllexport) int spartan_load_model(const char* filePath,
+    SPARTAN_API_EXPORT int spartan_load_model(const char* filePath,
                                                   double* targetWeightBuffer,
                                                   const int32_t targetWeightCount) {
         if (filePath == nullptr) {
@@ -272,7 +278,7 @@ extern "C" {
      *
      * @param agentIdentifier The unique ID of the agent.
      */
-    __declspec(dllexport) void spartan_decay_exploration(const uint64_t agentIdentifier) {
+    SPARTAN_API_EXPORT void spartan_decay_exploration(const uint64_t agentIdentifier) {
         engine.decayExploration(agentIdentifier);
     }
 
@@ -291,7 +297,7 @@ extern "C" {
      * @param rewardSignal    The scalar reward to apply before inference.
      * @return 0 on success, -1 if the agent was not found in the registry.
      */
-    __declspec(dllexport) int spartan_tick_agent(const uint64_t agentIdentifier,
+    SPARTAN_API_EXPORT int spartan_tick_agent(const uint64_t agentIdentifier,
                                                   const double rewardSignal) {
         const bool success = engine.tickAgent(agentIdentifier, rewardSignal);
         if (!success) {
