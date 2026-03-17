@@ -16,6 +16,11 @@ on:
       - "api/**"
       - ".github/workflows/build-native.yml"
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish artifacts to Maven"
+        required: false
+        default: "false"
 
 jobs:
   build-native:
@@ -68,6 +73,12 @@ jobs:
         run: |
           cmake --build ${{ matrix.cmake_build_dir }} --config Release
 
+      - name: Log Publish Context
+        run: |
+          echo "ref=${{ github.ref }}"
+          echo "event=${{ github.event_name }}"
+          echo "publish_input=${{ github.event.inputs.publish }}"
+
       - name: Build Java Jars (API + Internal)
         shell: bash
         env:
@@ -94,7 +105,7 @@ jobs:
           path: internal/build/libs/*.jar
 
       - name: Publish to Maven (OS Specific)
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || github.event.inputs.publish == 'true'
         env:
           MAVEN_URL: ${{ secrets.MAVEN_URL }}
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
