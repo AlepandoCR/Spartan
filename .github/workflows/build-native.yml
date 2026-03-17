@@ -32,11 +32,11 @@ jobs:
           - os: ubuntu-latest
             cmake_build_dir: core/build-linux
             native_dir: linux
-            lib_name: libspartan_core.so
+            lib_name: spartan_core.so
           - os: macos-latest
             cmake_build_dir: core/build-macos
             native_dir: macos
-            lib_name: libspartan_core.dylib
+            lib_name: spartan_core.dylib
 
     steps:
       - uses: actions/checkout@v4
@@ -76,6 +76,8 @@ jobs:
 
       - name: Build Internal Jar (OS Specific)
         shell: bash
+        env:
+          SKIP_NATIVE_BINDINGS: "1"
         run: |
           ./gradlew :internal:shadowJar -PnativeClassifier=${{ matrix.native_dir }}
 
@@ -85,6 +87,7 @@ jobs:
           MAVEN_URL: ${{ secrets.MAVEN_URL }}
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+          SKIP_NATIVE_BINDINGS: "1"
         shell: bash
         run: |
           if [ -z "$MAVEN_URL" ]; then

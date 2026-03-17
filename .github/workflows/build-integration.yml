@@ -34,6 +34,8 @@ jobs:
           cache: gradle
 
       - name: Build Java (skip tests)
+        env:
+          SKIP_NATIVE_BINDINGS: "1"
         run: |
           ./gradlew :api:build :internal:build -x test
 
