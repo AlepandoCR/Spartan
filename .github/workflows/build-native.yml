@@ -68,30 +68,24 @@ jobs:
         run: |
           cmake --build ${{ matrix.cmake_build_dir }} --config Release
 
-      - name: Stage Native Into Resources
-        shell: bash
-        run: |
-          ls -la ${{ matrix.cmake_build_dir }}/bin || true
-          if [ ! -f "${{ matrix.cmake_build_dir }}/bin/${{ matrix.lib_name }}" ]; then
-            echo "Native library not found: ${{ matrix.cmake_build_dir }}/bin/${{ matrix.lib_name }}"
-            exit 1
-          fi
-          cmake -E make_directory internal/src/main/resources/native/${{ matrix.native_dir }}
-          cmake -E copy ${{ matrix.cmake_build_dir }}/bin/${{ matrix.lib_name }} internal/src/main/resources/native/${{ matrix.native_dir }}/
-          ls -la internal/src/main/resources/native/${{ matrix.native_dir }}
-
-      - name: Build Internal Jar (OS Specific)
+      - name: Build Java Jars (API + Internal)
         shell: bash
         env:
           SKIP_NATIVE_BINDINGS: "1"
         run: |
-          ./gradlew :internal:shadowJar -PnativeClassifier=${{ matrix.native_dir }} -PnativeLibDir=${{ matrix.cmake_build_dir }}/bin
+          ./gradlew :api:jar :internal:shadowJar -PnativeClassifier=${{ matrix.native_dir }} -PnativeLibDir=${{ matrix.cmake_build_dir }}/bin -x test
 
       - name: Upload Native Artifact
         uses: actions/upload-artifact@v4
         with:
           name: spartan_core-${{ matrix.native_dir }}
           path: ${{ matrix.cmake_build_dir }}/bin/${{ matrix.lib_name }}
+
+      - name: Upload API Jar Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spartan-api-${{ matrix.native_dir }}
+          path: api/build/libs/*.jar
 
       - name: Upload Internal Jar Artifact
         uses: actions/upload-artifact@v4

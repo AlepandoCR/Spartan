@@ -37,16 +37,12 @@ jobs:
         run: |
           chmod +x ./gradlew
 
-      - name: Build Java (skip tests)
-        env:
-          SKIP_NATIVE_BINDINGS: "1"
+      - name: Build Java (API only)
         run: |
-          ./gradlew :api:build :internal:build -x test
+          ./gradlew :api:build -x test
 
       - name: Upload Java artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: spartan-java-artifacts
-          path: |
-            api/build/libs/*.jar
-            internal/build/libs/*.jar
+          name: spartan-api-artifact
+          path: api/build/libs/*.jar
