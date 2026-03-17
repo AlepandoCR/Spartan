@@ -44,15 +44,18 @@ namespace org::spartan::internal::machinelearning {
         }
 
         // Single virtual call per model  -  Frontier A overhead is O(1) per agent.
-        // Use parallel execution on supported platforms (MSVC, GCC), sequential on macOS/Clang
-#ifdef __clang__
-        std::for_each(std::execution::seq, modelsToTick.begin(), modelsToTick.end(),
-#else
+        // Use parallel execution on supported platforms, sequential otherwise.
+#if defined(__cpp_lib_execution) && !defined(__clang__)
         std::for_each(std::execution::par, modelsToTick.begin(), modelsToTick.end(),
-#endif
             [](SpartanModel* model) {
                 model->processTick();
             });
+#else
+        std::for_each(modelsToTick.begin(), modelsToTick.end(),
+            [](SpartanModel* model) {
+                model->processTick();
+            });
+#endif
     }
 
     bool SpartanModelRegistry::hasIdleModelAvailable() const noexcept {
