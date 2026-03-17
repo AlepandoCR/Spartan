@@ -108,14 +108,16 @@ jobs:
         if: github.ref == 'refs/heads/main' || github.event.inputs.publish == 'true'
         env:
           MAVEN_URL: ${{ secrets.MAVEN_URL }}
+          MAVEN_SNAPSHOT_URL: ${{ secrets.MAVEN_SNAPSHOT_URL }}
+          MAVEN_RELEASE_URL: ${{ secrets.MAVEN_RELEASE_URL }}
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
           SKIP_NATIVE_BINDINGS: "1"
         shell: bash
         run: |
           echo "Publishing to $MAVEN_URL"
-          if [ -z "$MAVEN_URL" ]; then
-            echo "MAVEN_URL not set; skipping publish"
+          if [ -z "$MAVEN_URL" ] && [ -z "$MAVEN_SNAPSHOT_URL" ] && [ -z "$MAVEN_RELEASE_URL" ]; then
+            echo "No Maven URL set; skipping publish"
             exit 0
           fi
           ./gradlew :api:publish :internal:publish -PnativeClassifier=${{ matrix.native_dir }} -PnativeLibDir=${{ matrix.cmake_build_dir }}/bin

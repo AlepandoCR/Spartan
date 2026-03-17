@@ -39,8 +39,11 @@ fun loadDotEnv(rootDir: File): Properties {
 
 val dotEnv = loadDotEnv(rootProject.projectDir)
 val mavenUrl = System.getenv("MAVEN_URL") ?: dotEnv.getProperty("MAVEN_URL")
+val mavenSnapshotUrl = System.getenv("MAVEN_SNAPSHOT_URL") ?: dotEnv.getProperty("MAVEN_SNAPSHOT_URL")
+val mavenReleaseUrl = System.getenv("MAVEN_RELEASE_URL") ?: dotEnv.getProperty("MAVEN_RELEASE_URL")
 val mavenUser = System.getenv("MAVEN_USERNAME") ?: dotEnv.getProperty("MAVEN_USERNAME")
 val mavenPass = System.getenv("MAVEN_PASSWORD") ?: dotEnv.getProperty("MAVEN_PASSWORD")
+val isSnapshot = project.version.toString().endsWith("-SNAPSHOT")
 
 publishing {
     publications {
@@ -52,9 +55,14 @@ publishing {
         }
     }
     repositories {
-        if (!mavenUrl.isNullOrBlank()) {
+        val selectedUrl = when {
+            isSnapshot && !mavenSnapshotUrl.isNullOrBlank() -> mavenSnapshotUrl
+            !isSnapshot && !mavenReleaseUrl.isNullOrBlank() -> mavenReleaseUrl
+            else -> mavenUrl
+        }
+        if (!selectedUrl.isNullOrBlank()) {
             maven {
-                url = uri(mavenUrl)
+                url = uri(selectedUrl)
                 credentials {
                     username = mavenUser
                     password = mavenPass
