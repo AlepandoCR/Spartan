@@ -55,8 +55,8 @@ public interface SpartanAction {
      * <p>
      * <b>Concept:</b> "Did doing this help?"
      * <ul>
-     *   <li><b>Positive (>0):</b> Good job! Do that again in this situation.</li>
-     *   <li><b>Negative (<0):</b> Bad idea! Avoid this next time.</li>
+     *   <li><b>Positive (&gt;0):</b> Good job! Do that again in this situation.</li>
+     *   <li><b>Negative (&lt;0):</b> Bad idea! Avoid this next time.</li>
      *   <li><b>Zero:</b> Neutral. No strong signal.</li>
      * </ul>
      * This is summed up with all other action rewards to train the agent.
