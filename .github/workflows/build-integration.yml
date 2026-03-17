@@ -33,6 +33,10 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
+      - name: Ensure Gradle Wrapper Executable
+        run: |
+          chmod +x ./gradlew
+
       - name: Build Java (skip tests)
         env:
           SKIP_NATIVE_BINDINGS: "1"

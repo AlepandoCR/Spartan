@@ -78,13 +78,26 @@ jobs:
           fi
           cmake -E make_directory internal/src/main/resources/native/${{ matrix.native_dir }}
           cmake -E copy ${{ matrix.cmake_build_dir }}/bin/${{ matrix.lib_name }} internal/src/main/resources/native/${{ matrix.native_dir }}/
+          ls -la internal/src/main/resources/native/${{ matrix.native_dir }}
 
       - name: Build Internal Jar (OS Specific)
         shell: bash
         env:
           SKIP_NATIVE_BINDINGS: "1"
         run: |
-          ./gradlew :internal:shadowJar -PnativeClassifier=${{ matrix.native_dir }}
+          ./gradlew :internal:shadowJar -PnativeClassifier=${{ matrix.native_dir }} -PnativeLibDir=${{ matrix.cmake_build_dir }}/bin
+
+      - name: Upload Native Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spartan_core-${{ matrix.native_dir }}
+          path: ${{ matrix.cmake_build_dir }}/bin/${{ matrix.lib_name }}
+
+      - name: Upload Internal Jar Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spartan-internal-${{ matrix.native_dir }}
+          path: internal/build/libs/*.jar
 
       - name: Publish to Maven (OS Specific)
         if: github.ref == 'refs/heads/main'
@@ -99,4 +112,4 @@ jobs:
             echo "MAVEN_URL not set; skipping publish"
             exit 0
           fi
-          ./gradlew :api:publish :internal:publish -PnativeClassifier=${{ matrix.native_dir }}
+          ./gradlew :api:publish :internal:publish -PnativeClassifier=${{ matrix.native_dir }} -PnativeLibDir=${{ matrix.cmake_build_dir }}/bin

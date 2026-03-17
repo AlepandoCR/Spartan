@@ -62,7 +62,12 @@ tasks {
 
         }
 
-        val coreLibrarySource = rootProject.projectDir.resolve("core/cmake-build-debug/bin")
+        val nativeLibDir = providers.gradleProperty("nativeLibDir").orNull
+        val coreLibrarySource = if (nativeLibDir.isNullOrBlank()) {
+            rootProject.projectDir.resolve("core/cmake-build-debug/bin")
+        } else {
+            rootProject.projectDir.resolve(nativeLibDir)
+        }
 
         val libraryDestinationPath = "native"
         // copy library files from cmake build for FFM bindings
