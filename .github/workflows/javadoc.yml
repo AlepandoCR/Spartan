@@ -54,6 +54,24 @@ jobs:
           mkdir -p build/javadoc/api build/javadoc/internal
           cp -R api/build/docs/javadoc/* build/javadoc/api/
           cp -R internal/build/docs/javadoc/* build/javadoc/internal/
+          touch build/javadoc/.nojekyll
+          cat > build/javadoc/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>Spartan Javadoc</title>
+          </head>
+          <body>
+            <h1>Spartan Javadoc</h1>
+            <ul>
+              <li><a href="api/index.html">Public API</a></li>
+              <li><a href="internal/index.html">Internal Architecture</a></li>
+            </ul>
+          </body>
+          </html>
+          EOF
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
