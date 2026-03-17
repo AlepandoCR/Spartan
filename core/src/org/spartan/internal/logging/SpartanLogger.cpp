@@ -8,6 +8,16 @@
 
 namespace org::spartan::internal::logging {
 
+    std::atomic<bool> SpartanLogger::debugEnabled_{true};
+
+    void SpartanLogger::setDebugEnabled(const bool enabled) {
+        debugEnabled_.store(enabled, std::memory_order_relaxed);
+    }
+
+    bool SpartanLogger::isDebugEnabled() {
+        return debugEnabled_.load(std::memory_order_relaxed);
+    }
+
     void SpartanLogger::info(const std::string_view message) {
         std::println("[Spartan-Core] >> {}", message);
     }
@@ -16,5 +26,17 @@ namespace org::spartan::internal::logging {
         std::println("[Spartan-Core] [ERROR] >> {}", message);
     }
 
-} // namespace org::spartan::core::logging
+    void SpartanLogger::debug(const std::string_view message) {
+        if (!debugEnabled_.load(std::memory_order_relaxed)) {
+            return;
+        }
+        std::println("[Spartan-Core] [DEBUG] >> {}", message);
+    }
 
+    void SpartanLogger::warn(const std::string_view message) {
+        std::println("[Spartan-Core] [WARN] >> {}", message);
+    }
+
+
+
+} // namespace org::spartan::core::logging

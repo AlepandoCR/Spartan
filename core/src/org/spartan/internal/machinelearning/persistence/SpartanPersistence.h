@@ -37,9 +37,10 @@ namespace org::spartan::internal::machinelearning::persistence {
      * @brief Enum identifying the top-level model type stored in the file.
      */
     enum SpartanModelTypeIdentifier : uint32_t {
-        MODEL_TYPE_RECURRENT_SOFT_ACTOR_CRITIC = 0,
-        MODEL_TYPE_DOUBLE_DEEP_Q_NETWORK       = 1,
-        MODEL_TYPE_AUTO_ENCODER_COMPRESSOR     = 2,
+        MODEL_TYPE_RECURRENT_SOFT_ACTOR_CRITIC           = 0,
+        MODEL_TYPE_DOUBLE_DEEP_Q_NETWORK                 = 1,
+        MODEL_TYPE_AUTO_ENCODER_COMPRESSOR               = 2,
+        MODEL_TYPE_CURIOSITY_DRIVEN_RECURRENT_SOFT_ACTOR_CRITIC = 3,
     };
 
     /**

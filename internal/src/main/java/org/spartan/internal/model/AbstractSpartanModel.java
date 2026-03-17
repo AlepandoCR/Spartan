@@ -11,7 +11,6 @@ import org.spartan.internal.bridge.SpartanNative;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.nio.file.Path;
 
 /**
@@ -20,11 +19,28 @@ import java.nio.file.Path;
  * The tick() method contains NO allocations - safe for high-frequency calls.
  * Scalar parameters (agentId, counts) are now passed as primitives directly to C++.
  */
-public abstract class AbstractSpartanModel<C extends SpartanModelConfig> implements SpartanModel<C> {
+public abstract class AbstractSpartanModel<SpartanModelConfigType extends SpartanModelConfig> implements SpartanModel<SpartanModelConfigType> {
+
+    protected static int requireContextSize(@NotNull SpartanContext context) {
+        if (context.getSize() <= 0) {
+            context.update();
+        }
+        return context.getSize();
+    }
+
+    /**
+     * SIMD padding in number of doubles.
+     * <p>
+     * The C++ native code uses SIMD operations
+     * To prevent SIMD overreads from causing access violations when buffers end at page
+     * boundaries, we add significant padding to all buffer allocations.
+     * Increased from 4 to 128 to provide maximum safety margin.
+     */
+    protected static final int SIMD_PADDING_DOUBLES = 128;
 
     protected final Arena arena;
     protected final long agentIdentifier;
-    protected final C config;
+    protected final SpartanModelConfigType config;
     protected final SpartanContext context;
 
     // JVM-owned buffers passed to C++ as pointers
@@ -39,141 +55,57 @@ public abstract class AbstractSpartanModel<C extends SpartanModelConfig> impleme
     private volatile boolean registered = false;
     private volatile boolean closed = false;
     private int lastContextSize;
+    protected final String identifier;
 
     protected AbstractSpartanModel(
+            @NotNull String identifier,
             long agentIdentifier,
-            @NotNull C config,
+            @NotNull SpartanModelConfigType config,
             @NotNull SpartanContext context,
             @NotNull Arena sharedArena,
             long modelWeightCount,
-            long configSegmentSize
+            long configSegmentSize,
+            int actionSize
     ) {
+        this.identifier = identifier;
         this.arena = sharedArena;
         this.agentIdentifier = agentIdentifier;
         this.config = config;
         this.context = context;
-        this.lastContextSize = context.getSize();
+        this.lastContextSize = requireContextSize(context);
 
         // Cache primitive counts
         this.modelWeightsCount = (int) modelWeightCount;
-        this.actionCount = config.actionSize();
+        this.actionCount = actionSize;
 
-        // Allocate config and weight buffers (JVM-owned, C++ gets pointers)
-        this.configSegment = arena.allocate(configSegmentSize, 8);
-        this.modelWeightsBuffer = arena.allocate(ValueLayout.JAVA_DOUBLE, modelWeightCount);
-        this.actionOutputBuffer = arena.allocate(ValueLayout.JAVA_DOUBLE, actionCount);
-    }
+        this.configSegment = arena.allocate(configSegmentSize, 64);
 
-    @Override
-    public long getAgentIdentifier() {
-        return agentIdentifier;
-    }
+        long modelWeightsByteSize = (modelWeightCount + SIMD_PADDING_DOUBLES) * 8L;
+        this.modelWeightsBuffer = arena.allocate(modelWeightsByteSize, 64);
 
-    @Override
-    public @NotNull SpartanContext getSpartanContext() {
-        return context;
-    }
-
-    @Override
-    public @NotNull C getSpartanModelConfig() {
-        return config;
-    }
-
-    @Override
-    public @NotNull MemorySegment getActionOutputBuffer() {
-        return actionOutputBuffer;
-    }
-
-    @Override
-    public @NotNull MemorySegment getModelWeightsBuffer() {
-        return modelWeightsBuffer;
-    }
-
-    @Override
-    public boolean isRegistered() {
-        return registered;
-    }
-
-    // ==================== Tick Operations (Zero-GC) ====================
-
-    /**
-     * Zero-GC tick method. Calls native with zero reward.
-     * <p>
-     * Suitable for non-learning models (AutoEncoder) or when rewards
-     * are applied separately via the orchestrator.
-     */
-    @Override
-    public void tick() {
-        executeNativeTick(0.0);
-    }
-
-    /**
-     * Core tick implementation - Zero-GC, no allocations.
-     * <p>
-     * This method:
-     * <ol>
-     *   <li>Updates context (flushes Java data to off-heap)</li>
-     *   <li>Syncs clean sizes for variable elements</li>
-     *   <li>Calls native spartanTickAgent with the reward</li>
-     * </ol>
-     *
-     * @param reward the reward signal (0.0 for non-learning ticks)
-     * @throws IllegalStateException if not registered or closed
-     * @throws SpartanNativeException if native call fails
-     */
-    protected void executeNativeTick(double reward) {
-        if (!registered) {
-            throw new IllegalStateException("Model not registered with native engine");
-        }
-        if (closed) {
-            throw new IllegalStateException("Model has been closed");
-        }
-
-        // Phase 1: Update context (Zero-GC internally)
-        context.update();
-
-        // Phase 2: Handle context resize (rare)
-        int currentSize = context.getSize();
-        if (currentSize != lastContextSize) {
-            SpartanNative.updateContextPointer(agentIdentifier, context.getData(), currentSize);
-            lastContextSize = currentSize;
-        }
-
-        // Phase 3: Sync clean sizes for variable elements
-        if (context instanceof SpartanContextImpl impl) {
-            impl.syncCleanSizes(agentIdentifier);
-        }
-
-        // Phase 4: Call native tick with reward
-        int result = SpartanNative.spartanTickAgent(agentIdentifier, reward);
-        if (result != 0) {
-            throw new SpartanNativeException("Native tick failed for agent " + agentIdentifier, result);
-        }
+        long actionByteSize = (actionCount + SIMD_PADDING_DOUBLES) * 8L;
+        this.actionOutputBuffer = arena.allocate(actionByteSize, 64);
     }
 
     @Override
     public void register() {
-        if (registered) {
-            throw new IllegalStateException("Model already registered");
-        }
-        if (closed) {
-            throw new IllegalStateException("Model has been closed");
-        }
+        if (registered || closed) throw new IllegalStateException("Invalid state for registration");
 
+        int contextSize = requireContextSize(context);
+        lastContextSize = contextSize;
         writeConfigToSegment();
 
-        // Call native with primitives for scalars, MemorySegment for buffers
         int result = SpartanNative.spartanRegisterModel(
-                agentIdentifier,                    // long - passed directly
-                configSegment,                      // MemorySegment (pointer)
-                getCriticWeightsBufferInternal(),   // MemorySegment (pointer)
-                getCriticWeightsCount(),            // int - passed directly
-                modelWeightsBuffer,                 // MemorySegment (pointer)
-                modelWeightsCount,                  // int - passed directly
-                context.getData(),                  // MemorySegment (pointer)
-                context.getSize(),                  // int - passed directly
-                actionOutputBuffer,                 // MemorySegment (pointer)
-                actionCount                         // int - passed directly
+                agentIdentifier,
+                configSegment,
+                getCriticWeightsBufferInternal(),
+                getCriticWeightsCount(),
+                modelWeightsBuffer,
+                modelWeightsCount,
+                ((SpartanContextImpl) context).getData(), // Cast here
+                contextSize,
+                actionOutputBuffer,
+                actionCount
         );
 
         if (result != 0) {
@@ -183,79 +115,53 @@ public abstract class AbstractSpartanModel<C extends SpartanModelConfig> impleme
         registered = true;
     }
 
-    // ==================== Persistence ====================
+
+    @Override public void tick() { executeNativeTick(0.0); }
+
+    protected void executeNativeTick(double reward) {
+        if (!registered || closed) throw new IllegalStateException("Model not active");
+        context.update();
+        int currentSize = context.getSize();
+        if (currentSize != lastContextSize) {
+            SpartanNative.updateContextPointer(agentIdentifier, ((SpartanContextImpl) context).getData(), currentSize);
+            lastContextSize = currentSize;
+        }
+        if (context instanceof SpartanContextImpl impl) impl.syncCleanSizes(agentIdentifier);
+        int result = SpartanNative.spartanTickAgent(agentIdentifier, reward);
+        if (result != 0) throw new SpartanNativeException("Native tick failed", result);
+    }
+
+    @Override public void close() {
+        if (closed) return;
+        if (registered) { SpartanNative.spartanUnregisterModel(agentIdentifier); registered = false; }
+        closed = true;
+    }
+
+    @Override public long getAgentIdentifier() { return agentIdentifier; }
+    @Override public @NotNull String getIdentifier() { return identifier; }
+    @Override public @NotNull SpartanContext getSpartanContext() { return context; }
+    @Override public @NotNull SpartanModelConfigType getSpartanModelConfig() { return config; }
+    @Override public @NotNull MemorySegment getActionOutputBuffer() { return actionOutputBuffer; }
+    @Override public @NotNull MemorySegment getModelWeightsBuffer() { return modelWeightsBuffer; }
+    @Override public boolean isRegistered() { return registered; }
 
     @Override
     public void saveModel(@NotNull Path filePath) throws SpartanPersistenceException {
-        if (!registered) {
-            throw new IllegalStateException("Model must be registered before saving");
-        }
-        if (closed) {
-            throw new IllegalStateException("Model has been closed");
-        }
-
         String pathString = filePath.toAbsolutePath().toString();
         int result = SpartanNative.spartanSaveModel(agentIdentifier, pathString);
-
-        if (result != 0) {
-            throw new SpartanPersistenceException(
-                    "Failed to save model to: " + pathString + " (error code: " + result + ")");
-        }
+        if (result != 0) throw new SpartanPersistenceException("Save failed: " + result);
     }
 
     @Override
     public void loadModel(@NotNull Path filePath) throws SpartanPersistenceException {
-        if (closed) {
-            throw new IllegalStateException("Model has been closed");
-        }
-
         String pathString = filePath.toAbsolutePath().toString();
-
-        // Load weights into the model weights buffer
-        // Note: C++ handles loading both model and critic weights if file contains both
         int result = SpartanNative.spartanLoadModel(pathString, modelWeightsBuffer, modelWeightsCount);
-
-        if (result != 0) {
-            throw new SpartanPersistenceException(
-                    "Failed to load model from: " + pathString + " (error code: " + result + ")");
-        }
+        if (result != 0) throw new SpartanPersistenceException("Load failed: " + result);
     }
 
-    // ==================== Exploration Management ====================
+    @Override public void decayExploration() { SpartanNative.spartanDecayExploration(agentIdentifier); }
 
-    @Override
-    public void decayExploration() {
-        if (!registered) {
-            throw new IllegalStateException("Model must be registered before decaying exploration");
-        }
-        if (closed) {
-            throw new IllegalStateException("Model has been closed");
-        }
-
-        SpartanNative.spartanDecayExploration(agentIdentifier);
-    }
-
-    @Override
-    public void close() {
-        if (closed) {
-            return;
-        }
-
-        if (registered) {
-            // Pass agentIdentifier as long directly
-            SpartanNative.spartanUnregisterModel(agentIdentifier);
-            registered = false;
-        }
-
-        closed = true;
-    }
-
-    /** Writes config data to configSegment. Called once during registration. */
     protected abstract void writeConfigToSegment();
-
-    /** Returns critic weights buffer (for agent models). */
     protected abstract MemorySegment getCriticWeightsBufferInternal();
-
-    /** Returns critic weights count as primitive int. */
     protected abstract int getCriticWeightsCount();
 }

@@ -7,24 +7,20 @@ import org.spartan.api.agent.config.SpartanModelConfig;
 import java.lang.foreign.MemorySegment;
 
 /**
- * Interface for decision-making ML agents that learn from rewards.
+ * Represents an active "Decision Maker" agent.
  * <p>
- * Extends {@link SpartanModel} with support for:
+ * <b>Concept:</b> Unlike a generic model which might just process data, an Agent <i>acts</i>.
+ * It has:
  * <ul>
- *   <li>Action management (interpreting predictions as game actions)</li>
- *   <li>Critic networks (for actor-critic algorithms like RSAC)</li>
- *   <li>Reward-based learning</li>
+ *   <li><b>Sensors (Context):</b> To see.</li>
+ *   <li><b>Brain (Model):</b> To think.</li>
+ *   <li><b>Actuators (Actions):</b> To do.</li>
  * </ul>
- * <p>
- * Concrete implementations:
- * <ul>
- *   <li>RecurrentSoftActorCriticModel (RSAC) - continuous actions with GRU memory</li>
- *   <li>DoubleDeepQNetworkModel (DDQN) - discrete actions with experience replay</li>
- * </ul>
+ * This interface adds the ability to manage Actions (the output mapping).
  *
- * @param <C> the configuration type (must be an agent config)
+ * @param <SpartanModelConfigType> the config type
  */
-public interface SpartanAgent<C extends SpartanModelConfig> extends SpartanModel<C> {
+public interface SpartanAgent<SpartanModelConfigType extends SpartanModelConfig> extends SpartanModel<SpartanModelConfigType> {
 
     /**
      * Returns the action manager for this agent.

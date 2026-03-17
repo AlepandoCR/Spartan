@@ -127,7 +127,7 @@ class SyncMethodEmitter(CodeEmitter):
         args_str = ", ".join(invoke_args)
 
         lines = [
-            self._i(2) + "try (var arena = Arena.ofConfined()) {",
+            self._i(2) + "try (var arena = Arena.ofShared()) {",
             conversions_str,
             self._i(3) + f"{return_stmt}{cast}{func.handle_name}.invokeExact({args_str});",
             self._i(2) + "} catch (Throwable t) {",
@@ -232,7 +232,7 @@ class AsyncMethodEmitter(CodeEmitter):
         args_str = ", ".join(invoke_args)
 
         lines = [
-            self._i(3) + "try (var arena = Arena.ofConfined()) {",
+            self._i(3) + "try (var arena = Arena.ofShared()) {",
             conversions_str,
             self._i(4) + f"{return_stmt}{cast}{func.handle_name}.invokeExact({args_str});",
             self._i(3) + "} catch (Throwable t) {",

@@ -4,15 +4,18 @@ import org.junit.jupiter.api.*;
 import org.spartan.api.agent.action.SpartanActionManager;
 import org.spartan.api.agent.action.type.SpartanAction;
 import org.spartan.api.agent.config.DoubleDeepQNetworkConfig;
+import org.spartan.internal.agent.context.SpartanContextImpl;
 import org.spartan.api.agent.context.SpartanContext;
 import org.spartan.api.agent.context.element.SpartanContextElement;
-import org.spartan.internal.agent.context.SpartanContextImpl;
 import org.spartan.internal.bridge.SpartanNative;
-import org.spartan.internal.model.DoubleDeepQNetworkModel;
+import org.spartan.internal.model.DoubleDeepQNetworkModelImpl;
+import org.spartan.internal.config.spi.SpartanConfigFactoryServiceProviderImpl;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.Collections;
+import java.util.List;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -47,6 +50,7 @@ public class DoubleDeepQNetworkModelTest {
 
     @BeforeAll
     static void initializeNativeEngine() {
+        new SpartanConfigFactoryServiceProviderImpl();
         memoryArena = Arena.ofShared();
         try {
             SpartanNative.spartanInit();
@@ -79,8 +83,6 @@ public class DoubleDeepQNetworkModelTest {
         System.out.println("-".repeat(60));
 
         DoubleDeepQNetworkConfig configuration = DoubleDeepQNetworkConfig.builder()
-                .stateSize(OBSERVATION_SIZE)
-                .actionSize(DISCRETE_ACTION_COUNT)
                 .hiddenLayerNeuronCount(HIDDEN_LAYER_NEURON_COUNT)
                 .hiddenLayerCount(HIDDEN_LAYER_COUNT)
                 .learningRate(1e-4)
@@ -92,11 +94,16 @@ public class DoubleDeepQNetworkModelTest {
                 .replayBufferCapacity(100000)
                 .replayBatchSize(64)
                 .isTraining(true)
+                .debugLogging(true)
                 .build();
 
+        SpartanContext observationContext = createMockObservationContext();
+        observationContext.update();
+        SpartanActionManager discreteActionManager = createMockActionManager();
+
         System.out.println("  Configuration Parameters:");
-        System.out.println("    - Observation Size (State): " + configuration.stateSize());
-        System.out.println("    - Discrete Action Count: " + configuration.actionSize());
+        System.out.println("    - Observation Size (State): " + observationContext.getSize());
+        System.out.println("    - Discrete Action Count: " + discreteActionManager.getActions().size());
         System.out.println("    - Hidden Layer Neuron Count: " + configuration.hiddenLayerNeuronCount());
         System.out.println("    - Hidden Layer Count: " + configuration.hiddenLayerCount());
         System.out.println("    - Learning Rate: " + configuration.learningRate());
@@ -109,8 +116,8 @@ public class DoubleDeepQNetworkModelTest {
         System.out.println("    - Replay Batch Size: " + configuration.replayBatchSize());
         System.out.println("    - Training Mode Enabled: " + configuration.isTraining());
 
-        assertEquals(OBSERVATION_SIZE, configuration.stateSize());
-        assertEquals(DISCRETE_ACTION_COUNT, configuration.actionSize());
+        assertEquals(OBSERVATION_SIZE, observationContext.getSize());
+        assertEquals(DISCRETE_ACTION_COUNT, discreteActionManager.getActions().size());
         System.out.println("  [OK] Configuration validated successfully");
     }
 
@@ -129,8 +136,6 @@ public class DoubleDeepQNetworkModelTest {
 
         // Create Double Deep Q-Network configuration
         DoubleDeepQNetworkConfig configuration = DoubleDeepQNetworkConfig.builder()
-                .stateSize(OBSERVATION_SIZE)
-                .actionSize(DISCRETE_ACTION_COUNT)
                 .hiddenLayerNeuronCount(HIDDEN_LAYER_NEURON_COUNT)
                 .hiddenLayerCount(HIDDEN_LAYER_COUNT)
                 .learningRate(1e-4)
@@ -144,8 +149,13 @@ public class DoubleDeepQNetworkModelTest {
         SpartanActionManager discreteActionManager = createMockActionManager();
 
         // Create Double Deep Q-Network model
-        DoubleDeepQNetworkModel model = new DoubleDeepQNetworkModel(
-                AGENT_IDENTIFIER, configuration, observationContext, memoryArena, discreteActionManager
+        DoubleDeepQNetworkModelImpl model = new DoubleDeepQNetworkModelImpl(
+                "ddqn-test-model",
+                AGENT_IDENTIFIER,
+                configuration,
+                observationContext,
+                memoryArena,
+                discreteActionManager
         );
 
         System.out.println("\n  Phase 1: Model Registration");
@@ -179,7 +189,7 @@ public class DoubleDeepQNetworkModelTest {
             }
 
             // Write observations to context memory segment
-            MemorySegment contextDataSegment = observationContext.getData();
+            MemorySegment contextDataSegment = ((SpartanContextImpl) observationContext).getData();
             for (int inputIndex = 0; inputIndex < OBSERVATION_SIZE; inputIndex++) {
                 contextDataSegment.setAtIndex(ValueLayout.JAVA_DOUBLE, inputIndex, observationInputs[inputIndex]);
             }
@@ -272,14 +282,17 @@ public class DoubleDeepQNetworkModelTest {
         observationContext.update(); // Initial update to allocate segment
 
         DoubleDeepQNetworkConfig configuration = DoubleDeepQNetworkConfig.builder()
-                .stateSize(OBSERVATION_SIZE)
-                .actionSize(DISCRETE_ACTION_COUNT)
                 .hiddenLayerNeuronCount(32)
                 .hiddenLayerCount(2)
                 .build();
 
-        DoubleDeepQNetworkModel model = new DoubleDeepQNetworkModel(
-                AGENT_IDENTIFIER + 1, configuration, observationContext, memoryArena, createMockActionManager()
+        DoubleDeepQNetworkModelImpl model = new DoubleDeepQNetworkModelImpl(
+                "ddqn-zerocopy",
+                AGENT_IDENTIFIER + 1,
+                configuration,
+                observationContext,
+                memoryArena,
+                createMockActionManager()
         );
 
         model.register();
@@ -288,7 +301,7 @@ public class DoubleDeepQNetworkModelTest {
         // Note: We write AFTER update() and registration, then call tick() which will
         // read these values before the next update() overwrites them
         double[] testObservationValues = {0.0, 0.25, 0.5, 0.75, 1.0, -0.25, -0.5, -0.75, -1.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7};
-        MemorySegment contextDataSegment = observationContext.getData();
+        MemorySegment contextDataSegment = ((SpartanContextImpl) observationContext).getData();
 
         System.out.println("  Writing test observation values to context:");
         for (int valueIndex = 0; valueIndex < testObservationValues.length; valueIndex++) {
@@ -350,8 +363,6 @@ public class DoubleDeepQNetworkModelTest {
         observationContext.update();
 
         DoubleDeepQNetworkConfig configuration = DoubleDeepQNetworkConfig.builder()
-                .stateSize(OBSERVATION_SIZE)
-                .actionSize(DISCRETE_ACTION_COUNT)
                 .hiddenLayerNeuronCount(32)
                 .hiddenLayerCount(2)
                 .epsilon(1.0)
@@ -359,8 +370,13 @@ public class DoubleDeepQNetworkModelTest {
                 .epsilonMin(0.05)
                 .build();
 
-        DoubleDeepQNetworkModel model = new DoubleDeepQNetworkModel(
-                AGENT_IDENTIFIER + 2, configuration, observationContext, memoryArena, createMockActionManager()
+        DoubleDeepQNetworkModelImpl model = new DoubleDeepQNetworkModelImpl(
+                "ddqn-episode-reset",
+                AGENT_IDENTIFIER + 2,
+                configuration,
+                observationContext,
+                memoryArena,
+                createMockActionManager()
         );
 
         model.register();
@@ -405,14 +421,17 @@ public class DoubleDeepQNetworkModelTest {
         observationContext.update();
 
         DoubleDeepQNetworkConfig configuration = DoubleDeepQNetworkConfig.builder()
-                .stateSize(OBSERVATION_SIZE)
-                .actionSize(DISCRETE_ACTION_COUNT)
                 .hiddenLayerNeuronCount(32)
                 .hiddenLayerCount(2)
                 .build();
 
-        DoubleDeepQNetworkModel model = new DoubleDeepQNetworkModel(
-                AGENT_IDENTIFIER + 3, configuration, observationContext, memoryArena, createMockActionManager()
+        DoubleDeepQNetworkModelImpl model = new DoubleDeepQNetworkModelImpl(
+                "ddqn-zero-gc",
+                AGENT_IDENTIFIER + 3,
+                configuration,
+                observationContext,
+                memoryArena,
+                createMockActionManager()
         );
 
         model.register();
@@ -426,7 +445,7 @@ public class DoubleDeepQNetworkModelTest {
         Random randomGenerator = new Random(123);
         for (int iterationIndex = 0; iterationIndex < 10; iterationIndex++) {
             // Write random observations
-            MemorySegment contextDataSegment = observationContext.getData();
+            MemorySegment contextDataSegment = ((SpartanContextImpl) observationContext).getData();
             for (int inputIndex = 0; inputIndex < OBSERVATION_SIZE; inputIndex++) {
                 contextDataSegment.setAtIndex(ValueLayout.JAVA_DOUBLE, inputIndex, randomGenerator.nextDouble());
             }
@@ -464,28 +483,83 @@ public class DoubleDeepQNetworkModelTest {
     }
 
     private SpartanActionManager createMockActionManager() {
-        return new MockActionManager();
+        MockActionManager manager = new MockActionManager();
+        for (int i = 0; i < DISCRETE_ACTION_COUNT; i++) {
+            manager.registerAction(new MockAction("mock_action_" + i));
+        }
+        return manager;
     }
 
     /**
      * Mock action manager for testing Double Deep Q-Network.
-     * Returns empty arrays since we don't need real actions in tests.
+     * Returns empty lists since we don't need real actions in tests.
      */
     static class MockActionManager implements SpartanActionManager {
+        private final List<SpartanAction> actions = new java.util.ArrayList<>();
+
         @Override
-        public SpartanAction[] getActions() {
-            return new SpartanAction[0];
+        public SpartanActionManager registerAction(SpartanAction action) {
+            actions.add(action);
+            return this;
         }
 
         @Override
-        @SuppressWarnings("unchecked")
-        public <SpartanActionType extends SpartanAction> SpartanActionType[] getActionsByType(Class<SpartanActionType> actionClass) {
-            return (SpartanActionType[]) java.lang.reflect.Array.newInstance(actionClass, 0);
+        public List<SpartanAction> getActions() {
+            return Collections.unmodifiableList(actions);
         }
 
         @Override
-        public SpartanAction[] getActionsByIdentifier(String identifier) {
-            return new SpartanAction[0];
+        public <SpartanActionType extends SpartanAction> List<SpartanActionType> getActionsByType(Class<SpartanActionType> actionClass) {
+            java.util.List<SpartanActionType> matches = new java.util.ArrayList<>();
+            for (SpartanAction action : actions) {
+                if (actionClass.isInstance(action)) {
+                    matches.add(actionClass.cast(action));
+                }
+            }
+            return matches;
+        }
+
+        @Override
+        public List<SpartanAction> getActionsByIdentifier(String identifier) {
+            java.util.List<SpartanAction> matches = new java.util.ArrayList<>();
+            for (SpartanAction action : actions) {
+                if (identifier.equals(action.identifier())) {
+                    matches.add(action);
+                }
+            }
+            return matches;
+        }
+    }
+
+    static class MockAction implements SpartanAction {
+        private final String identifier;
+
+        MockAction(String identifier) {
+            this.identifier = identifier;
+        }
+
+        @Override
+        public String identifier() {
+            return identifier;
+        }
+
+        @Override
+        public double taskMaxMagnitude() {
+            return 1.0;
+        }
+
+        @Override
+        public double taskMinMagnitude() {
+            return -1.0;
+        }
+
+        @Override
+        public void task(double normalizedMagnitude) {
+        }
+
+        @Override
+        public double award() {
+            return 0.0;
         }
     }
 

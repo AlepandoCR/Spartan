@@ -1,5 +1,7 @@
 package org.spartan.api.exception;
 
+import org.jetbrains.annotations.NotNull;
+
 /**
  * Exception thrown when a native Spartan engine operation fails.
  * <p>
@@ -20,7 +22,7 @@ public class SpartanNativeException extends RuntimeException {
      * @param message   the error message
      * @param errorCode the native error code returned by C++
      */
-    public SpartanNativeException(String message, int errorCode) {
+    public SpartanNativeException(@NotNull String message, int errorCode) {
         super(message + " (error code: " + errorCode + ")");
         this.errorCode = errorCode;
     }
@@ -32,7 +34,7 @@ public class SpartanNativeException extends RuntimeException {
      * @param cause     the underlying cause
      * @param errorCode the native error code
      */
-    public SpartanNativeException(String message, Throwable cause, int errorCode) {
+    public SpartanNativeException(@NotNull String message, @NotNull Throwable cause, int errorCode) {
         super(message + " (error code: " + errorCode + ")", cause);
         this.errorCode = errorCode;
     }

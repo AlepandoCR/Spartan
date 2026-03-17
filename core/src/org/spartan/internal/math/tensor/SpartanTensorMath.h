@@ -71,6 +71,15 @@ namespace org::spartan::internal::math::tensor {
         static void applyTanh(std::span<double> tensor);
 
         /**
+         * @brief Applies the Softmax activation function in-place.
+         * Numerically stable implementation using the max-subtraction trick.
+         * Formula: f(x_i) = e^(x_i - max(x)) / sum(e^(x_j - max(x)))
+         *
+         * @param tensor Writable span of the target vector. Mutated in-place.
+         */
+        static void applySoftmax(std::span<double> tensor);
+
+        /**
          * @brief Applies the Sigmoid activation function in-place using a fast approximation.
          * Formula: f(x) = 1 / (1 + e^-x)
          *
@@ -98,6 +107,16 @@ namespace org::spartan::internal::math::tensor {
                 std::span<const double> onlineWeights,
                 std::span<double> targetWeights,
                 double tau);
+
+        /**
+         * @brief Clips gradient norm to prevent exploding gradients in Recurrent networks.
+         * If the global gradient norm exceeds maxNorm, all gradients are scaled down.
+         * Formula: If ||G|| > maxNorm, G = G * (maxNorm / ||G||)
+         *
+         * @param gradients Writable span of the gradient vector. Mutated in-place if clipping occurs.
+         * @param maxNorm The maximum allowable norm for the gradient vector.
+         */
+        static void clipGradients(std::span<double> gradients, double maxNorm);
 
         /**
          * @brief Finds the index of the maximum value in a tensor.
@@ -194,6 +213,5 @@ namespace org::spartan::internal::math::tensor {
                 std::span<const double> stdDevs,
                 std::span<double> outActions,
                 std::uint64_t seed = 0);
-
     };
 }

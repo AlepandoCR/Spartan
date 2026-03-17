@@ -5,6 +5,8 @@
 #pragma once
 
 #include <span>
+#include <format>
+#include "internal/logging/SpartanLogger.h"
 
 /**
  * @file GatedRecurrentUnitLayer.h
@@ -119,5 +121,4 @@ namespace org::spartan::internal::machinelearning {
         std::span<double> gateBiases_;
         std::span<double> hiddenStateBuffer_;
     };
-
 }

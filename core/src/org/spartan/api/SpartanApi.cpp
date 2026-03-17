@@ -24,6 +24,7 @@ extern "C" {
      * library.  It performs any one-time global setup required by the engine.
      */
     __declspec(dllexport) void spartan_init() {
+        logging::SpartanLogger::setDebugEnabled(false);
         SpartanEngine::log("Detected C++ Spartan Core...");
     }
 

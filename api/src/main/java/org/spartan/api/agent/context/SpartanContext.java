@@ -4,42 +4,55 @@ import org.jetbrains.annotations.NotNull;
 import org.spartan.api.agent.context.element.SpartanContextElement;
 import org.spartan.api.agent.context.element.variable.SpartanVariableContextElement;
 
-import java.lang.foreign.MemorySegment;
 import java.util.Collection;
 
+import org.spartan.api.SpartanApi;
+
 /**
- * Represents an AI context that holds elements with shared memory backing.
- * The data is stored in a MemorySegment that can be directly accessed by native code (C++).
- * Any modifications made by C++ are instantly visible in Java without copying.
+ * Represents the agent's perception of the world.
+ * <p>
+ * <b>Concept:</b> To a neural network, the world is just a long list of numbers (a vector).
+ * The SpartanContext is responsible for taking high-level game objects (Players, Items) called {@link SpartanContextElement}s,
+ * reading their "numbers" (Health, Position), and flattening them into a highly optimized memory buffer that C++ can read instantly.
+ * <p>
+ * Elements are written in index order; indices must match the layout used during training.
+ * Variable-length elements report a valid prefix length via {@link SpartanVariableContextElement#getSize()}.
  */
 public interface SpartanContext {
 
     /**
-     * Gets the MemorySegment containing the flattened data of all elements.
-     * This segment is directly accessible by native code - changes made by C++ are visible instantly.
-     * Call {@link #update()} before accessing to ensure data is current.
+     * Creates a new Context via the API.
      *
-     * @return the MemorySegment containing the context data
+     * @param api the API instance
+     * @param identifier unique name for this context
+     * @return a new context
      */
-    @NotNull MemorySegment getData();
+    static SpartanContext build(SpartanApi api, @NotNull String identifier) {
+        return api.createContext(identifier);
+    }
 
     /**
-     * @return the number of valid doubles in the data segment
+     * Returns the total size of the observed world.
+     * This is the sum of sizes of all active elements.
+     *
+     * @return the number of doubles in the observation vector
      */
     int getSize();
 
 
     /**
-     * Updates all elements in this context by calling {@link SpartanContextElement#update()} on each element.
-     * Copies element data into the shared MemorySegment.
+     * Refreshes the agent's view of the world.
+     * <p>
+     * Call this once per tick before the agent acts.
+     * It iterates over all registered elements, asks them for their current values, and writes them to native memory.
      */
     void update();
 
     /**
-     * Adds an element to this context.
-     * @param element the element to add
-     * @param index index at which the element's data should be written, this is essential for model learning
-     * @apiNote {@link SpartanContext#update()} cleans {@link SpartanVariableContextElement} data so order could be any
+     * Registers a new "Sense" or input source.
+     *
+     * @param element the sensor element (e.g., a "HealthSensor")
+     * @param index the position in the vector to write to. IMPORTANT: This must match the index expected by your model's training.
      */
     void addElement(@NotNull SpartanContextElement element, int index);
 

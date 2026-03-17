@@ -12,9 +12,16 @@
 #include "machinelearning/model/RecurrentSoftActorCriticSpartanModel.h"
 #include "machinelearning/model/DoubleDeepQNetworkSpartanModel.h"
 #include "machinelearning/model/AutoEncoderCompressorSpartanModel.h"
+#include "machinelearning/model/CuriosityDrivenRecurrentSoftActorCriticSpartanModel.h"
 #include "machinelearning/persistence/SpartanPersistence.h"
 
 namespace org::spartan::internal {
+
+    namespace {
+        size_t simdPad(size_t count) {
+            return (count + 7) & ~static_cast<size_t>(7);
+        }
+    }
 
     long SpartanEngine::computeFuzzySetUnion(double* targetFuzzySet,
                                              double* sourceFuzzySet,
@@ -37,14 +44,6 @@ namespace org::spartan::internal {
     /**
      * Constructs a Recurrent Soft Actor-Critic model by slicing the flat critic and model
      * weight buffers into the individual sub-network spans expected by the constructor.
-     *
-     * Weight layout in criticWeightsBuffer (JVM side):
-     *   [GRU gate weights | GRU gate biases | GRU hidden state | Q1 weights | Q1 biases | Q2 weights | Q2 biases]
-     *
-     * Weight layout in modelWeightsBuffer (JVM side):
-     *   [Policy weights | Policy biases | Encoder weight pool (if nestedEncoderCount > 0)]
-     *
-     * IMPORTANT: GRU uses hiddenStateSize, while Actor/Critic networks use their own neuron counts.
      */
     static std::unique_ptr<machinelearning::SpartanModel> constructRecurrentSoftActorCriticModel(
             const uint64_t agentIdentifier,
@@ -61,29 +60,32 @@ namespace org::spartan::internal {
         const auto* config = static_cast<const RecurrentSoftActorCriticHyperparameterConfig*>(
             opaqueHyperparameterConfig);
 
-        // GRU dimensions - use hiddenStateSize for the recurrent hidden state
         const int gruHiddenSize = config->hiddenStateSize;
         const int gruInputSize = config->recurrentInputFeatureCount > 0
             ? config->recurrentInputFeatureCount : config->baseConfig.stateSize;
         const int gruConcatSize = gruHiddenSize + gruInputSize;
 
-        // Actor network dimensions - separate from GRU
         const int actorHiddenSize = config->actorHiddenLayerNeuronCount;
+        const int actorLayerCount = config->actorHiddenLayerCount;
         const int actionSize = config->baseConfig.actionSize;
 
-        // Critic network dimensions
         const int criticHiddenSize = config->criticHiddenLayerNeuronCount;
+        const int criticLayerCount = config->criticHiddenLayerCount;
 
-        // Slice the critic weights buffer into GRU + Q1 + Q2 sub-spans.
-        // GRU has 3 gates (update, reset, candidate), each with weights and biases.
         const size_t gruGateWeightCount = static_cast<size_t>(3) * gruHiddenSize * gruConcatSize;
         const size_t gruGateBiasCount = static_cast<size_t>(3) * gruHiddenSize;
         const size_t gruHiddenStateCount = gruHiddenSize;
 
-        // Q-critics: combined input = GRU hidden output + action, one hidden layer, one scalar output
+        // MULTI-LAYER CRITIC MATH
         const size_t criticCombinedInput = gruHiddenSize + actionSize;
-        const size_t criticWeightCountPerNetwork = (criticHiddenSize * criticCombinedInput) + criticHiddenSize;
-        const size_t criticBiasCountPerNetwork = criticHiddenSize + 1;
+        size_t criticWeightCountPerNetwork = criticHiddenSize * criticCombinedInput; // Input -> L1
+        if (criticLayerCount > 1) {
+             criticWeightCountPerNetwork += static_cast<size_t>(criticHiddenSize) * criticHiddenSize * (criticLayerCount - 1);
+        }
+        criticWeightCountPerNetwork += criticHiddenSize; // Ln -> Output
+
+        size_t criticBiasCountPerNetwork = static_cast<size_t>(criticHiddenSize) * criticLayerCount; // Biases for all hidden layers
+        criticBiasCountPerNetwork += 1; // Output bias
 
         size_t criticOffset = 0;
         auto criticSpan = std::span(criticWeightsBuffer, criticWeightsCount);
@@ -97,26 +99,31 @@ namespace org::spartan::internal {
         auto gruHiddenState = criticSpan.subspan(criticOffset, gruHiddenStateCount);
         criticOffset += gruHiddenStateCount;
 
+        criticOffset = simdPad(criticOffset);
+
         auto firstCriticWeights = criticSpan.subspan(criticOffset, criticWeightCountPerNetwork);
         criticOffset += criticWeightCountPerNetwork;
 
         auto firstCriticBiases = criticSpan.subspan(criticOffset, criticBiasCountPerNetwork);
         criticOffset += criticBiasCountPerNetwork;
 
+        criticOffset = simdPad(criticOffset);
+
         auto secondCriticWeights = criticSpan.subspan(criticOffset, criticWeightCountPerNetwork);
         criticOffset += criticWeightCountPerNetwork;
 
         auto secondCriticBiases = criticSpan.subspan(criticOffset, criticBiasCountPerNetwork);
 
-        // Slice the model weights buffer into Policy + Encoder pool sub-spans.
-        // Policy input is GRU hidden output (gruHiddenSize), not actorHiddenSize
-        // Policy: GRU_output-to-actor_hidden weights + actor hidden biases + mean-output weights + mean biases
-        //         + log-std-output weights + log-std biases
-        const size_t policyLayer1WeightCount = static_cast<size_t>(actorHiddenSize) * gruHiddenSize;
-        const size_t policyMeanWeightCount = static_cast<size_t>(actionSize) * actorHiddenSize;
-        const size_t policyLogStdWeightCount = static_cast<size_t>(actionSize) * actorHiddenSize;
-        const size_t totalPolicyWeightCount = policyLayer1WeightCount + policyMeanWeightCount + policyLogStdWeightCount;
-        const size_t totalPolicyBiasCount = static_cast<size_t>(actorHiddenSize) + actionSize + actionSize;
+        // MULTI-LAYER ACTOR MATH
+        size_t totalPolicyWeightCount = static_cast<size_t>(actorHiddenSize) * gruHiddenSize; // Input -> L1
+        if (actorLayerCount > 1) {
+            totalPolicyWeightCount += static_cast<size_t>(actorHiddenSize) * actorHiddenSize * (actorLayerCount - 1);
+        }
+        totalPolicyWeightCount += static_cast<size_t>(actionSize) * actorHiddenSize; // Ln -> Mean
+        totalPolicyWeightCount += static_cast<size_t>(actionSize) * actorHiddenSize; // Ln -> LogStd
+
+        size_t totalPolicyBiasCount = static_cast<size_t>(actorHiddenSize) * actorLayerCount; // Biases for all hidden layers
+        totalPolicyBiasCount += actionSize + actionSize; // Mean + LogStd biases
 
         const auto modelSpan = std::span(modelWeightsBuffer, modelWeightsCount);
         size_t modelOffset = 0;
@@ -127,7 +134,7 @@ namespace org::spartan::internal {
         auto policyBiases = modelSpan.subspan(modelOffset, totalPolicyBiasCount);
         modelOffset += totalPolicyBiasCount;
 
-        // Remaining model weights belong to the nested encoder pool
+        modelOffset = simdPad(modelOffset);
         auto encoderWeightPool = modelSpan.subspan(modelOffset);
 
         auto contextSpan = std::span<const double>(contextBuffer, contextCount);
@@ -153,15 +160,6 @@ namespace org::spartan::internal {
     }
 
 
-    /**
-     * Constructs a Double Deep Q-Network model by slicing the weight buffers.
-     *
-     * Weight layout in criticWeightsBuffer:
-     *   [Target network weights | Target network biases]
-     *
-     * Weight layout in modelWeightsBuffer:
-     *   [Online network weights | Online network biases]
-     */
     static std::unique_ptr<machinelearning::SpartanModel> constructDoubleDeepQNetworkModel(
             const uint64_t agentIdentifier,
             void* opaqueHyperparameterConfig,
@@ -181,7 +179,6 @@ namespace org::spartan::internal {
         const int actionSize = config->baseConfig.actionSize;
         const int hiddenSize = config->hiddenLayerNeuronCount;
 
-        // Online network: layer 1 weights + hidden layer bias + output weights + output bias
         const size_t onlineWeightCount = static_cast<size_t>(hiddenSize) * stateSize + static_cast<size_t>(actionSize) * hiddenSize;
         const size_t onlineBiasCount = static_cast<size_t>(hiddenSize) + actionSize;
 
@@ -192,7 +189,6 @@ namespace org::spartan::internal {
         modelOffset += onlineWeightCount;
         auto onlineBiases = modelSpan.subspan(modelOffset, onlineBiasCount);
 
-        // Target network mirrors online network dimensions
         auto criticSpan = std::span(criticWeightsBuffer, criticWeightsCount);
         size_t criticOffset = 0;
 
@@ -210,18 +206,6 @@ namespace org::spartan::internal {
             targetWeights, targetBiases);
     }
 
-    /**
-     * Constructs an AutoEncoder Compressor model by slicing the weight buffers.
-     *
-     * Weight layout in modelWeightsBuffer (must match processTick() in AutoEncoderCompressorSpartanModel):
-     *   [Encoder weights (2 layers) | Encoder biases (2 layers) |
-     *    Decoder weights (2 layers) | Decoder biases (2 layers) | Latent buffer]
-     *
-     * Encoder Layer 1: stateSize -> hiddenSize
-     * Encoder Layer 2: hiddenSize -> latentSize
-     * Decoder Layer 1: latentSize -> hiddenSize
-     * Decoder Layer 2: hiddenSize -> stateSize
-     */
     static std::unique_ptr<machinelearning::SpartanModel> constructAutoEncoderCompressorModel(
             const uint64_t agentIdentifier,
             void* opaqueHyperparameterConfig,
@@ -239,19 +223,17 @@ namespace org::spartan::internal {
         const int latentSize = config->latentDimensionSize;
         const int hiddenSize = config->encoderHiddenNeuronCount;
 
-        // Encoder: 2 layers (input->hidden, hidden->latent)
         const size_t encoderLayer1Weights = static_cast<size_t>(hiddenSize) * stateSize;
         const size_t encoderLayer2Weights = static_cast<size_t>(latentSize) * hiddenSize;
-        const size_t encoderWeightCount = encoderLayer1Weights + encoderLayer2Weights;
-        const size_t encoderBiasCount = static_cast<size_t>(hiddenSize) + latentSize;
+        const size_t encoderWeightCount = simdPad(encoderLayer1Weights + encoderLayer2Weights);
+        const size_t encoderBiasCount = simdPad(static_cast<size_t>(hiddenSize) + latentSize);
 
-        // Decoder: 2 layers (latent->hidden, hidden->output)
         const size_t decoderLayer1Weights = static_cast<size_t>(hiddenSize) * latentSize;
         const size_t decoderLayer2Weights = static_cast<size_t>(stateSize) * hiddenSize;
-        const size_t decoderWeightCount = decoderLayer1Weights + decoderLayer2Weights;
-        const size_t decoderBiasCount = static_cast<size_t>(hiddenSize) + stateSize;
+        const size_t decoderWeightCount = simdPad(decoderLayer1Weights + decoderLayer2Weights);
+        const size_t decoderBiasCount = simdPad(static_cast<size_t>(hiddenSize) + stateSize);
 
-        const size_t latentCount = latentSize;
+        const size_t latentCount = simdPad(latentSize);
 
         const auto modelSpan = std::span(modelWeightsBuffer, modelWeightsCount);
         size_t offset = 0;
@@ -277,6 +259,143 @@ namespace org::spartan::internal {
             latentBuffer);
     }
 
+        /**
+     * Constructs a Curiosity-Driven RSAC model by surgically slicing flat buffers.
+     * This function ensures total memory parity between Java's FFM allocations and C++ spans.
+     */
+    static std::unique_ptr<machinelearning::SpartanModel> constructCuriosityDrivenRecurrentSoftActorCriticModel(
+            const uint64_t agentIdentifier,
+            void* opaqueHyperparameterConfig,
+            double* criticWeightsBuffer,
+            const int32_t criticWeightsCount,
+            double* modelWeightsBuffer,
+            const int32_t modelWeightsCount,
+            double* contextBuffer,
+            const int32_t contextCount,
+            double* actionOutputBuffer,
+            const int32_t actionOutputCount) {
+
+        const auto* config = static_cast<const CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig*>(
+            opaqueHyperparameterConfig);
+
+        // 1. Extract Curiosity (Forward Dynamics) dimensions
+        const int32_t stateSize = config->recurrentSoftActorCriticConfig.baseConfig.stateSize;
+        const int32_t actionSize = config->recurrentSoftActorCriticConfig.baseConfig.actionSize;
+        const int32_t curiosityHiddenSize = config->forwardDynamicsHiddenLayerDimensionSize;
+
+        const size_t curiosityWeights = static_cast<size_t>(stateSize + actionSize) * curiosityHiddenSize +
+                                        static_cast<size_t>(curiosityHiddenSize) * stateSize;
+        const size_t curiosityBiases = static_cast<size_t>(curiosityHiddenSize) + stateSize;
+
+        // 2. Extract RSAC internal dimensions
+        const auto* rsacConfig = &config->recurrentSoftActorCriticConfig;
+        const int32_t gruHiddenSize = rsacConfig->hiddenStateSize;
+        const int32_t criticHiddenSize = rsacConfig->criticHiddenLayerNeuronCount;
+        const int32_t criticLayerCount = rsacConfig->criticHiddenLayerCount;
+        const int32_t actorHiddenSize = rsacConfig->actorHiddenLayerNeuronCount;
+        const int32_t actorLayerCount = rsacConfig->actorHiddenLayerCount;
+
+        // DEBUG: Verify if C++ is reading the struct layout correctly from Java
+        logging::SpartanLogger::debug(std::format(
+            "[DEBUG-CONFIG] stateSize={}, actionSize={}, criticHidden={}, criticLayers={}, actorHidden={}, actorLayers={}",
+            stateSize, actionSize, criticHiddenSize, criticLayerCount, actorHiddenSize, actorLayerCount));
+
+        // 3. RSAC Component Math (Line-by-line parity with Java Allocator)
+        const int32_t gruInputSize = rsacConfig->recurrentInputFeatureCount > 0
+            ? rsacConfig->recurrentInputFeatureCount : stateSize;
+
+        const size_t gruW_Count = static_cast<size_t>(3) * gruHiddenSize * (gruHiddenSize + gruInputSize);
+        const size_t gruB_Count = static_cast<size_t>(3) * gruHiddenSize;
+        const size_t gruS_Count = static_cast<size_t>(gruHiddenSize);
+
+        const size_t criticIn = static_cast<size_t>(gruHiddenSize) + actionSize;
+        size_t criticW_Count = (criticIn * criticHiddenSize) +
+                               (criticLayerCount > 1 ? (size_t)criticHiddenSize * criticHiddenSize * (criticLayerCount - 1) : 0) +
+                               criticHiddenSize;
+        size_t criticB_Count = (size_t)criticHiddenSize * criticLayerCount + 1;
+
+        // --- CRITIC SLICING ---
+        auto criticSpan = std::span(criticWeightsBuffer, static_cast<size_t>(criticWeightsCount));
+        size_t cOffset = 0;
+
+        auto safeCriticSlice = [&](size_t size, std::string_view name) -> std::span<double> {
+            if (cOffset + size > static_cast<size_t>(criticWeightsCount)) {
+                logging::SpartanLogger::error(std::format("OUT OF BOUNDS (Critic): {} needs {}, but only {} left", name, size, criticWeightsCount - cOffset));
+                return {};
+            }
+            auto s = criticSpan.subspan(cOffset, size);
+            cOffset += size;
+            return s;
+        };
+
+        auto gruW = safeCriticSlice(gruW_Count, "GRU weights");
+        auto gruB = safeCriticSlice(gruB_Count, "GRU biases");
+        auto gruS = safeCriticSlice(gruS_Count, "GRU state");
+
+        // Important: Java might apply SIMD padding between GRU and Critics
+        cOffset = simdPad(cOffset);
+
+        auto c1W = safeCriticSlice(criticW_Count, "Critic 1 weights");
+        auto c1B = safeCriticSlice(criticB_Count, "Critic 1 biases");
+
+        cOffset = simdPad(cOffset);
+
+        auto c2W = safeCriticSlice(criticW_Count, "Critic 2 weights");
+        auto c2B = safeCriticSlice(criticB_Count, "Critic 2 biases");
+
+        cOffset = simdPad(cOffset);
+
+        auto curW = safeCriticSlice(curiosityWeights, "Curiosity weights");
+        auto curB = safeCriticSlice(curiosityBiases, "Curiosity biases");
+
+        if (gruW.empty() || c1W.empty() || curW.empty()) return nullptr;
+
+        // --- MODEL (ACTOR) SLICING ---
+        auto modelSpan = std::span(modelWeightsBuffer, static_cast<size_t>(modelWeightsCount));
+        size_t mOffset = 0;
+
+        auto safeModelSlice = [&](size_t size, std::string_view name) -> std::span<double> {
+            if (mOffset + size > static_cast<size_t>(modelWeightsCount)) {
+                logging::SpartanLogger::error(std::format("OUT OF BOUNDS (Model): {} needs {}, but only {} left", name, size, modelWeightsCount - mOffset));
+                return {};
+            }
+            auto s = modelSpan.subspan(mOffset, size);
+            mOffset += size;
+            return s;
+        };
+
+        size_t policyW_Count = (static_cast<size_t>(actorHiddenSize) * gruHiddenSize) +
+                               (actorLayerCount > 1 ? (size_t)actorHiddenSize * actorHiddenSize * (actorLayerCount - 1) : 0) +
+                               (static_cast<size_t>(actionSize) * actorHiddenSize * 2); // Mean + LogStd
+
+        size_t policyB_Count = (static_cast<size_t>(actorHiddenSize) * actorLayerCount) + (actionSize * 2);
+
+        auto pW = safeModelSlice(policyW_Count, "Policy weights");
+        auto pB = safeModelSlice(policyB_Count, "Policy biases");
+
+        mOffset = simdPad(mOffset);
+        auto encoderPool = modelSpan.subspan(mOffset);
+
+        // 4. Final Object Construction
+        const uint64_t rsacId = (agentIdentifier << 1) | 1;
+        auto contextSpan = std::span<const double>(contextBuffer, static_cast<size_t>(contextCount));
+        auto actionSpan = std::span(actionOutputBuffer, static_cast<size_t>(actionOutputCount));
+
+        auto internalRSAC = std::make_unique<machinelearning::RecurrentSoftActorCriticSpartanModel>(
+            rsacId, const_cast<RecurrentSoftActorCriticHyperparameterConfig*>(rsacConfig),
+            modelSpan, contextSpan, actionSpan,
+            gruW, gruB, gruS,
+            pW, pB, // Correctly sliced Actor spans
+            c1W, c1B, c2W, c2B,
+            encoderPool);
+
+        return std::make_unique<machinelearning::CuriosityDrivenRecurrentSoftActorCriticSpartanModel>(
+            agentIdentifier, opaqueHyperparameterConfig,
+            modelSpan, contextSpan, actionSpan,
+            criticSpan.subspan(0, cOffset - (curiosityWeights + curiosityBiases)), // RSAC Critic block
+            curW, curB, std::move(internalRSAC));
+    }
+
     void SpartanEngine::registerAgent(const uint64_t agentIdentifier,
                                       void* opaqueHyperparameterConfig,
                                       double* criticWeightsBuffer,
@@ -288,13 +407,10 @@ namespace org::spartan::internal {
                                       double* actionOutputBuffer,
                                       const int32_t actionOutputCount) {
 
-        // Read the model type discriminator from the first field of the base config.
         const auto* baseConfig = static_cast<const BaseHyperparameterConfig*>(opaqueHyperparameterConfig);
         const int32_t modelType = baseConfig->modelTypeIdentifier;
+        logging::SpartanLogger::setDebugEnabled(baseConfig->debugLogging);
 
-        // Attempt to recycle an idle model before allocating a new one.
-        // Recycling only works for DefaultSpartanAgent (model type 0) since
-        // concrete model types have different internal topologies.
         if (modelType == SPARTAN_MODEL_TYPE_DEFAULT) {
             const std::span contextSpan(contextBuffer, static_cast<size_t>(contextCount));
             const std::span modelWeightsSpan(modelWeightsBuffer, static_cast<size_t>(modelWeightsCount));
@@ -324,7 +440,6 @@ namespace org::spartan::internal {
             return;
         }
 
-        // Construct the appropriate concrete model based on the type discriminator.
         std::unique_ptr<machinelearning::SpartanModel> model;
 
         switch (modelType) {
@@ -360,6 +475,17 @@ namespace org::spartan::internal {
                     std::format("Registered AutoEncoderCompressor agent {}", agentIdentifier));
                 break;
 
+            case SPARTAN_MODEL_TYPE_CURIOSITY_DRIVEN_RECURRENT_SOFT_ACTOR_CRITIC:
+                model = constructCuriosityDrivenRecurrentSoftActorCriticModel(
+                    agentIdentifier, opaqueHyperparameterConfig,
+                    criticWeightsBuffer, criticWeightsCount,
+                    modelWeightsBuffer, modelWeightsCount,
+                    contextBuffer, contextCount,
+                    actionOutputBuffer, actionOutputCount);
+                logging::SpartanLogger::info(
+                    std::format("Registered CuriosityDrivenRecurrentSoftActorCritic agent {}", agentIdentifier));
+                break;
+
             default:
                 logging::SpartanLogger::error(
                     std::format("Unknown model type {} for agent {}", modelType, agentIdentifier));
@@ -377,15 +503,11 @@ namespace org::spartan::internal {
     void SpartanEngine::tickAllAgents(const uint64_t* agentIdentifiersBuffer,
                                       const double* rewardSignalsBuffer,
                                       const int32_t rewardEntryCount) {
-        // Phase 1: Distribute rewards to the correct agents by explicit ID lookup.
-        // This runs sequentially on the calling thread (cheap map lookups + double writes).
         if (agentIdentifiersBuffer != nullptr && rewardSignalsBuffer != nullptr && rewardEntryCount > 0) {
             modelRegistry_.distributeRewardsByIdentifier(
                 std::span<const uint64_t>(agentIdentifiersBuffer, rewardEntryCount),
                 std::span<const double>(rewardSignalsBuffer, rewardEntryCount));
         }
-
-        // Phase 2: Execute parallel inference across all models.
         modelRegistry_.tickAll();
     }
 

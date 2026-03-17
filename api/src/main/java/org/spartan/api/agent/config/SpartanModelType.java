@@ -43,7 +43,14 @@ public enum SpartanModelType {
      * AutoEncoder Compressor model.
      * Representation learning for dimensionality reduction.
      */
-    AUTO_ENCODER_COMPRESSOR(3);
+    AUTO_ENCODER_COMPRESSOR(3),
+
+    /**
+     * Curiosity-Driven Recurrent Soft Actor-Critic model.
+     * Extends RSAC with an Intrinsic Curiosity Module (ICM) that uses forward dynamics
+     * prediction error as intrinsic reward to encourage exploration of novel states.
+     */
+    CURIOSITY_DRIVEN_RECURRENT_SOFT_ACTOR_CRITIC(4);
 
     private final int nativeValue;
 

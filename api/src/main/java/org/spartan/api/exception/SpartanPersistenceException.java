@@ -1,5 +1,7 @@
 package org.spartan.api.exception;
 
+import org.jetbrains.annotations.NotNull;
+
 /**
  * Exception thrown when model persistence operations fail.
  * <p>
@@ -16,7 +18,7 @@ public class SpartanPersistenceException extends RuntimeException {
      *
      * @param message the error message
      */
-    public SpartanPersistenceException(String message) {
+    public SpartanPersistenceException(@NotNull String message) {
         super(message);
     }
 
@@ -26,7 +28,7 @@ public class SpartanPersistenceException extends RuntimeException {
      * @param message the error message
      * @param cause   the underlying cause
      */
-    public SpartanPersistenceException(String message, Throwable cause) {
+    public SpartanPersistenceException(@NotNull String message, @NotNull Throwable cause) {
         super(message, cause);
     }
 }

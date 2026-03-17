@@ -5,6 +5,7 @@ import org.spartan.api.agent.context.SpartanContext;
 import org.spartan.api.agent.context.element.SpartanContextElement;
 import org.spartan.api.agent.context.element.variable.SpartanVariableContextElement;
 import org.spartan.internal.bridge.SpartanNative;
+import org.spartan.internal.model.SpartanModelAllocator;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -33,6 +34,7 @@ public class SpartanContextImpl implements SpartanContext {
     private static final int DEFAULT_INITIAL_CAPACITY = 128;
     private static final ValueLayout.OfDouble DOUBLE_LAYOUT = ValueLayout.JAVA_DOUBLE;
     private static final ValueLayout.OfInt INT_LAYOUT = ValueLayout.JAVA_INT;
+
 
     private final Map<Class<? extends SpartanContextElement>, Collection<SpartanContextElement>> elementsByType;
     private final Map<String, Collection<SpartanContextElement>> elementsByIdentifier;
@@ -92,11 +94,11 @@ public class SpartanContextImpl implements SpartanContext {
         this.elementsByType = new ConcurrentHashMap<>();
         this.elementsByIndex = new TreeMap<>();
 
-        // Allocate initial data segment
-        this.dataSegment = arena.allocate(DOUBLE_LAYOUT, capacity);
+        // Allocate initial data segment with SIMD padding via SpartanModelAllocator
+        // This ensures 64-byte alignment and padding to multiple of 8 doubles for AVX-512 safety
+        this.dataSegment = SpartanModelAllocator.allocateContextBuffer(arena, capacity);
     }
 
-    @Override
     public @NotNull MemorySegment getData() {
         return dataSegment;
     }
@@ -252,8 +254,8 @@ public class SpartanContextImpl implements SpartanContext {
         if (requiredCapacity > capacity) {
             int newCapacity = Math.max(capacity * 2, requiredCapacity);
 
-            // Allocate new segment
-            MemorySegment newSegment = arena.allocate(DOUBLE_LAYOUT, newCapacity);
+            // Allocate new segment with SIMD padding and alignment via SpartanModelAllocator
+            MemorySegment newSegment = SpartanModelAllocator.allocateContextBuffer(arena, newCapacity);
 
             // Copy existing data if any
             if (validDataSize > 0) {

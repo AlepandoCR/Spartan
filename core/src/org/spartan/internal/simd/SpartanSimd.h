@@ -3,7 +3,10 @@
 //
 #pragma once
 
-#if defined(__AVX2__)
+#if defined(__AVX512F__) && defined(__AVX512DQ__)
+    #define SPARTAN_USE_AVX512
+    #include <immintrin.h>
+#elif defined(__AVX2__)
     #define SPARTAN_USE_AVX2
     #include <immintrin.h>
 #elif defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_NEON)
@@ -28,7 +31,145 @@ namespace org::spartan::internal::math::simd {
      * maximum performance from the host processor.
      */
 
-#if defined(SPARTAN_USE_AVX2)
+#if defined(SPARTAN_USE_AVX512)
+
+    // Advanced Vector Extensions 512 Implementation for Zen 5 / Modern x86_64
+
+    using SimdFloat = __m512d;
+    constexpr int simdLaneCount = 8;
+
+    /**
+     * Loads consecutive double-precision numbers from memory into the hardware register.
+     * This uses unaligned loads to ensure it never crashes if the Java Virtual Machine
+     * or std::vector allocates memory that does not align perfectly to a 64-byte boundary.
+     *
+     * SAFE MODE: Explicitly using _mm512_loadu_pd instead of _mm512_load_pd.
+     */
+    inline SimdFloat simdLoad(const double* sourcePointer) {
+        return _mm512_loadu_pd(sourcePointer);
+    }
+
+    /**
+     * Writes the contents of the hardware register directly back into main memory.
+     * Uses unaligned store to support generic heap allocations.
+     *
+     * SAFE MODE: Explicitly using _mm512_storeu_pd instead of _mm512_store_pd.
+     */
+    inline void simdStore(double* targetPointer, const SimdFloat vectorToStore) {
+        _mm512_storeu_pd(targetPointer, vectorToStore);
+    }
+
+    /**
+     * Creates a vector completely filled with absolute zeros.
+     * This is optimized by the CPU using an XOR operation against itself.
+     */
+    inline SimdFloat simdSetZero() {
+        return _mm512_setzero_pd();
+    }
+
+    /**
+     * Broadcasts a single scalar value across all lanes of the vector register.
+     */
+    inline SimdFloat simdBroadcast(const double scalarValue) {
+        return _mm512_set1_pd(scalarValue);
+    }
+
+    /**
+     * Performs an element-wise addition of two vectors.
+     */
+    inline SimdFloat simdAdd(const SimdFloat firstVector, const SimdFloat secondVector) {
+        return _mm512_add_pd(firstVector, secondVector);
+    }
+
+    /**
+     * Performs an element-wise subtraction of two vectors.
+     */
+    inline SimdFloat simdSubtract(const SimdFloat minuend, const SimdFloat subtrahend) {
+        return _mm512_sub_pd(minuend, subtrahend);
+    }
+
+    /**
+     * Performs an element-wise multiplication of two vectors.
+     */
+    inline SimdFloat simdMultiply(const SimdFloat firstVector, const SimdFloat secondVector) {
+        return _mm512_mul_pd(firstVector, secondVector);
+    }
+
+    /**
+     * Performs an element-wise division of two vectors.
+     */
+    inline SimdFloat simdDivide(const SimdFloat dividend, const SimdFloat divisor) {
+        return _mm512_div_pd(dividend, divisor);
+    }
+
+    /**
+     * Executes a Fused Multiply-Add operation: (multiplier * multiplicand) + addend.
+     * The hardware calculates the multiplication and the addition simultaneously.
+     */
+    inline SimdFloat simdFusedMultiplyAdd(const SimdFloat multiplier, const SimdFloat multiplicand, const SimdFloat addend) {
+        return _mm512_fmadd_pd(multiplier, multiplicand, addend);
+    }
+
+    /**
+     * Compares two vectors element by element and returns a vector containing the largest values.
+     */
+    inline SimdFloat simdMax(const SimdFloat firstVector, const SimdFloat secondVector) {
+        return _mm512_max_pd(firstVector, secondVector);
+    }
+
+    /**
+     * Compares two vectors element by element and returns a vector containing the smallest values.
+     */
+    inline SimdFloat simdMin(const SimdFloat firstVector, const SimdFloat secondVector) {
+        return _mm512_min_pd(firstVector, secondVector);
+    }
+
+    /**
+     * Calculates the square root of every element in the vector.
+     */
+    inline SimdFloat simdSqrt(const SimdFloat vectorToRoot) {
+        return _mm512_sqrt_pd(vectorToRoot);
+    }
+
+    /**
+     * Computes the absolute value of every element in the vector.
+     * Formula: |x|
+     */
+    inline SimdFloat simdAbs(const SimdFloat vectorToAbs) {
+        return _mm512_abs_pd(vectorToAbs);
+    }
+
+    /**
+     * Compares if the elements of the first vector are strictly greater than the second.
+     * Returns a __mmask8 mask, which is then used by blend operations.
+     */
+    inline SimdFloat simdCompareGreaterThan(const SimdFloat firstVector, const SimdFloat secondVector) {
+        // In AVX-512, comparisons return a dedicated mask register type
+        // We cast/store it in the SimdFloat context for compatibility with our Blend abstraction
+        auto mask = _mm512_cmp_pd_mask(firstVector, secondVector, _CMP_GT_OQ);
+        // We return a "fake" vector where bits are mapped for the blend function
+        return _mm512_maskz_mov_pd(mask, _mm512_set1_pd(1.0));
+    }
+
+    /**
+     * Selects elements from either the trueValue vector or the falseValue vector
+     * based on the mask provided.
+     */
+    inline SimdFloat simdBlend(const SimdFloat trueValue, const SimdFloat falseValue, const SimdFloat maskVector) {
+        // Convert the mask vector back to a hardware mask
+        __mmask8 mask = _mm512_cmp_pd_mask(maskVector, _mm512_setzero_pd(), _CMP_NEQ_OQ);
+        return _mm512_mask_blend_pd(mask, falseValue, trueValue);
+    }
+
+    /**
+     * Collapses all internal lanes of the register into a single scalar number.
+     */
+    inline double simdHorizontalSum(const SimdFloat vectorToSum) {
+        return _mm512_reduce_add_pd(vectorToSum);
+    }
+
+
+#elif defined(SPARTAN_USE_AVX2)
 
     // Advanced Vector Extensions 2 Implementation for x86_64 processors
 
@@ -38,7 +179,9 @@ namespace org::spartan::internal::math::simd {
     /**
      * Loads consecutive double-precision numbers from memory into the hardware register.
      * This uses unaligned loads to ensure it never crashes if the Java Virtual Machine
-     * allocates memory that does not align perfectly to a 32-byte boundary.
+     * or std::vector allocates memory that does not align perfectly to a 32-byte boundary.
+     *
+     * SAFE MODE: Explicitly using _mm256_loadu_pd instead of _mm256_load_pd.
      */
     inline SimdFloat simdLoad(const double* sourcePointer) {
         return _mm256_loadu_pd(sourcePointer);
@@ -46,6 +189,9 @@ namespace org::spartan::internal::math::simd {
 
     /**
      * Writes the contents of the hardware register directly back into main memory.
+     * Uses unaligned store to support generic heap allocations (16-byte aligned on Windows).
+     *
+     * SAFE MODE: Explicitly using _mm256_storeu_pd instead of _mm256_store_pd.
      */
     inline void simdStore(double* targetPointer, const SimdFloat vectorToStore) {
         _mm256_storeu_pd(targetPointer, vectorToStore);
@@ -53,7 +199,7 @@ namespace org::spartan::internal::math::simd {
 
     /**
      * Creates a vector completely filled with absolute zeros.
-     * This is optimized by the CPU using an XOR operation against itself, which takes zero clock cycles.
+     * This is optimized by the CPU using an XOR operation against itself.
      */
     inline SimdFloat simdSetZero() {
         return _mm256_setzero_pd();
@@ -61,7 +207,6 @@ namespace org::spartan::internal::math::simd {
 
     /**
      * Broadcasts a single scalar value across all lanes of the vector register.
-     * Useful for applying a constant multiplier (like a learning rate or alpha) to an entire array.
      */
     inline SimdFloat simdBroadcast(const double scalarValue) {
         return _mm256_set1_pd(scalarValue);
@@ -97,8 +242,7 @@ namespace org::spartan::internal::math::simd {
 
     /**
      * Executes a Fused Multiply-Add operation: (multiplier * multiplicand) + addend.
-     * The hardware calculates the multiplication and the addition simultaneously in a
-     * single clock cycle without losing precision during rounding.
+     * The hardware calculates the multiplication and the addition simultaneously.
      */
     inline SimdFloat simdFusedMultiplyAdd(const SimdFloat multiplier, const SimdFloat multiplicand, const SimdFloat addend) {
         return _mm256_fmadd_pd(multiplier, multiplicand, addend);
@@ -106,7 +250,6 @@ namespace org::spartan::internal::math::simd {
 
     /**
      * Compares two vectors element by element and returns a vector containing the largest values.
-     * Essential for clipping operations like the Rectified Linear Unit (ReLU) or fuzzy union.
      */
     inline SimdFloat simdMax(const SimdFloat firstVector, const SimdFloat secondVector) {
         return _mm256_max_pd(firstVector, secondVector);
@@ -114,7 +257,6 @@ namespace org::spartan::internal::math::simd {
 
     /**
      * Compares two vectors element by element and returns a vector containing the smallest values.
-     * Essential for bounding constraints or fuzzy intersection.
      */
     inline SimdFloat simdMin(const SimdFloat firstVector, const SimdFloat secondVector) {
         return _mm256_min_pd(firstVector, secondVector);
@@ -122,15 +264,25 @@ namespace org::spartan::internal::math::simd {
 
     /**
      * Calculates the square root of every element in the vector.
-     * Required for stabilizing the gradients in the Adam optimizer or fuzzy dilation.
      */
     inline SimdFloat simdSqrt(const SimdFloat vectorToRoot) {
         return _mm256_sqrt_pd(vectorToRoot);
     }
 
     /**
+     * Computes the absolute value of every element in the vector.
+     * Formula: |x|
+     */
+    inline SimdFloat simdAbs(const SimdFloat vectorToAbs) {
+        // AVX2 doesn't have a direct abs for doubles, so we use a branchless approach
+        // Create a mask with all bits set except the sign bit
+        const __m256d sign_mask = _mm256_castsi256_pd(_mm256_set1_epi64x(0x7FFFFFFFFFFFFFFF));
+        return _mm256_and_pd(vectorToAbs, sign_mask);
+    }
+
+    /**
      * Compares if the elements of the first vector are strictly greater than the second.
-     * Returns a bitmask vector where lanes are filled with all 1s (true) or all 0s (false).
+     * Returns a bitmask vector.
      */
     inline SimdFloat simdCompareGreaterThan(const SimdFloat firstVector, const SimdFloat secondVector) {
         return _mm256_cmp_pd(firstVector, secondVector, _CMP_GT_OQ);
@@ -139,15 +291,13 @@ namespace org::spartan::internal::math::simd {
     /**
      * Selects elements from either the trueValue vector or the falseValue vector
      * based on the bits provided by the mask vector.
-     * This avoids costly CPU branch prediction failures (if-statements) during activation functions.
      */
     inline SimdFloat simdBlend(const SimdFloat trueValue, const SimdFloat falseValue, const SimdFloat mask) {
         return _mm256_blendv_pd(falseValue, trueValue, mask);
     }
 
     /**
-     * Collapses all internal lanes of the register into a single scalar number by adding them together.
-     * This maintains the data inside the L1 cache until the absolute final sum is computed.
+     * Collapses all internal lanes of the register into a single scalar number.
      */
     inline double simdHorizontalSum(const SimdFloat vectorToSum) {
         const __m256d horizontalAddition = _mm256_hadd_pd(vectorToSum, vectorToSum);
@@ -209,6 +359,10 @@ namespace org::spartan::internal::math::simd {
 
     inline SimdFloat simdSqrt(const SimdFloat vectorToRoot) {
         return vsqrtq_f64(vectorToRoot);
+    }
+
+    inline SimdFloat simdAbs(const SimdFloat vectorToAbs) {
+        return vabsq_f64(vectorToAbs);
     }
 
     inline SimdFloat simdCompareGreaterThan(const SimdFloat firstVector, const SimdFloat secondVector) {
@@ -281,6 +435,10 @@ namespace org::spartan::internal::math::simd {
         return {std::sqrt(vectorToRoot.value[0])};
     }
 
+    inline SimdFloat simdAbs(const SimdFloat vectorToAbs) {
+        return {std::abs(vectorToAbs.value[0])};
+    }
+
     inline SimdFloat simdCompareGreaterThan(const SimdFloat firstVector, const SimdFloat secondVector) {
         // Emulate a mask by returning 1.0 for true and 0.0 for false.
         return {firstVector.value[0] > secondVector.value[0] ? 1.0 : 0.0};
@@ -297,3 +455,4 @@ namespace org::spartan::internal::math::simd {
 #endif
 
 }
+

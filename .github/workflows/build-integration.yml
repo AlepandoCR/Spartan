@@ -1,0 +1,78 @@
+name: Build Spartan Java/C# Integration
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'java/**'
+      - 'csharp/**'
+      - '.github/workflows/build-integration.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'java/**'
+      - 'csharp/**'
+      - '.github/workflows/build-integration.yml'
+  workflow_dispatch:
+
+jobs:
+  build-java:
+    name: Build Java Module
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build Java
+        run: |
+          cd java
+          mvn clean package -DskipTests
+
+      - name: Run Java Tests
+        run: |
+          cd java
+          mvn test
+
+      - name: Upload Java artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spartan-java-artifact
+          path: java/target/*.jar
+
+  build-csharp:
+    name: Build C# Module
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build C#
+        run: |
+          cd csharp
+          dotnet build --configuration Release
+
+      - name: Run C# Tests
+        run: |
+          cd csharp
+          dotnet test --configuration Release --no-build
+
+      - name: Upload C# artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spartan-csharp-artifact
+          path: csharp/bin/Release/*.dll
+

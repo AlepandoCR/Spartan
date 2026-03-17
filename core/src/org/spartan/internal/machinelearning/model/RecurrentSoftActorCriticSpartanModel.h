@@ -7,6 +7,7 @@
 #include <span>
 #include <cstdint>
 #include <vector>
+#include <memory>
 
 #include "SpartanAgent.h"
 #include "../ModelHyperparameterConfig.h"
@@ -17,6 +18,8 @@
 #include "../network/NestedAutoEncoderUnit.h"
 #include "../trace/RemorseTraceBuffer.h"
 #include "internal/math/tensor/SpartanTensorMath.h"
+#include <format>
+#include "internal/logging/SpartanLogger.h"
 
 /**
  * @file RecurrentSoftActorCriticSpartanModel.h
@@ -78,6 +81,11 @@ namespace org::spartan::internal::machinelearning {
             const int inputSize = static_cast<int>(inputVector.size());
             const int hiddenSize = config->actorHiddenLayerNeuronCount;
             const int concatSize = hiddenSize + inputSize;
+
+            // Guard: Check if concatenatedInput size matches available source data size
+            if (gateMemoryBuffer.size() < static_cast<size_t>(concatSize + (hiddenSize * 3))) {
+                 return; // Fail safe
+            }
 
             // Memory Slicing for the Scratchpad
             auto concatenatedInput = gateMemoryBuffer.subspan(0, concatSize);
@@ -406,6 +414,8 @@ namespace org::spartan::internal::machinelearning {
                 opaqueHyperparameterConfig_);
         }
 
+        using AlignedMemoryDeleter = void(*)(void*);
+
         // Frontier B components (static dispatch, no vtable)
         RecurrentSoftActorCriticGruLayer recurrentLayer_;
         RecurrentSoftActorCriticPolicyNetwork policyNetwork_;
@@ -417,12 +427,14 @@ namespace org::spartan::internal::machinelearning {
         RecurrentSoftActorCriticFirstQNetwork firstTargetCriticNetwork_;
         RecurrentSoftActorCriticSecondQNetwork secondTargetCriticNetwork_;
 
-        // Pre-allocated storage for target critic weights and biases.
-        // These duplicate the online critic dimensions and are Polyak-synced each tick.
-        std::vector<double> firstTargetCriticWeightStorage_;
-        std::vector<double> firstTargetCriticBiasStorage_;
-        std::vector<double> secondTargetCriticWeightStorage_;
-        std::vector<double> secondTargetCriticBiasStorage_;
+        // Strictly Aligned Memory Block for AVX-512 Safety
+        std::unique_ptr<void, AlignedMemoryDeleter> alignedInternalMemory_;
+
+        // Pre-allocated storage for target critic weights and biases (mapped to aligned block).
+        std::span<double> firstTargetCriticWeightStorage_;
+        std::span<double> firstTargetCriticBiasStorage_;
+        std::span<double> secondTargetCriticWeightStorage_;
+        std::span<double> secondTargetCriticBiasStorage_;
 
         // Nested AutoEncoder bank for variable-context compression
         std::vector<NestedAutoEncoderUnit> nestedEncoderBank_;
@@ -431,44 +443,41 @@ namespace org::spartan::internal::machinelearning {
         RemorseTraceBuffer remorseTraceBuffer_;
 
         // Concatenated compressed observation: [fixed context | latent0 | latent1 | ...]
-        // Pre-allocated once during construction. Fed into the GRU as input.
-        std::vector<double> compressedObservationBuffer_;
+        std::span<double> compressedObservationBuffer_;
 
         // Allocated strictly once during construction based on hyperparameter config.
-        // Provides safe, lock-free working memory for all sub-networks during parallel inference.
-        std::vector<double> inferenceScratchpadA_;
-        std::vector<double> inferenceScratchpadB_;
+        std::span<double> inferenceScratchpadA_;
+        std::span<double> inferenceScratchpadB_;
 
         // Dedicated scratchpads for action mean and log-standard-deviation.
-        // The log-std buffer is reused in-place for exp() during inference (no separate std buffer).
-        std::vector<double> actionMeanScratchpad_;
-        std::vector<double> actionLogStdScratchpad_;
+        std::span<double> actionMeanScratchpad_;
+        std::span<double> actionLogStdScratchpad_;
 
         // Additional dedicated memory for the Gated Recurrent Unit's complex gate calculations
-        std::vector<double> recurrentGateMemoryBuffer_;
+        std::span<double> recurrentGateMemoryBuffer_;
 
         // Scratchpad for remorse trace blame scores
-        std::vector<double> blameScoresScratchpad_;
+        std::span<double> blameScoresScratchpad_;
 
         // Per-encoder working memory (flat pool, sliced per encoder)
-        std::vector<double> encoderScratchpadPool_;
+        std::span<double> encoderScratchpadPool_;
 
         // Adam optimizer state for Q1 critic weights
-        std::vector<double> firstCriticWeightMomentum_;
-        std::vector<double> firstCriticWeightVelocity_;
-        std::vector<double> firstCriticBiasMomentum_;
-        std::vector<double> firstCriticBiasVelocity_;
+        std::span<double> firstCriticWeightMomentum_;
+        std::span<double> firstCriticWeightVelocity_;
+        std::span<double> firstCriticBiasMomentum_;
+        std::span<double> firstCriticBiasVelocity_;
 
         // Adam optimizer state for Q2 critic weights
-        std::vector<double> secondCriticWeightMomentum_;
-        std::vector<double> secondCriticWeightVelocity_;
-        std::vector<double> secondCriticBiasMomentum_;
-        std::vector<double> secondCriticBiasVelocity_;
+        std::span<double> secondCriticWeightMomentum_;
+        std::span<double> secondCriticWeightVelocity_;
+        std::span<double> secondCriticBiasMomentum_;
+        std::span<double> secondCriticBiasVelocity_;
 
         // Gradient scratchpads for critic backward pass
-        std::vector<double> criticWeightGradientScratchpad_;
-        std::vector<double> criticBiasGradientScratchpad_;
-        std::vector<double> criticInputGradientScratchpad_;
+        std::span<double> criticWeightGradientScratchpad_;
+        std::span<double> criticBiasGradientScratchpad_;
+        std::span<double> criticInputGradientScratchpad_;
 
         // Non-owning span over the full JVM-owned critic weight buffer for persistence.
         std::span<const double> criticWeightsSpan_;
@@ -481,15 +490,5 @@ namespace org::spartan::internal::machinelearning {
     };
 
 }
-
-
-
-
-
-
-
-
-
-
 
 

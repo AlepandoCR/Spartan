@@ -5,6 +5,7 @@
 #pragma once
 
 #include <string_view>
+#include <atomic>
 
 /**
  * @file SpartanLogger.h
@@ -40,8 +41,25 @@ namespace org::spartan::internal::logging {
          * @param message The error description (UTF-8).
          */
         static void error(std::string_view message);
+
+        /**
+         * @brief Logs a debug message with a distinguishable prefix.
+         *
+         * @param message The debug information (UTF-8).
+         */
+        static void debug(std::string_view message);
+
+        /**
+         * @brief  warns a message with a distinguishable prefix.
+         * @param message The warning information (UTF-8).
+         */
+        static void warn(std::string_view message);
+
+        static void setDebugEnabled(bool enabled);
+        static bool isDebugEnabled();
+    private:
+        static std::atomic<bool> debugEnabled_;
     };
 
 } // namespace org::spartan::core::logging
-
 

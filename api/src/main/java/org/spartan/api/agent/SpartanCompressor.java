@@ -6,27 +6,25 @@ import org.spartan.api.agent.config.SpartanModelConfig;
 import java.lang.foreign.MemorySegment;
 
 /**
- * Interface for representation-learning models that compress observations.
+ * Represents a passive "Data Processor" model.
  * <p>
- * Compressor models learn to encode high-dimensional input data into a
- * lower-dimensional latent representation, which can then be used by
- * downstream decision-making agents.
- * <p>
- * Unlike {@link SpartanAgent}, compressors do not produce actions directly;
- * instead, they transform the observation space.
+ * <b>Concept:</b> A compressor doesn't make choices. It simplifies data.
+ * Think of it as an automatic translator that turns "Raw Pixel Data" into "Concepts" (like "Wall", "Door").
+ * Agents can then use these concepts to learn much faster.
  *
- * @param <C> the configuration type (must be a compressor config)
+ * @param <SpartanModelConfigType> the config type
  */
-public interface SpartanCompressor<C extends SpartanModelConfig> extends SpartanModel<C> {
+public interface SpartanCompressor<SpartanModelConfigType extends SpartanModelConfig> extends SpartanModel<SpartanModelConfigType> {
 
     /**
-     * Returns the latent (compressed) representation buffer.
+     * Returns the memory segment containing the compressed "Latent Representation".
      * <p>
-     * After each tick, C++ writes the encoded representation to this buffer.
-     * The size equals {@code config.latentDimensionSize()}.
+     * <b>Concept:</b> This is the "Summary" of the input.
+     * If the input was an image of a cat, this buffer contains the mathematical essence of "Cat".
      *
-     * @return MemorySegment containing latent vector (double[])
+     * @return the latent buffer
      */
+
     @NotNull MemorySegment getLatentBuffer();
 
     /**

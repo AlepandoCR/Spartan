@@ -1,7 +1,7 @@
 # Project exclude paths
 /.gradle/
 /build/
-/.idea/
+/idea/
 /build/classes/kotlin/main/
 
 # Python
@@ -15,3 +15,6 @@ __pycache__/
 /api/build/classes/java/main/
 /internal/build/
 /internal/build/classes/java/main/
+
+# Ignore local .env credentials file
+.env

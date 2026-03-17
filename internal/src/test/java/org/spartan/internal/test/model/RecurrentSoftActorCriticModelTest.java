@@ -8,7 +8,8 @@ import org.spartan.api.agent.context.SpartanContext;
 import org.spartan.api.agent.context.element.SpartanContextElement;
 import org.spartan.internal.agent.context.SpartanContextImpl;
 import org.spartan.internal.bridge.SpartanNative;
-import org.spartan.internal.model.RecurrentSoftActorCriticModel;
+import org.spartan.internal.config.spi.SpartanConfigFactoryServiceProviderImpl;
+import org.spartan.internal.model.RecurrentSoftActorCriticModelImpl;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -36,6 +37,7 @@ public class RecurrentSoftActorCriticModelTest {
 
     @BeforeAll
     static void initializeNativeEngine() {
+        new SpartanConfigFactoryServiceProviderImpl();
         try {
             SpartanNative.spartanInit();
             nativeEngineInitialized = true;
@@ -68,8 +70,6 @@ public class RecurrentSoftActorCriticModelTest {
         System.out.println("-".repeat(60));
 
         RecurrentSoftActorCriticConfig configuration = RecurrentSoftActorCriticConfig.builder()
-                .stateSize(OBSERVATION_SIZE)
-                .actionSize(CONTINUOUS_ACTION_SIZE)
                 .hiddenStateSize(HIDDEN_STATE_SIZE)
                 .recurrentLayerDepth(1)
                 .actorHiddenLayerNeuronCount(128)
@@ -82,9 +82,13 @@ public class RecurrentSoftActorCriticModelTest {
                 .isTraining(true)
                 .build();
 
+        SpartanContext observationContext = createMockObservationContext(Arena.ofShared());
+        observationContext.update();
+        SpartanActionManager actionManager = createMockActionManager();
+
         System.out.println("  Configuration Parameters:");
-        System.out.println("    - Observation Size (State): " + configuration.stateSize());
-        System.out.println("    - Continuous Action Size: " + configuration.actionSize());
+        System.out.println("    - Observation Size (State): " + observationContext.getSize());
+        System.out.println("    - Continuous Action Size: " + actionManager.getActions().size());
         System.out.println("    - Hidden State Size (GRU): " + configuration.hiddenStateSize());
         System.out.println("    - Recurrent Layer Depth: " + configuration.recurrentLayerDepth());
         System.out.println("    - Actor Hidden Neuron Count: " + configuration.actorHiddenLayerNeuronCount());
@@ -94,8 +98,8 @@ public class RecurrentSoftActorCriticModelTest {
         System.out.println("    - Entropy Temperature (Alpha): " + configuration.entropyTemperatureAlpha());
         System.out.println("    - Training Mode Enabled: " + configuration.isTraining());
 
-        assertEquals(OBSERVATION_SIZE, configuration.stateSize());
-        assertEquals(CONTINUOUS_ACTION_SIZE, configuration.actionSize());
+        assertEquals(OBSERVATION_SIZE, observationContext.getSize());
+        assertEquals(CONTINUOUS_ACTION_SIZE, actionManager.getActions().size());
         System.out.println("  [OK] Configuration validated successfully");
     }
 
@@ -108,14 +112,12 @@ public class RecurrentSoftActorCriticModelTest {
         System.out.println("\n-> Test 2: Recurrent Soft Actor-Critic Full Lifecycle (50 Ticks)");
         System.out.println("-".repeat(60));
 
-        try (Arena testArena = Arena.ofConfined()) {
+        try (Arena testArena = Arena.ofShared()) {
             long agentId = getNextAgentIdentifier();
             SpartanContext observationContext = createMockObservationContext(testArena);
             observationContext.update();
 
             RecurrentSoftActorCriticConfig configuration = RecurrentSoftActorCriticConfig.builder()
-                    .stateSize(OBSERVATION_SIZE)
-                    .actionSize(CONTINUOUS_ACTION_SIZE)
                     .hiddenStateSize(HIDDEN_STATE_SIZE)
                     .recurrentLayerDepth(1)
                     .actorHiddenLayerNeuronCount(64)
@@ -127,8 +129,13 @@ public class RecurrentSoftActorCriticModelTest {
                     .build();
 
             SpartanActionManager actionManager = createMockActionManager();
-            RecurrentSoftActorCriticModel model = new RecurrentSoftActorCriticModel(
-                    agentId, configuration, observationContext, testArena, actionManager
+            RecurrentSoftActorCriticModelImpl model = new RecurrentSoftActorCriticModelImpl(
+                    "rsac-test-model",
+                    agentId,
+                    configuration,
+                    observationContext,
+                    testArena,
+                    actionManager
             );
 
             System.out.println("\n  Phase 1: Model Registration");
@@ -159,7 +166,7 @@ public class RecurrentSoftActorCriticModelTest {
                     observationInputs[inputIndex] = randomGenerator.nextDouble() * 2.0 - 1.0;
                 }
 
-                MemorySegment contextDataSegment = observationContext.getData();
+                MemorySegment contextDataSegment = ((SpartanContextImpl) observationContext).getData();
                 for (int inputIndex = 0; inputIndex < OBSERVATION_SIZE; inputIndex++) {
                     contextDataSegment.setAtIndex(ValueLayout.JAVA_DOUBLE, inputIndex, observationInputs[inputIndex]);
                 }
@@ -233,14 +240,12 @@ public class RecurrentSoftActorCriticModelTest {
         System.out.println("\n-> Test 3: Zero-Copy Memory Verification");
         System.out.println("-".repeat(60));
 
-        try (Arena testArena = Arena.ofConfined()) {
+        try (Arena testArena = Arena.ofShared();) {
             long agentId = getNextAgentIdentifier();
             SpartanContext observationContext = createMockObservationContext(testArena);
             observationContext.update();
 
             RecurrentSoftActorCriticConfig configuration = RecurrentSoftActorCriticConfig.builder()
-                    .stateSize(OBSERVATION_SIZE)
-                    .actionSize(CONTINUOUS_ACTION_SIZE)
                     .hiddenStateSize(32)  // Different from test 2 to verify fix works
                     .recurrentLayerDepth(1)
                     .actorHiddenLayerNeuronCount(48)
@@ -250,14 +255,20 @@ public class RecurrentSoftActorCriticModelTest {
                     .recurrentInputFeatureCount(OBSERVATION_SIZE)
                     .build();
 
-            RecurrentSoftActorCriticModel model = new RecurrentSoftActorCriticModel(
-                    agentId, configuration, observationContext, testArena, createMockActionManager()
+            SpartanActionManager actionManager = createMockActionManager();
+            RecurrentSoftActorCriticModelImpl model = new RecurrentSoftActorCriticModelImpl(
+                    "rsac-zerocopy",
+                    agentId,
+                    configuration,
+                    observationContext,
+                    testArena,
+                    actionManager
             );
 
             model.register();
 
             double[] testObservationValues = {0.0, 0.5, 1.0, -0.5, -1.0, 0.25, -0.75, 0.333, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8};
-            MemorySegment contextDataSegment = observationContext.getData();
+            MemorySegment contextDataSegment = ((SpartanContextImpl) observationContext).getData();
 
             System.out.println("  Writing test observation values to context:");
             for (int valueIndex = 0; valueIndex < testObservationValues.length; valueIndex++) {
@@ -306,14 +317,12 @@ public class RecurrentSoftActorCriticModelTest {
         System.out.println("\n-> Test 4: Episode Reset and Exploration Decay");
         System.out.println("-".repeat(60));
 
-        try (Arena testArena = Arena.ofConfined()) {
+        try (Arena testArena = Arena.ofShared()) {
             long agentId = getNextAgentIdentifier();
             SpartanContext observationContext = createMockObservationContext(testArena);
             observationContext.update();
 
             RecurrentSoftActorCriticConfig configuration = RecurrentSoftActorCriticConfig.builder()
-                    .stateSize(OBSERVATION_SIZE)
-                    .actionSize(CONTINUOUS_ACTION_SIZE)
                     .hiddenStateSize(24)  // Yet another size to verify fix
                     .recurrentLayerDepth(1)
                     .actorHiddenLayerNeuronCount(32)
@@ -327,8 +336,14 @@ public class RecurrentSoftActorCriticModelTest {
                     .entropyTemperatureAlpha(0.2)
                     .build();
 
-            RecurrentSoftActorCriticModel model = new RecurrentSoftActorCriticModel(
-                    agentId, configuration, observationContext, testArena, createMockActionManager()
+            SpartanActionManager actionManager = createMockActionManager();
+            RecurrentSoftActorCriticModelImpl model = new RecurrentSoftActorCriticModelImpl(
+                    "rsac-episode-reset",
+                    agentId,
+                    configuration,
+                    observationContext,
+                    testArena,
+                    actionManager
             );
 
             model.register();
@@ -366,24 +381,79 @@ public class RecurrentSoftActorCriticModelTest {
     }
 
     private SpartanActionManager createMockActionManager() {
-        return new MockActionManager();
+        MockActionManager manager = new MockActionManager();
+        for (int i = 0; i < CONTINUOUS_ACTION_SIZE; i++) {
+            manager.registerAction(new MockAction("mock_action_" + i));
+        }
+        return manager;
     }
 
     static class MockActionManager implements SpartanActionManager {
+        private final java.util.List<SpartanAction> actions = new java.util.ArrayList<>();
+
         @Override
-        public SpartanAction[] getActions() {
-            return new SpartanAction[0];
+        public SpartanActionManager registerAction(SpartanAction action) {
+            actions.add(action);
+            return this;
         }
 
         @Override
-        @SuppressWarnings("unchecked")
-        public <SpartanActionType extends SpartanAction> SpartanActionType[] getActionsByType(Class<SpartanActionType> actionClass) {
-            return (SpartanActionType[]) java.lang.reflect.Array.newInstance(actionClass, 0);
+        public java.util.List<SpartanAction> getActions() {
+            return java.util.Collections.unmodifiableList(actions);
         }
 
         @Override
-        public SpartanAction[] getActionsByIdentifier(String identifier) {
-            return new SpartanAction[0];
+        public <SpartanActionType extends SpartanAction> java.util.List<SpartanActionType> getActionsByType(Class<SpartanActionType> actionClass) {
+            java.util.List<SpartanActionType> matches = new java.util.ArrayList<>();
+            for (SpartanAction action : actions) {
+                if (actionClass.isInstance(action)) {
+                    matches.add(actionClass.cast(action));
+                }
+            }
+            return matches;
+        }
+
+        @Override
+        public java.util.List<SpartanAction> getActionsByIdentifier(String identifier) {
+            java.util.List<SpartanAction> matches = new java.util.ArrayList<>();
+            for (SpartanAction action : actions) {
+                if (identifier.equals(action.identifier())) {
+                    matches.add(action);
+                }
+            }
+            return matches;
+        }
+    }
+
+    static class MockAction implements SpartanAction {
+        private final String identifier;
+
+        MockAction(String identifier) {
+            this.identifier = identifier;
+        }
+
+        @Override
+        public String identifier() {
+            return identifier;
+        }
+
+        @Override
+        public double taskMaxMagnitude() {
+            return 1.0;
+        }
+
+        @Override
+        public double taskMinMagnitude() {
+            return -1.0;
+        }
+
+        @Override
+        public void task(double normalizedMagnitude) {
+        }
+
+        @Override
+        public double award() {
+            return 0.0;
         }
     }
 

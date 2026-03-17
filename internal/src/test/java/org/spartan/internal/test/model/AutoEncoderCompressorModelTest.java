@@ -1,12 +1,14 @@
 package org.spartan.internal.test.model;
 
 import org.junit.jupiter.api.*;
-import org.spartan.api.agent.config.AutoEncoderCompressorConfig;
 import org.spartan.api.agent.context.SpartanContext;
 import org.spartan.api.agent.context.element.SpartanContextElement;
 import org.spartan.internal.agent.context.SpartanContextImpl;
 import org.spartan.internal.bridge.SpartanNative;
-import org.spartan.internal.model.AutoEncoderCompressorModel;
+import org.spartan.api.agent.config.AutoEncoderCompressorConfig;
+import org.spartan.internal.model.AutoEncoderCompressorModelImpl;
+import org.spartan.internal.agent.action.SpartanActionManagerImpl;
+import org.spartan.internal.config.spi.SpartanConfigFactoryServiceProviderImpl;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -47,6 +49,7 @@ public class AutoEncoderCompressorModelTest {
 
     @BeforeAll
     static void initializeNativeEngine() {
+        new SpartanConfigFactoryServiceProviderImpl();
         memoryArena = Arena.ofShared();
         try {
             SpartanNative.spartanInit();
@@ -78,8 +81,9 @@ public class AutoEncoderCompressorModelTest {
         System.out.println("\n-> Test 1: AutoEncoder Compressor Configuration & Architecture");
         System.out.println("-".repeat(60));
 
+        SpartanContext inputContext = createMockInputContext();
+        inputContext.update();
         AutoEncoderCompressorConfig configuration = AutoEncoderCompressorConfig.builder()
-                .stateSize(INPUT_DIMENSION_SIZE)
                 .latentDimensionSize(LATENT_DIMENSION_SIZE)
                 .encoderHiddenNeuronCount(ENCODER_HIDDEN_NEURON_COUNT)
                 .encoderLayerCount(ENCODER_LAYER_COUNT)
@@ -90,7 +94,7 @@ public class AutoEncoderCompressorModelTest {
                 .build();
 
         System.out.println("  Configuration Parameters:");
-        System.out.println("    - Input Dimension Size: " + configuration.stateSize());
+        System.out.println("    - Input Dimension Size: " + inputContext.getSize());
         System.out.println("    - Latent Dimension Size (Bottleneck): " + configuration.latentDimensionSize());
         System.out.println("    - Encoder Hidden Neuron Count: " + configuration.encoderHiddenNeuronCount());
         System.out.println("    - Encoder Layer Count: " + configuration.encoderLayerCount());
@@ -100,11 +104,11 @@ public class AutoEncoderCompressorModelTest {
         System.out.println("    - Training Mode Enabled: " + configuration.isTraining());
 
         System.out.println("\n  Architecture Summary:");
-        System.out.println("    Encoder: " + INPUT_DIMENSION_SIZE + " -> " + ENCODER_HIDDEN_NEURON_COUNT + " -> " + LATENT_DIMENSION_SIZE);
-        System.out.println("    Decoder: " + LATENT_DIMENSION_SIZE + " -> " + ENCODER_HIDDEN_NEURON_COUNT + " -> " + INPUT_DIMENSION_SIZE);
-        System.out.printf("    Compression Ratio: %.1fx%n", (double) INPUT_DIMENSION_SIZE / LATENT_DIMENSION_SIZE);
+        System.out.println("    Encoder: " + inputContext.getSize() + " -> " + ENCODER_HIDDEN_NEURON_COUNT + " -> " + LATENT_DIMENSION_SIZE);
+        System.out.println("    Decoder: " + LATENT_DIMENSION_SIZE + " -> " + ENCODER_HIDDEN_NEURON_COUNT + " -> " + inputContext.getSize());
+        System.out.printf("    Compression Ratio: %.1fx%n", (double) inputContext.getSize() / LATENT_DIMENSION_SIZE);
 
-        assertEquals(INPUT_DIMENSION_SIZE, configuration.stateSize());
+        assertEquals(INPUT_DIMENSION_SIZE, inputContext.getSize());
         assertEquals(LATENT_DIMENSION_SIZE, configuration.latentDimensionSize());
         System.out.println("  [OK] Configuration validated successfully");
     }
@@ -121,10 +125,7 @@ public class AutoEncoderCompressorModelTest {
         // Create mock input context
         SpartanContext inputContext = createMockInputContext();
         inputContext.update();
-
-        // Create AutoEncoder configuration
         AutoEncoderCompressorConfig configuration = AutoEncoderCompressorConfig.builder()
-                .stateSize(INPUT_DIMENSION_SIZE)
                 .latentDimensionSize(LATENT_DIMENSION_SIZE)
                 .encoderHiddenNeuronCount(ENCODER_HIDDEN_NEURON_COUNT)
                 .encoderLayerCount(ENCODER_LAYER_COUNT)
@@ -132,10 +133,16 @@ public class AutoEncoderCompressorModelTest {
                 .learningRate(1e-3)
                 .isTraining(true)
                 .build();
+        SpartanActionManagerImpl actionManager = new SpartanActionManagerImpl();
 
         // Create AutoEncoder model
-        AutoEncoderCompressorModel model = new AutoEncoderCompressorModel(
-                AGENT_IDENTIFIER, configuration, inputContext, memoryArena
+        AutoEncoderCompressorModelImpl model = new AutoEncoderCompressorModelImpl(
+                "autoencoder-test-model",
+                AGENT_IDENTIFIER,
+                configuration,
+                inputContext,
+                memoryArena,
+                actionManager
         );
 
         System.out.println("\n  Phase 1: Model Registration");
@@ -168,7 +175,7 @@ public class AutoEncoderCompressorModelTest {
             }
 
             // Write inputs to context memory segment
-            MemorySegment contextDataSegment = inputContext.getData();
+            MemorySegment contextDataSegment = ((SpartanContextImpl) inputContext).getData();
             for (int inputIndex = 0; inputIndex < INPUT_DIMENSION_SIZE; inputIndex++) {
                 contextDataSegment.setAtIndex(ValueLayout.JAVA_DOUBLE, inputIndex, inputData[inputIndex]);
             }
@@ -254,15 +261,20 @@ public class AutoEncoderCompressorModelTest {
         inputContext.update();
 
         AutoEncoderCompressorConfig configuration = AutoEncoderCompressorConfig.builder()
-                .stateSize(INPUT_DIMENSION_SIZE)
                 .latentDimensionSize(LATENT_DIMENSION_SIZE)
                 .encoderHiddenNeuronCount(32)
                 .encoderLayerCount(2)
                 .decoderLayerCount(2)
                 .build();
+        SpartanActionManagerImpl actionManager = new SpartanActionManagerImpl();
 
-        AutoEncoderCompressorModel model = new AutoEncoderCompressorModel(
-                AGENT_IDENTIFIER + 1, configuration, inputContext, memoryArena
+        AutoEncoderCompressorModelImpl model = new AutoEncoderCompressorModelImpl(
+                "autoencoder-test-model-2",
+                AGENT_IDENTIFIER + 1,
+                configuration,
+                inputContext,
+                memoryArena,
+                actionManager
         );
 
         model.register();
@@ -273,7 +285,7 @@ public class AutoEncoderCompressorModelTest {
             testInputValues[valueIndex] = Math.sin(valueIndex * 0.2) * 0.5;
         }
 
-        MemorySegment contextDataSegment = inputContext.getData();
+        MemorySegment contextDataSegment = ((SpartanContextImpl) inputContext).getData();
 
         System.out.println("  Writing test input values to context:");
         for (int valueIndex = 0; valueIndex < INPUT_DIMENSION_SIZE; valueIndex++) {

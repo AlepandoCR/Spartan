@@ -1,125 +1,226 @@
 package org.spartan.api.agent.config;
 
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.NonNull;
+import org.spartan.api.agent.config.spi.SpartanConfigRegistry;
 
 /**
  * Configuration for the Recurrent Soft Actor-Critic (RSAC) model.
- * <p>
- * Mirrors the C++ struct {@code RecurrentSoftActorCriticHyperparameterConfig} from
- * {@code core/src/org/spartan/internal/machinelearning/ModelHyperparameterConfig.h}
- * <p>
- * This record contains all hyperparameters required to construct and train an RSAC agent.
- * The record is immutable and thread-safe. Use {@link Builder} for convenient construction.
- *
- * @param learningRate                   Base learning rate for gradient descent
- * @param gamma                          Discount factor for future rewards [0.0, 1.0]
- * @param epsilon                        Current exploration probability [0.0, 1.0]
- * @param epsilonMin                     Minimum epsilon floor after decay
- * @param epsilonDecay                   Multiplicative decay per episode [0.0, 1.0]
- * @param stateSize                      Number of elements in observation vector
- * @param actionSize                     Number of continuous action dimensions
- * @param isTraining                     True for training mode, false for inference
- * @param hiddenStateSize                Dimensionality of GRU hidden state
- * @param recurrentLayerDepth            Number of stacked GRU layers
- * @param actorHiddenLayerNeuronCount    Neurons per actor hidden layer
- * @param actorHiddenLayerCount          Number of actor hidden layers (post-GRU)
- * @param criticHiddenLayerNeuronCount   Neurons per critic hidden layer
- * @param criticHiddenLayerCount         Number of critic hidden layers
- * @param targetSmoothingCoefficient     Soft target network update rate (tau)
- * @param entropyTemperatureAlpha        Entropy bonus weight (alpha)
- * @param firstCriticLearningRate        Learning rate for Q1 critic
- * @param secondCriticLearningRate       Learning rate for Q2 critic
- * @param policyNetworkLearningRate      Learning rate for actor (policy) network
- * @param recurrentInputFeatureCount     Input features fed into GRU layer
- * @param remorseTraceBufferCapacity     Max ticks in Remorse Trace ring buffer
- * @param remorseMinimumSimilarityThreshold  Min cosine similarity for blame assignment
- * @param encoderSlots                   Nested AutoEncoder slot descriptors (may be null/empty)
+ * See {@link Builder} for construction.
  */
-public record RecurrentSoftActorCriticConfig(
-        // Base config fields
-        double learningRate,
-        double gamma,
-        double epsilon,
-        double epsilonMin,
-        double epsilonDecay,
-        int stateSize,
-        int actionSize,
-        boolean isTraining,
+public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelConfig {
 
-        // RSAC-specific fields
-        int hiddenStateSize,
-        int recurrentLayerDepth,
-        int actorHiddenLayerNeuronCount,
-        int actorHiddenLayerCount,
-        int criticHiddenLayerNeuronCount,
-        int criticHiddenLayerCount,
-        double targetSmoothingCoefficient,
-        double entropyTemperatureAlpha,
-        double firstCriticLearningRate,
-        double secondCriticLearningRate,
-        double policyNetworkLearningRate,
-        int recurrentInputFeatureCount,
-        int remorseTraceBufferCapacity,
-        double remorseMinimumSimilarityThreshold,
-        @Nullable NestedEncoderSlotDescriptor[] encoderSlots
-) implements SpartanModelConfig {
+    // Base config fields
+    double learningRate();
+    double gamma();
+    double epsilon();
+    double epsilonMin();
+    double epsilonDecay();
+    boolean isTraining();
 
-    /** Maximum number of nested encoder slots (matches C++ SPARTAN_MAX_NESTED_ENCODER_SLOTS). */
-    public static final int MAX_NESTED_ENCODER_SLOTS = 16;
+    /**
+     * Returns the size of the recurrent hidden state (memory vector).
+     * <p>
+     * <b>Concept:</b> This is the agent's "short-term memory".
+     * Unlike standard agents that react only to the current frame, an RSAC agent keeps a memory vector
+     * that evolves over time. This allows it to understand concepts like velocity, acceleration,
+     * or "I just pressed jump, so I should be in the air".
+     * <ul>
+     *   <li><b>Large (e.g., 256):</b> Can remember complex sequences and long histories, but takes longer to train.</li>
+     *   <li><b>Small (e.g., 32):</b> Faster to train, simpler memory. Good for simple tasks.</li>
+     * </ul>
+     *
+     * @return the dimension of the hidden state vector
+     */
+    int hiddenStateSize();
+
+    /**
+     * Returns the number of stacked recurrent layers (GRU depth).
+     * <p>
+     * <b>Concept:</b> Stacking layers allows the agent to learn hierarchical time and memory patterns.
+     * Layer 1 might track immediate motion, while Layer 2 tracks longer-term goals or strategy.
+     * Usually 1 or 2 layers are sufficient for most game AI.
+     *
+     * @return the number of GRU layers
+     */
+    int recurrentLayerDepth();
+
+    /**
+     * Returns the number of neurons in each hidden layer of the Actor network.
+     * <p>
+     * <b>Concept:</b> The Actor network is the "brain" that decides what to do.
+     * More neurons allow it to learn more complex decision boundaries (e.g., highly specific reactions to specific states).
+     *
+     * @return neuron count per actor layer
+     */
+    int actorHiddenLayerNeuronCount();
+
+    /**
+     * Returns the number of hidden layers in the Actor network.
+     * <p>
+     * <b>Concept:</b> Controls the depth of reasoning. Deeper networks can approximate more complex functions.
+     *
+     * @return number of actor layers
+     */
+    int actorHiddenLayerCount();
+
+    /**
+     * Returns the number of neurons in each hidden layer of the Critic network.
+     * <p>
+     * <b>Concept:</b> The Critic network is the "coach" that tells the Actor how good its actions were.
+     * Usually, the Critic is slightly larger or the same size as the Actor.
+     *
+     * @return neuron count per critic layer
+     */
+    int criticHiddenLayerNeuronCount();
+
+    /**
+     * Returns the number of hidden layers in the Critic network.
+     *
+     * @return number of critic layers
+     */
+    int criticHiddenLayerCount();
+
+    /**
+     * Returns the interpolation factor (Tau) for target network updates.
+     * <p>
+     * <b>Concept:</b> To stabilize learning, the agent uses "Target Networks" that change slowly.
+     * This coefficient controls how fast the target networks track the live networks.
+     * <ul>
+     *   <li><b>Small (e.g., 0.005):</b> Very stable, slow updates. Prevents the "coach" from changing its mind too often.</li>
+     *   <li><b>Large (e.g., 0.1):</b> Fast updates, potential instability.</li>
+     * </ul>
+     *
+     * @return the smoothing coefficient (tau)
+     */
+    double targetSmoothingCoefficient();
+
+    /**
+     * Returns the temperature parameter (Alpha) for entropy regularization.
+     * <p>
+     * <b>Concept:</b> In Soft Actor-Critic, the agent is rewarded not just for points, but for being unpredictable (high entropy).
+     * This parameter scales that bonus.
+     * <ul>
+     *   <li><b>High Alpha:</b> The agent prefers to keep its options open and act randomly where possible. Robust against noise.</li>
+     *   <li><b>Low Alpha:</b> The agent converges deterministically to the best solution it found.</li>
+     * </ul>
+     *
+     * @return the temperature alpha
+     */
+    double entropyTemperatureAlpha();
+
+    /**
+     * Returns the specific learning rate for the first Q-Critic (Twin Critics).
+     * <p>
+     * <b>Concept:</b> RSAC uses two critics to avoid overestimating how good an action is (Twin Delayed DDPG style).
+     * Usually the same as the base learning rate.
+     *
+     * @return learning rate for critic 1
+     */
+    double firstCriticLearningRate();
+
+    /**
+     * Returns the specific learning rate for the second Q-Critic.
+     *
+     * @return learning rate for critic 2
+     */
+    double secondCriticLearningRate();
+
+    /**
+     * Returns the specific learning rate for the Policy (Actor) network.
+     *
+     * @return learning rate for the actor
+     */
+    double policyNetworkLearningRate();
+
+    /**
+     * Returns the size of the input features processed by the recurrent unit.
+     * <p>
+     * <b>Concept:</b> Sometimes we preprocess the raw state before feeding it to the memory unit.
+     * This defines the size of that intermediate projection. Often matches {@link #hiddenStateSize()}.
+     *
+     * @return recurrent input dimension
+     */
+    int recurrentInputFeatureCount();
+
+    /**
+     * Returns the capacity of the REMORSE (Recurrent Memory Oriented Replay Storage Experience) buffer.
+     * <p>
+     * <b>Concept:</b> This is the agent's "long-term memory" or dream diary of past episodes.
+     * It stores sequences of experience to learn from later.
+     * <ul>
+     *   <li><b>Capacity:</b> Number of full episodes/sequences to keep.</li>
+     * </ul>
+     *
+     * @return the maximum number of episodes in the replay buffer
+     */
+    int remorseTraceBufferCapacity();
+
+    /**
+     * Returns the minimum similarity threshold for trace retention.
+     * <p>
+     * <b>Concept:</b> The agent tries to only remember <i>unique</i> or interesting experiences to save memory.
+     * If a new episode is too similar to an old one (similarity > threshold), it might be discarded.
+     *
+     * @return similarity threshold [0.0, 1.0]
+     */
+    double remorseMinimumSimilarityThreshold();
+
+    /**
+     * Returns the configuration for optional nested AutoEncoders.
+     * <p>
+     * <b>Concept:</b> Allows embedding smaller sub-models to compress parts of the input space directly within this agent.
+     * Advanced feature for very high-dimensional observations.
+     *
+     * @return array of encoder descriptors or null
+     */
+    @Nullable NestedEncoderSlotDescriptor[] encoderSlots();
+
+    /** Maximum number of nested encoder slots. */
+    int MAX_NESTED_ENCODER_SLOTS = 16;
 
     @Override
-    public SpartanModelType modelType() {
+    default SpartanModelType modelType() {
         return SpartanModelType.RECURRENT_SOFT_ACTOR_CRITIC;
     }
 
     /**
      * Returns the number of active nested encoder slots.
-     *
-     * @return count of encoder slots, 0 if none
      */
-    public int nestedEncoderCount() {
-        return encoderSlots != null ? encoderSlots.length : 0;
+    default int nestedEncoderCount() {
+        return encoderSlots() != null ? encoderSlots().length : 0;
     }
 
     /**
      * Gets a specific encoder slot descriptor.
-     *
-     * @param index slot index (0 to nestedEncoderCount - 1)
-     * @return the descriptor at the given index
-     * @throws IndexOutOfBoundsException if index is invalid
      */
-    public @NotNull NestedEncoderSlotDescriptor encoderSlot(int index) {
-        if (encoderSlots == null || index < 0 || index >= encoderSlots.length) {
+    default @NotNull NestedEncoderSlotDescriptor encoderSlot(int index) {
+        NestedEncoderSlotDescriptor[] slots = encoderSlots();
+        if (slots == null || index < 0 || index >= slots.length) {
             throw new IndexOutOfBoundsException("Invalid encoder slot index: " + index);
         }
-        return encoderSlots[index];
+        return slots[index];
     }
 
-    /**
-     * Creates a new builder with default values.
-     *
-     * @return a new Builder instance
-     */
-    public static Builder builder() {
+    @Contract(value = " -> new", pure = true)
+    static @NonNull Builder builder() {
         return new Builder();
     }
 
     /**
-     * Builder for {@link RecurrentSoftActorCriticConfig} with sensible defaults.
+     * Builder for {@link RecurrentSoftActorCriticConfig}.
      */
-    public static final class Builder {
-        // Base defaults
+    final class Builder {
         private double learningRate = 3e-4;
         private double gamma = 0.99;
         private double epsilon = 1.0;
         private double epsilonMin = 0.01;
         private double epsilonDecay = 0.995;
-        private int stateSize = 64;
-        private int actionSize = 4;
+        private boolean debugLogging = false;
         private boolean isTraining = true;
 
-        // RSAC defaults
         private int hiddenStateSize = 128;
         private int recurrentLayerDepth = 1;
         private int actorHiddenLayerNeuronCount = 256;
@@ -143,9 +244,9 @@ public record RecurrentSoftActorCriticConfig(
         public Builder epsilon(double val) { this.epsilon = val; return this; }
         public Builder epsilonMin(double val) { this.epsilonMin = val; return this; }
         public Builder epsilonDecay(double val) { this.epsilonDecay = val; return this; }
-        public Builder stateSize(int val) { this.stateSize = val; return this; }
-        public Builder actionSize(int val) { this.actionSize = val; return this; }
+        public Builder debugLogging(boolean val) { this.debugLogging = val; return this; }
         public Builder isTraining(boolean val) { this.isTraining = val; return this; }
+
         public Builder hiddenStateSize(int val) { this.hiddenStateSize = val; return this; }
         public Builder recurrentLayerDepth(int val) { this.recurrentLayerDepth = val; return this; }
         public Builder actorHiddenLayerNeuronCount(int val) { this.actorHiddenLayerNeuronCount = val; return this; }
@@ -162,23 +263,17 @@ public record RecurrentSoftActorCriticConfig(
         public Builder remorseMinimumSimilarityThreshold(double val) { this.remorseMinimumSimilarityThreshold = val; return this; }
         public Builder encoderSlots(NestedEncoderSlotDescriptor[] val) { this.encoderSlots = val; return this; }
 
-        /**
-         * Builds the immutable config instance.
-         *
-         * @return a new RecurrentSoftActorCriticConfig
-         */
+
         public RecurrentSoftActorCriticConfig build() {
-            return new RecurrentSoftActorCriticConfig(
-                    learningRate, gamma, epsilon, epsilonMin, epsilonDecay,
-                    stateSize, actionSize, isTraining,
-                    hiddenStateSize, recurrentLayerDepth,
-                    actorHiddenLayerNeuronCount, actorHiddenLayerCount,
-                    criticHiddenLayerNeuronCount, criticHiddenLayerCount,
-                    targetSmoothingCoefficient, entropyTemperatureAlpha,
-                    firstCriticLearningRate, secondCriticLearningRate, policyNetworkLearningRate,
-                    recurrentInputFeatureCount, remorseTraceBufferCapacity,
-                    remorseMinimumSimilarityThreshold, encoderSlots
-            );
+             return SpartanConfigRegistry.get().createRecurrentSoftActorCritic(
+                 learningRate, gamma, epsilon, epsilonMin, epsilonDecay,
+                 debugLogging, isTraining,
+                 hiddenStateSize, recurrentLayerDepth, actorHiddenLayerNeuronCount, actorHiddenLayerCount,
+                 criticHiddenLayerNeuronCount, criticHiddenLayerCount, targetSmoothingCoefficient,
+                 entropyTemperatureAlpha, firstCriticLearningRate, secondCriticLearningRate,
+                 policyNetworkLearningRate, recurrentInputFeatureCount, remorseTraceBufferCapacity,
+                 remorseMinimumSimilarityThreshold, encoderSlots
+             );
         }
     }
 }

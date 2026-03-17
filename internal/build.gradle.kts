@@ -1,10 +1,11 @@
 import org.gradle.kotlin.dsl.invoke
 import org.gradle.kotlin.dsl.test
+import java.util.Properties
 
 plugins {
     id("java")
-
     id("com.gradleup.shadow") version "8.3.5"
+    id("maven-publish")
 }
 
 group = "org.spartan.internal"
@@ -19,8 +20,7 @@ repositories {
 
 dependencies {
     implementation(project(":api"))
-
-    compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
+    implementation("org.jetbrains:annotations:26.0.2")
 
     testImplementation(project(":api"))
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
@@ -44,6 +44,10 @@ tasks {
 
     compileJava {
         dependsOn(generateNativeBindings)
+    }
+
+    withType<JavaExec> {
+        jvmArgs("--enable-native-access=ALL-UNNAMED")
     }
 
     processResources {
@@ -70,12 +74,47 @@ tasks {
         useJUnitPlatform()
     }
 
+    val nativeClassifier = providers.gradleProperty("nativeClassifier").orNull
     shadowJar {
-        archiveClassifier.set("")
+        archiveClassifier.set(nativeClassifier ?: "")
         mergeServiceFiles()
     }
 
     build {
         dependsOn(shadowJar)
+    }
+}
+
+fun loadDotEnv(rootDir: File): Properties {
+    val props = Properties()
+    val envFile = rootDir.resolve(".env")
+    if (envFile.exists()) {
+        envFile.inputStream().use { props.load(it) }
+    }
+    return props
+}
+
+val dotEnv = loadDotEnv(rootProject.projectDir)
+
+publishing {
+    publications {
+        create<MavenPublication>("internal") {
+            artifact(tasks.named("shadowJar"))
+            groupId = project.group.toString()
+            artifactId = "spartan-internal"
+            version = project.version.toString()
+        }
+    }
+    repositories {
+        val repoUrl = dotEnv.getProperty("MAVEN_URL")
+        if (!repoUrl.isNullOrBlank()) {
+            maven {
+                url = uri(repoUrl)
+                credentials {
+                    username = dotEnv.getProperty("MAVEN_USERNAME")
+                    password = dotEnv.getProperty("MAVEN_PASSWORD")
+                }
+            }
+        }
     }
 }

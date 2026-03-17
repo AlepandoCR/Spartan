@@ -8,27 +8,17 @@
 #include <cmath>
 #include <algorithm>
 #include <random>
+#include <cassert>
 
 namespace org::spartan::internal::math::tensor {
 
     using namespace org::spartan::internal::math::simd;
 
     /**
-     * Computes the mathematical core of a neural network layer.
-     *
-     * A dense layer connects every input to every output using a weight matrix.
-     * It multiplies the incoming signals by their learned weights (which represent
-     * their importance) and adds a bias to shift the final result.
-     *
-     * To avoid processing numbers one by one, this implementation uses the platform
-     * SIMD abstraction layer. The CPU multiplies the weight and input, then adds it
-     * to a running total using Fused Multiply-Add, processing multiple numbers
-     * simultaneously to maximize throughput.
-     *
-     * @param inputs  The memory span containing the current layer's data.
-     * @param weights The flattened matrix of connections between neurons.
-     * @param biases  The baseline adjustments for each output neuron.
-     * @param outputs The target span where the results will be written directly.
+     * Computes a dense (fully connected) forward pass.
+     * Uses SIMD to process multiple weight-input products simultaneously.
+     * * Optimization: The use of Fused Multiply-Add (FMA) prevents intermediate
+     * rounding errors and doubles the throughput on modern x86/ARM hardware.
      */
     void TensorOps::denseForwardPass(
             const std::span<const double> inputs,
@@ -39,642 +29,420 @@ namespace org::spartan::internal::math::tensor {
         const size_t inputSize = inputs.size();
         const size_t outputSize = outputs.size();
 
-        const double* inputDataPointer = inputs.data();
-        const double* weightDataPointer = weights.data();
-        const double* biasDataPointer = biases.data();
-        double* outputDataPointer = outputs.data();
+        if (inputSize == 0 || outputSize == 0) return;
 
-        for (size_t neuronIndex = 0; neuronIndex < outputSize; ++neuronIndex) {
+        const double* __restrict inputPtr = inputs.data();
+        const double* __restrict weightPtr = weights.data();
+        const double* __restrict biasPtr = biases.data();
+        double* __restrict outputPtr = outputs.data();
 
-            const double* weightRowPointer = &weightDataPointer[neuronIndex * inputSize];
+        for (size_t n = 0; n < outputSize; ++n) {
+            const double* rowWeightPtr = &weightPtr[n * inputSize];
+            SimdFloat acc = simdSetZero();
 
-            SimdFloat vectorizedAccumulator = simdSetZero();
-
-            size_t elementIndex = 0;
-            for (; elementIndex + (simdLaneCount - 1) < inputSize; elementIndex += simdLaneCount) {
-                const SimdFloat weightVector = simdLoad(&weightRowPointer[elementIndex]);
-                const SimdFloat inputVector = simdLoad(&inputDataPointer[elementIndex]);
-
-                vectorizedAccumulator = simdFusedMultiplyAdd(weightVector, inputVector, vectorizedAccumulator);
+            size_t i = 0;
+            // SIMD block processing based on hardware lane count (8 for AVX-512, 4 for AVX2)
+            for (; i + (simdLaneCount - 1) < inputSize; i += simdLaneCount) {
+                acc = simdFusedMultiplyAdd(simdLoad(&rowWeightPtr[i]), simdLoad(&inputPtr[i]), acc);
             }
 
-            double scalarDotProduct = simdHorizontalSum(vectorizedAccumulator);
+            double sum = simdHorizontalSum(acc);
 
-            for (; elementIndex < inputSize; ++elementIndex) {
-                scalarDotProduct += weightRowPointer[elementIndex] * inputDataPointer[elementIndex];
+            // Tail loop for non-aligned elements
+            for (; i < inputSize; ++i) {
+                sum += rowWeightPtr[i] * inputPtr[i];
             }
 
-            outputDataPointer[neuronIndex] = scalarDotProduct + biasDataPointer[neuronIndex];
+            outputPtr[n] = sum + biasPtr[n];
         }
     }
 
-
     /**
-     * Applies the Rectified Linear Unit (ReLU) activation function to a tensor.
-     *
-     * Activation functions act as gates. ReLU lets positive numbers pass through
-     * unchanged but completely blocks any negative numbers by turning them into
-     * absolute zeros.
-     *
-     * At the hardware level, this loads a vector of absolute zeros and compares it
-     * against the actual data. The processor uses a hardware-level maximum function
-     * to keep whichever number is higher, silencing negative values in blocks
-     * determined by the current SIMD lane width.
-     *
-     * @param tensor The memory span containing the layer outputs. Mutated in place.
+     * Applies the Rectified Linear Unit (ReLU) activation function.
+     * Elements < 0 are set to 0.
      */
     void TensorOps::applyReLU(const std::span<double> tensor) {
-        double* tensorDataPointer = tensor.data();
-        const size_t tensorSize = tensor.size();
+        double* ptr = tensor.data();
+        const size_t size = tensor.size();
+        const SimdFloat zero = simdSetZero();
 
-        const SimdFloat zeroVector = simdSetZero();
-
-        size_t elementIndex = 0;
-        for (; elementIndex + (simdLaneCount - 1) < tensorSize; elementIndex += simdLaneCount) {
-            SimdFloat currentValues = simdLoad(&tensorDataPointer[elementIndex]);
-
-            currentValues = simdMax(currentValues, zeroVector);
-            simdStore(&tensorDataPointer[elementIndex], currentValues);
+        size_t i = 0;
+        for (; i + (simdLaneCount - 1) < size; i += simdLaneCount) {
+            simdStore(&ptr[i], simdMax(simdLoad(&ptr[i]), zero));
         }
-
-        for (; elementIndex < tensorSize; ++elementIndex) {
-            tensorDataPointer[elementIndex] = std::max(0.0, tensorDataPointer[elementIndex]);
-        }
+        for (; i < size; ++i) ptr[i] = std::max(0.0, ptr[i]);
     }
 
     /**
-     * Applies the Leaky Rectified Linear Unit (Leaky ReLU) activation function to a tensor.
-     *
-     * Activation functions act as gates. Leaky ReLU solves the "Dying ReLU" problem
-     * by allowing a tiny, non-zero gradient (the "leak") when the input is negative.
-     * Instead of flatlining at zero, the neuron multiplies the negative value by a
-     * very small fraction (the alpha parameter).
-     *
-     * At the hardware level, this creates a mask of positive values and uses a SIMD
-     * blend instruction to seamlessly merge the original positive values with the
-     * scaled negative values without interrupting the instruction pipeline.
-     *
-     * @param tensor The memory span containing the layer outputs. Mutated in place.
-     * @param alpha  The small multiplier for negative values. A common default is 0.01.
+     * Applies Leaky ReLU activation.
+     * Prevents "dying neurons" by allowing a small gradient (alpha) for negative values.
      */
     void TensorOps::applyLeakyReLU(const std::span<double> tensor, const double alpha) {
-        double* tensorDataPointer = tensor.data();
-        const size_t tensorSize = tensor.size();
+        double* ptr = tensor.data();
+        const size_t size = tensor.size();
+        const SimdFloat sAlpha = simdBroadcast(alpha);
+        const SimdFloat sZero = simdSetZero();
 
-        const SimdFloat simdAlpha = simdBroadcast(alpha);
-        const SimdFloat simdZero = simdSetZero();
-
-        size_t elementIndex = 0;
-        for (; elementIndex + (simdLaneCount - 1) < tensorSize; elementIndex += simdLaneCount) {
-            const SimdFloat inputValues = simdLoad(&tensorDataPointer[elementIndex]);
-
-            // Calculate what the value would be if it is negative (input * alpha)
-            const SimdFloat leakedValues = simdMultiply(inputValues, simdAlpha);
-
-            // Create a bitmask where true (all 1s) means the value is strictly greater than zero
-            const SimdFloat positiveMask = simdCompareGreaterThan(inputValues, simdZero);
-
-            // Blend the two vectors based on the mask.
-            // If the mask is true, it keeps inputValues. If false, it keeps leakedValues.
-            const SimdFloat result = simdBlend(inputValues, leakedValues, positiveMask);
-
-            simdStore(&tensorDataPointer[elementIndex], result);
+        size_t i = 0;
+        for (; i + (simdLaneCount - 1) < size; i += simdLaneCount) {
+            const SimdFloat val = simdLoad(&ptr[i]);
+            // Blend selects (val * alpha) if val < 0, else val
+            simdStore(&ptr[i], simdBlend(val, simdMultiply(val, sAlpha), simdCompareGreaterThan(val, sZero)));
         }
-
-        // Residual loop for remaining elements
-        for (; elementIndex < tensorSize; ++elementIndex) {
-            const double val = tensorDataPointer[elementIndex];
-            tensorDataPointer[elementIndex] = val > 0.0 ? val : val * alpha;
-        }
+        for (; i < size; ++i) ptr[i] = ptr[i] > 0.0 ? ptr[i] : ptr[i] * alpha;
     }
 
-
     /**
-     * Applies a high-speed approximation of the Hyperbolic Tangent (Tanh) function.
-     *
-     * Tanh is a smooth curve that compresses any input number into a strict
-     * range between -1.0 and 1.0. This is essential for bounding outputs,
-     * like generating steering angles or stabilizing internal memory states.
-     *
-     * Standard math library calls like std::tanh can break hardware vectorization
-     * on certain toolchains (like MinGW), forcing the CPU to process numbers
-     * one at a time. To bypass this bottleneck, this function uses a Pade
-     * rational approximation. It reconstructs the Tanh curve using only basic
-     * multiplications and additions. This allows the CPU to use Fused Multiply-Add
-     * instructions to process multiple values simultaneously without ever leaving
-     * the SIMD registers.
-     *
-     * @param tensor The memory span to compress. Mutated in place.
+     * Fast Tanh approximation using a (3/2) Padé approximant.
+     * Provides high throughput for policy networks with negligible error.
      */
     void TensorOps::applyTanh(const std::span<double> tensor) {
-        double* tensorDataPointer = tensor.data();
-        const size_t tensorSize = tensor.size();
+        double* ptr = tensor.data();
+        const size_t size = tensor.size();
+        const SimdFloat c27 = simdBroadcast(27.0);
+        const SimdFloat c9 = simdBroadcast(9.0);
+        const SimdFloat p1 = simdBroadcast(1.0);
+        const SimdFloat n1 = simdBroadcast(-1.0);
 
-        // We preload the mathematical constants into SIMD registers.
-        // These constants define the shape of our rational approximation: x(27 + x^2) / (27 + 9x^2)
-        const SimdFloat constantTwentySeven = simdBroadcast(27.0);
-        const SimdFloat constantNine        = simdBroadcast(9.0);
-        const SimdFloat constantPositiveOne = simdBroadcast(1.0);
-        const SimdFloat constantNegativeOne = simdBroadcast(-1.0);
+        size_t i = 0;
+        for (; i + (simdLaneCount - 1) < size; i += simdLaneCount) {
+            const SimdFloat x = simdLoad(&ptr[i]);
+            const SimdFloat x2 = simdMultiply(x, x);
+            const SimdFloat num = simdMultiply(x, simdAdd(c27, x2));
+            const SimdFloat den = simdFusedMultiplyAdd(c9, x2, c27);
+            SimdFloat res = simdDivide(num, den);
+            simdStore(&ptr[i], simdMax(n1, simdMin(p1, res)));
+        }
+        for (; i < size; ++i) ptr[i] = std::tanh(ptr[i]);
+    }
 
-        size_t elementIndex = 0;
-        for (; elementIndex + (simdLaneCount - 1) < tensorSize; elementIndex += simdLaneCount) {
-            const SimdFloat inputValues = simdLoad(&tensorDataPointer[elementIndex]);
+    /**
+     * Stable Softmax implementation using the Max-Subtraction trick.
+     * Prevents exponential overflow in discrete action spaces.
+     */
+    void TensorOps::applySoftmax(const std::span<double> tensor) {
+        if (tensor.empty()) return;
+        double* ptr = tensor.data();
+        const size_t size = tensor.size();
 
-            // Calculate x^2
-            const SimdFloat squaredValues = simdMultiply(inputValues, inputValues);
+        double maxVal = ptr[0];
+        for (size_t i = 1; i < size; ++i) if (ptr[i] > maxVal) maxVal = ptr[i];
 
-            // Build the numerator: x * (27 + x^2)
-            SimdFloat numerator = simdAdd(constantTwentySeven, squaredValues);
-            numerator = simdMultiply(inputValues, numerator);
-
-            // Build the denominator: 27 + 9x^2
-            const SimdFloat denominator = simdFusedMultiplyAdd(constantNine, squaredValues, constantTwentySeven);
-
-            // Divide to get the approximated tanh curve
-            SimdFloat approximationResult = simdDivide(numerator, denominator);
-
-            // The approximation can slightly exceed the bounds at extreme inputs
-            // We clamp the final result strictly between -1.0 and 1.0.
-            approximationResult = simdMax(constantNegativeOne, simdMin(constantPositiveOne, approximationResult));
-
-            simdStore(&tensorDataPointer[elementIndex], approximationResult);
+        double totalExp = 0.0;
+        for (size_t i = 0; i < size; ++i) {
+            ptr[i] = std::exp(ptr[i] - maxVal);
+            totalExp += ptr[i];
         }
 
-        for (; elementIndex < tensorSize; ++elementIndex) {
-            tensorDataPointer[elementIndex] = std::tanh(tensorDataPointer[elementIndex]);
+        const SimdFloat invTotal = simdBroadcast(1.0 / totalExp);
+        size_t i = 0;
+        for (; i + (simdLaneCount - 1) < size; i += simdLaneCount) {
+            simdStore(&ptr[i], simdMultiply(simdLoad(&ptr[i]), invTotal));
+        }
+        for (; i < size; ++i) ptr[i] /= totalExp;
+    }
+
+    /**
+     * Clips gradient norm to prevent exploding gradients in Recurrent models.
+     * If the global norm exceeds maxNorm, all gradients are scaled down.
+     */
+    void TensorOps::clipGradients(std::span<double> gradients, const double maxNorm) {
+        const size_t size = gradients.size();
+        const double* ptr = gradients.data();
+        SimdFloat sumSqAcc = simdSetZero();
+
+        size_t i = 0;
+        for (; i + (simdLaneCount - 1) < size; i += simdLaneCount) {
+            SimdFloat g = simdLoad(&ptr[i]);
+            sumSqAcc = simdFusedMultiplyAdd(g, g, sumSqAcc);
+        }
+
+        double totalSumSq = simdHorizontalSum(sumSqAcc);
+        for (; i < size; ++i) totalSumSq += ptr[i] * ptr[i];
+
+        double norm = std::sqrt(totalSumSq);
+        if (norm > maxNorm) {
+            const double scale = maxNorm / (norm + 1e-8);
+            const SimdFloat sScale = simdBroadcast(scale);
+
+            i = 0;
+            for (; i + (simdLaneCount - 1) < size; i += simdLaneCount) {
+                simdStore(&gradients[i], simdMultiply(simdLoad(&gradients[i]), sScale));
+            }
+            for (; i < size; ++i) gradients[i] *= scale;
         }
     }
 
     /**
-     * Applies a high-speed approximation of the Sigmoid function.
-     *
-     * Sigmoid squashes any input number into a strict probability range between 0.0 and 1.0.
-     * It is primarily used inside Recurrent Neural Networks (like the Gated Recurrent Unit)
-     * to act as a valve, determining exactly what percentage of memory should be kept or forgotten.
-     *
-     * Since evaluating true exponentials is computationally expensive and disrupts
-     * hardware vectorization, this function leverages the relationship between Sigmoid
-     * and the Hyperbolic Tangent: Sigmoid(x) = 0.5 * (1 + Tanh(0.5 * x)). It uses our
-     * fast rational Tanh approximation to process multiple values simultaneously.
-     *
-     * @param tensor The memory span to compress. Mutated in place.
+     * Performs a Polyak (Soft) update for target networks.
+     * target = tau * online + (1 - tau) * target
+     */
+    void TensorOps::applyPolyakAveraging(const std::span<const double> online, const std::span<double> target, const double tau) {
+        const size_t size = online.size();
+        const double* oPtr = online.data();
+        double* tPtr = target.data();
+        const SimdFloat sTau = simdBroadcast(tau);
+
+        size_t i = 0;
+        for (; i + (simdLaneCount - 1) < size; i += simdLaneCount) {
+            const SimdFloat oV = simdLoad(&oPtr[i]);
+            const SimdFloat tV = simdLoad(&tPtr[i]);
+            // (oV - tV) * tau + tV  => Optimized FMA form
+            simdStore(&tPtr[i], simdFusedMultiplyAdd(sTau, simdSubtract(oV, tV), tV));
+        }
+        for (; i < size; ++i) tPtr[i] += tau * (oPtr[i] - tPtr[i]);
+    }
+
+    /**
+     * Adam Optimizer Update Step.
+     * Updates weights using first (m) and second (v) moments of gradients.
+     */
+    void TensorOps::applyAdamUpdate(
+            const std::span<double> w, const std::span<const double> g,
+            const std::span<double> m, const std::span<double> v,
+            const double lr, const double b1, const double b2,
+            const double eps, const int t) {
+
+        const size_t size = w.size();
+        const double alphaEff = lr * std::sqrt(1.0 - std::pow(b2, t)) / (1.0 - std::pow(b1, t));
+
+        const SimdFloat sb1 = simdBroadcast(b1), sb1c = simdBroadcast(1.0 - b1);
+        const SimdFloat sb2 = simdBroadcast(b2), sb2c = simdBroadcast(1.0 - b2);
+        const SimdFloat se = simdBroadcast(eps), sa = simdBroadcast(-alphaEff);
+
+        double* wP = w.data(); const double* gP = g.data();
+        double* mP = m.data(); double* vP = v.data();
+
+        size_t i = 0;
+        for (; i + (simdLaneCount - 1) < size; i += simdLaneCount) {
+            SimdFloat grad = simdLoad(&gP[i]);
+            // m = b1 * m + (1 - b1) * g
+            SimdFloat nm = simdFusedMultiplyAdd(simdLoad(&mP[i]), sb1, simdMultiply(grad, sb1c));
+            // v = b2 * v + (1 - b2) * g^2
+            SimdFloat nv = simdFusedMultiplyAdd(simdLoad(&vP[i]), sb2, simdMultiply(simdMultiply(grad, grad), sb2c));
+
+            simdStore(&mP[i], nm);
+            simdStore(&vP[i], nv);
+
+            // w = w - alpha * (m / (sqrt(v) + eps))
+            SimdFloat update = simdDivide(nm, simdAdd(simdSqrt(nv), se));
+            simdStore(&wP[i], simdFusedMultiplyAdd(update, sa, simdLoad(&wP[i])));
+        }
+
+        for (; i < size; ++i) {
+            mP[i] = b1 * mP[i] + (1.0 - b1) * gP[i];
+            vP[i] = b2 * vP[i] + (1.0 - b2) * gP[i] * gP[i];
+            wP[i] -= alphaEff * (mP[i] / (std::sqrt(vP[i]) + eps));
+        }
+    }
+
+    /**
+     * Backpropagates gradients through a dense layer.
+     * Computes both Weight Gradients (outWG) and Input Gradients (outIG).
+     */
+    void TensorOps::denseBackwardPass(
+            const std::span<const double> in, const std::span<const double> outG,
+            const std::span<const double> w, const std::span<double> outWG,
+            const std::span<double> outIG) {
+
+        const size_t inS = in.size(), outS = outG.size();
+        if (inS == 0 || outS == 0) return;
+
+        std::fill(outIG.begin(), outIG.end(), 0.0);
+        const double* inP = in.data(); const double* ogP = outG.data();
+        const double* wP = w.data(); double* wgP = outWG.data();
+        double* igP = outIG.data();
+
+        for (size_t n = 0; n < outS; ++n) {
+            const SimdFloat sGrad = simdBroadcast(ogP[n]);
+            const double* rWP = &wP[n * inS];
+            double* rWGP = &wgP[n * inS];
+
+            size_t i = 0;
+            for (; i + (simdLaneCount - 1) < inS; i += simdLaneCount) {
+                // Accumulate weight gradients: wg += input * output_gradient
+                simdStore(&rWGP[i], simdFusedMultiplyAdd(sGrad, simdLoad(&inP[i]), simdLoad(&rWGP[i])));
+                // Accumulate input gradients: ig += weight * output_gradient
+                simdStore(&igP[i], simdFusedMultiplyAdd(sGrad, simdLoad(&rWP[i]), simdLoad(&igP[i])));
+            }
+            for (; i < inS; ++i) {
+                rWGP[i] += ogP[n] * inP[i];
+                igP[i] += ogP[n] * rWP[i];
+            }
+        }
+    }
+
+    /**
+     * Gaussian Noise with Reparameterization Trick.
+     * Essential for Soft Actor-Critic (SAC) to allow backpropagation through sampling.
+     */
+    void TensorOps::applyGaussianNoise(
+            const std::span<const double> m, const std::span<const double> s,
+            const std::span<double> out, const uint64_t seed) {
+
+        thread_local std::mt19937_64 gen(seed == 0 ? std::random_device{}() : seed);
+        std::normal_distribution dist(0.0, 1.0);
+        for (size_t i = 0; i < m.size(); ++i) out[i] = m[i] + s[i] * dist(gen);
+    }
+
+    /**
+     * Applies the Sigmoid activation function using a fast polynomial approximation.
+     * Formula: f(x) = 1 / (1 + e^-x)
+     * Uses a rational approximant for speed.
      */
     void TensorOps::applySigmoidFast(const std::span<double> tensor) {
-        double* tensorDataPointer = tensor.data();
-        const size_t tensorSize = tensor.size();
+        double* ptr = tensor.data();
+        const size_t size = tensor.size();
 
-        const SimdFloat constantHalf = simdBroadcast(0.5);
-        const SimdFloat constantOne = simdBroadcast(1.0);
+        // Use rational approximation: sigmoid(x) ≈ 0.5 + 0.125*x / (1 + |x|)
+        const SimdFloat p5 = simdBroadcast(0.5);
+        const SimdFloat p125 = simdBroadcast(0.125);
+        const SimdFloat p1 = simdBroadcast(1.0);
 
-        // Constants for the internal Tanh Padé approximation
-        const SimdFloat constantTwentySeven = simdBroadcast(27.0);
-        const SimdFloat constantNine = simdBroadcast(9.0);
-        const SimdFloat constantNegativeOne = simdBroadcast(-1.0);
-
-        size_t elementIndex = 0;
-        for (; elementIndex + (simdLaneCount - 1) < tensorSize; elementIndex += simdLaneCount) {
-            SimdFloat inputValues = simdLoad(&tensorDataPointer[elementIndex]);
-
-            // Scale input by 0.5 for the Tanh relationship
-            inputValues = simdMultiply(inputValues, constantHalf);
-
-            // -- Begin inline Tanh approximation --
-            const SimdFloat squaredValues = simdMultiply(inputValues, inputValues);
-
-            SimdFloat numerator = simdAdd(constantTwentySeven, squaredValues);
-            numerator = simdMultiply(inputValues, numerator);
-
-            const SimdFloat denominator = simdFusedMultiplyAdd(constantNine, squaredValues, constantTwentySeven);
-            SimdFloat tanhResult = simdDivide(numerator, denominator);
-            tanhResult = simdMax(constantNegativeOne, simdMin(constantOne, tanhResult));
-            // -- End inline Tanh approximation --
-
-            // Convert Tanh result to Sigmoid: 0.5 * (1.0 + tanhResult)
-            SimdFloat sigmoidResult = simdAdd(constantOne, tanhResult);
-            sigmoidResult = simdMultiply(constantHalf, sigmoidResult);
-
-            simdStore(&tensorDataPointer[elementIndex], sigmoidResult);
+        size_t i = 0;
+        for (; i + (simdLaneCount - 1) < size; i += simdLaneCount) {
+            const SimdFloat x = simdLoad(&ptr[i]);
+            const SimdFloat ax = simdAbs(x);
+            const SimdFloat denom = simdAdd(p1, ax);
+            const SimdFloat result = simdAdd(p5, simdDivide(simdMultiply(x, p125), denom));
+            simdStore(&ptr[i], result);
         }
 
-        // Residual loop for remaining elements
-        for (; elementIndex < tensorSize; ++elementIndex) {
-            tensorDataPointer[elementIndex] = 1.0 / (1.0 + std::exp(-tensorDataPointer[elementIndex]));
+        // Tail loop for non-SIMD elements
+        for (; i < size; ++i) {
+            const double x = ptr[i];
+            ptr[i] = 0.5 + 0.125 * x / (1.0 + std::abs(x));
         }
     }
 
     /**
-     * Applies a high-speed polynomial approximation of the Exponential function.
-     *
-     * This is frequently used to convert logarithmic standard deviations (log-std)
-     * into true positive standard deviations.
-     *
-     * The approximation uses a scaled Taylor series expansion designed to evaluate
-     * quickly using Fused Multiply-Add hardware instructions. Extreme values are
-     * clamped to prevent numerical overflow (infinity) or underflow.
-     *
-     * @param tensor The memory span to exponentiate. Mutated in place.
+     * Applies a fast polynomial approximation of the Exponential function.
+     * Formula: f(x) = e^x
+     * Uses Taylor series approximation for speed on embedded hardware.
      */
     void TensorOps::applyExpFast(const std::span<double> tensor) {
-        double* tensorDataPointer = tensor.data();
-        const size_t tensorSize = tensor.size();
+        double* ptr = tensor.data();
+        const size_t size = tensor.size();
 
-        // Upper and lower bounds to prevent 64-bit float overflow
-        const SimdFloat upperBound = simdBroadcast(88.0);
-        const SimdFloat lowerBound = simdBroadcast(-88.0);
+        // Fast exp approximation: exp(x) ≈ 1 + x + x^2/2 + x^3/6 + x^4/24 (for |x| < 1)
+        // For larger values, clamp to [-10, 10] to prevent overflow
+        const SimdFloat p1 = simdBroadcast(1.0);
+        const SimdFloat p2 = simdBroadcast(2.0);
+        const SimdFloat p6 = simdBroadcast(6.0);
+        const SimdFloat p24 = simdBroadcast(24.0);
+        const SimdFloat p10 = simdBroadcast(10.0);
+        const SimdFloat n10 = simdBroadcast(-10.0);
 
-        // Taylor series coefficients for e^x
-        const SimdFloat coeff2 = simdBroadcast(1.0 / 2.0);
-        const SimdFloat coeff3 = simdBroadcast(1.0 / 6.0);
-        const SimdFloat coeff4 = simdBroadcast(1.0 / 24.0);
-        const SimdFloat constantOne = simdBroadcast(1.0);
+        size_t i = 0;
+        for (; i + (simdLaneCount - 1) < size; i += simdLaneCount) {
+            SimdFloat x = simdLoad(&ptr[i]);
+            // Clamp to [-10, 10]
+            x = simdMax(n10, simdMin(p10, x));
 
-        size_t elementIndex = 0;
-        for (; elementIndex + (simdLaneCount - 1) < tensorSize; elementIndex += simdLaneCount) {
-            SimdFloat inputValues = simdLoad(&tensorDataPointer[elementIndex]);
+            // Taylor series: 1 + x + x^2/2 + x^3/6 + x^4/24
+            const SimdFloat x2 = simdMultiply(x, x);
+            const SimdFloat x3 = simdMultiply(x2, x);
+            const SimdFloat x4 = simdMultiply(x3, x);
 
-            // Clamp inputs to safe exponential ranges
-            inputValues = simdMax(lowerBound, simdMin(upperBound, inputValues));
+            SimdFloat result = p1;
+            result = simdFusedMultiplyAdd(x, p1, result);
+            result = simdFusedMultiplyAdd(x2, simdDivide(p1, p2), result);
+            result = simdFusedMultiplyAdd(x3, simdDivide(p1, p6), result);
+            result = simdFusedMultiplyAdd(x4, simdDivide(p1, p24), result);
 
-            // Approximate e^x using: 1 + x + (x^2)/2 + (x^3)/6 + (x^4)/24
-            SimdFloat result = simdFusedMultiplyAdd(coeff4, inputValues, coeff3);
-            result = simdFusedMultiplyAdd(result, inputValues, coeff2);
-            result = simdFusedMultiplyAdd(result, inputValues, constantOne);
-            result = simdFusedMultiplyAdd(result, inputValues, constantOne);
-
-            simdStore(&tensorDataPointer[elementIndex], result);
+            simdStore(&ptr[i], result);
         }
 
-        for (; elementIndex < tensorSize; ++elementIndex) {
-            tensorDataPointer[elementIndex] = std::exp(std::max(-88.0, std::min(88.0, tensorDataPointer[elementIndex])));
-        }
-    }
-
-    /**
-     * Blends the weights of an active learning network into a target network.
-     *
-     * Reinforcement learning can become highly unstable if the model tries to learn
-     * from a moving target. To fix this, algorithms use a "Target Network" that updates
-     * very slowly. This function takes a tiny fraction (tau) of the actively learning
-     * weights and blends them into the target weights.
-     *
-     * Mathematically: Target = (tau * Online) + ((1 - tau) * Target).
-     * By rearranging the algebra to Target = tau * (Online - Target) + Target,
-     * the hardware can execute this entire blend in a single clock cycle per block.
-     *
-     * @param onlineWeights The memory span containing the active network weights.
-     * @param targetWeights The memory span containing the slowly updating target weights.
-     * @param tau The smoothing coefficient, dictating how much new information to absorb.
-     */
-    void TensorOps::applyPolyakAveraging(
-            const std::span<const double> onlineWeights,
-            const std::span<double> targetWeights,
-            const double tau) {
-
-        const size_t tensorSize = onlineWeights.size();
-        const double* onlinePointer = onlineWeights.data();
-        double* targetPointer = targetWeights.data();
-
-        const SimdFloat simdTau = simdBroadcast(tau);
-
-        size_t elementIndex = 0;
-        for (; elementIndex + (simdLaneCount - 1) < tensorSize; elementIndex += simdLaneCount) {
-            const SimdFloat onlineVec = simdLoad(&onlinePointer[elementIndex]);
-            const SimdFloat targetVec = simdLoad(&targetPointer[elementIndex]);
-
-            // Calculate (Online - Target)
-            const SimdFloat differenceVec = simdSubtract(onlineVec, targetVec);
-
-            // Fused Multiply-Add: (tau * difference) + target
-            const SimdFloat updatedTarget = simdFusedMultiplyAdd(simdTau, differenceVec, targetVec);
-
-            simdStore(&targetPointer[elementIndex], updatedTarget);
-        }
-
-        for (; elementIndex < tensorSize; ++elementIndex) {
-            targetPointer[elementIndex] += tau * (onlinePointer[elementIndex] - targetPointer[elementIndex]);
+        // Tail loop for non-SIMD elements
+        for (; i < size; ++i) {
+            double x = ptr[i];
+            x = std::max(-10.0, std::min(10.0, x));
+            ptr[i] = 1.0 + x + x*x/2.0 + x*x*x/6.0 + x*x*x*x/24.0;
         }
     }
 
     /**
-     * Locates the index of the highest numerical value within a tensor.
-     *
-     * This is fundamentally used by discrete-action models to make decisions.
-     * The model outputs a vector of estimated values for every possible action,
-     * and this function scans the vector to find the action with the highest estimated reward.
-     *
-     * Since action spaces are typically small (e.g., fewer than 20 buttons or directions),
-     * a direct scalar iteration avoids the overhead of setting up complex hardware
-     * registers and branch-prediction penalties.
-     *
-     * @param tensor The memory span to evaluate.
-     * @return The zero-based index of the maximum value.
+     * Finds the index of the maximum value in a tensor.
+     * Returns the zero-based index of the highest value.
      */
     size_t TensorOps::findArgmax(const std::span<const double> tensor) {
-        const double* tensorDataPointer = tensor.data();
-        const size_t tensorSize = tensor.size();
+        if (tensor.empty()) return 0;
 
-        if (tensorSize == 0) return 0;
+        const double* ptr = tensor.data();
+        size_t maxIdx = 0;
+        double maxVal = ptr[0];
 
-        size_t maxIndex = 0;
-        double maxValue = tensorDataPointer[0];
-
-        for (size_t elementIndex = 1; elementIndex < tensorSize; ++elementIndex) {
-            if (tensorDataPointer[elementIndex] > maxValue) {
-                maxValue = tensorDataPointer[elementIndex];
-                maxIndex = elementIndex;
+        for (size_t i = 1; i < tensor.size(); ++i) {
+            if (ptr[i] > maxVal) {
+                maxVal = ptr[i];
+                maxIdx = i;
             }
         }
 
-        return maxIndex;
+        return maxIdx;
     }
 
     /**
-     * Computes the scalar Mean Squared Error between two vectors using SIMD.
-     *
-     * Instead of iterating element-by-element, this function loads blocks of values
-     * into SIMD registers, computes their differences, squares them via a single
-     * multiply instruction, and accumulates the results using Fused Multiply-Add.
-     * A single horizontal sum at the end collapses the vector accumulator into a
-     * scalar, followed by a division by the element count.
-     *
-     * This is used by the nested AutoEncoder units to evaluate reconstruction quality
-     * without leaving the vectorized execution pipeline.
-     *
-     * @param predictions The memory span containing the reconstructed values.
-     * @param targets The memory span containing the original values.
-     * @return The mean of the squared differences.
+     * Computes the scalar Mean Squared Error loss between two vectors.
+     * Formula: Loss = sum((predictions - targets)^2) / N
      */
     double TensorOps::computeMeanSquaredErrorLoss(
             const std::span<const double> predictions,
             const std::span<const double> targets) {
 
-        const size_t tensorSize = predictions.size();
-        const double* predictionsPointer = predictions.data();
-        const double* targetsPointer = targets.data();
+        const size_t size = predictions.size();
+        if (size == 0) return 0.0;
 
-        SimdFloat squaredErrorAccumulator = simdSetZero();
+        const double* predPtr = predictions.data();
+        const double* targPtr = targets.data();
 
-        size_t elementIndex = 0;
-        for (; elementIndex + (simdLaneCount - 1) < tensorSize; elementIndex += simdLaneCount) {
-            const SimdFloat predictionVector = simdLoad(&predictionsPointer[elementIndex]);
-            const SimdFloat targetVector = simdLoad(&targetsPointer[elementIndex]);
+        SimdFloat accSum = simdSetZero();
 
-            // difference = prediction - target
-            const SimdFloat differenceVector = simdSubtract(predictionVector, targetVector);
-
-            // squaredError += difference * difference
-            squaredErrorAccumulator = simdFusedMultiplyAdd(
-                differenceVector, differenceVector, squaredErrorAccumulator);
+        size_t i = 0;
+        for (; i + (simdLaneCount - 1) < size; i += simdLaneCount) {
+            const SimdFloat diff = simdSubtract(simdLoad(&predPtr[i]), simdLoad(&targPtr[i]));
+            accSum = simdFusedMultiplyAdd(diff, diff, accSum);
         }
 
-        double totalSquaredError = simdHorizontalSum(squaredErrorAccumulator);
+        double sum = simdHorizontalSum(accSum);
 
-        // Residual scalar loop for remaining elements
-        for (; elementIndex < tensorSize; ++elementIndex) {
-            const double difference = predictionsPointer[elementIndex] - targetsPointer[elementIndex];
-            totalSquaredError += difference * difference;
+        // Tail loop for remaining elements
+        for (; i < size; ++i) {
+            const double diff = predPtr[i] - targPtr[i];
+            sum += diff * diff;
         }
 
-        return totalSquaredError / static_cast<double>(tensorSize);
+        return sum / size;
     }
 
     /**
-     * Calculates the raw error signals needed for backpropagation using Mean Squared Error.
-     *
-     * When a network makes a prediction, it needs to know exactly how wrong it was
-     * and in what direction. This function compares the network's output against
-     * the actual target values. By calculating the derivative of the Mean Squared Error,
-     * it generates a gradient vector.
-     *
-     * A positive gradient means the network guessed too high, and a negative gradient
-     * means it guessed too low. This vector becomes the raw fuel that the optimizer
-     * uses to adjust the internal weights later.
-     *
-     * @param predictions The memory span containing the network's estimates.
-     * @param targets The memory span containing the true values.
-     * @param gradientsOutput The memory span where the error derivatives will be written.
+     * Computes the gradient of the Mean Squared Error (MSE) loss function.
+     * Formula: Gradient = 2 * (Predictions - Targets) / BatchSize
      */
     void TensorOps::computeMeanSquaredErrorGradient(
             const std::span<const double> predictions,
             const std::span<const double> targets,
             const std::span<double> gradientsOutput) {
 
-        const size_t tensorSize = predictions.size();
-        const double* predictionsPointer = predictions.data();
-        const double* targetsPointer = targets.data();
-        double* gradientsPointer = gradientsOutput.data();
+        const size_t size = predictions.size();
+        if (size == 0) return;
 
-        // The derivative of MSE is 2 * (prediction - target) / N.
-        // For individual batch elements during the backward pass, we focus on the 2 * (prediction - target)
-        // component, leaving batch averaging to the upper gradient accumulation logic.
-        const SimdFloat multiplierTwo = simdBroadcast(2.0);
+        const double* predPtr = predictions.data();
+        const double* targPtr = targets.data();
+        double* gradPtr = gradientsOutput.data();
 
-        size_t elementIndex = 0;
-        for (; elementIndex + (simdLaneCount - 1) < tensorSize; elementIndex += simdLaneCount) {
-            const SimdFloat predictionVec = simdLoad(&predictionsPointer[elementIndex]);
-            const SimdFloat targetVec = simdLoad(&targetsPointer[elementIndex]);
+        const double scale = 2.0 / size;
+        const SimdFloat sScale = simdBroadcast(scale);
 
-            // Calculate (Prediction - Target)
-            const SimdFloat errorVec = simdSubtract(predictionVec, targetVec);
-
-            // Multiply by 2 to complete the derivative
-            const SimdFloat gradientVec = simdMultiply(errorVec, multiplierTwo);
-
-            simdStore(&gradientsPointer[elementIndex], gradientVec);
+        size_t i = 0;
+        for (; i + (simdLaneCount - 1) < size; i += simdLaneCount) {
+            const SimdFloat diff = simdSubtract(simdLoad(&predPtr[i]), simdLoad(&targPtr[i]));
+            simdStore(&gradPtr[i], simdMultiply(diff, sScale));
         }
 
-        for (; elementIndex < tensorSize; ++elementIndex) {
-            gradientsPointer[elementIndex] = 2.0 * (predictionsPointer[elementIndex] - targetsPointer[elementIndex]);
-        }
-    }
-
-
-    /**
-     * Adjusts the neural network weights using the Adaptive Moment Estimation (Adam) algorithm.
-     *
-     * Traditional gradient descent blindly subtracts the error from the weights, which
-     * causes learning to be jerky and unstable. Adam acts like a heavy ball rolling down
-     * a hill with friction. It maintains two historical records for every single weight:
-     * * 1. Momentum: It remembers the direction it has been moving recently. If the
-     * gradients consistently point in one direction, it accelerates.
-     * 2. Velocity: It tracks the volatility of the gradients. Weights that experience
-     * massive, erratic errors get heavily penalized (slowed down), while stable
-     * weights get a learning boost.
-     *
-     * This implementation mathematically corrects for early-stage bias and applies
-     * the updates directly to the memory arrays using SIMD vectorization.
-     *
-     * @param weights The active neural connections to be updated.
-     * @param gradients The raw error signals calculated during the backward pass.
-     * @param momentum The historical running average of the gradients.
-     * @param velocity The historical running average of the squared gradients.
-     * @param learningRate The maximum allowed step size.
-     * @param beta1 The decay rate for momentum.
-     * @param beta2 The decay rate for velocity.
-     * @param epsilon A tiny stabilizer to prevent dividing by zero.
-     * @param timestep The current training iteration, used to correct cold-start bias.
-     */
-    void TensorOps::applyAdamUpdate(
-            const std::span<double> weights,
-            const std::span<const double> gradients,
-            const std::span<double> momentum,
-            const std::span<double> velocity,
-            const double learningRate,
-            const double beta1,
-            const double beta2,
-            const double epsilon,
-            const int timestep) {
-
-        const size_t tensorSize = weights.size();
-
-        // Adam requires bias correction during the first few timesteps because
-        // the momentum and velocity arrays start completely empty (zeros).
-        const double beta1Time = 1.0 - std::pow(beta1, timestep);
-        const double beta2Time = 1.0 - std::pow(beta2, timestep);
-        const double effectiveAlpha = learningRate * std::sqrt(beta2Time) / beta1Time;
-
-        // Preload all scalar constants into SIMD broadcast registers
-        const SimdFloat simdBeta1 = simdBroadcast(beta1);
-        const SimdFloat simdBeta1Complement = simdBroadcast(1.0 - beta1);
-        const SimdFloat simdBeta2 = simdBroadcast(beta2);
-        const SimdFloat simdBeta2Complement = simdBroadcast(1.0 - beta2);
-        const SimdFloat simdEpsilon = simdBroadcast(epsilon);
-        const SimdFloat simdNegativeAlpha = simdBroadcast(-effectiveAlpha);
-
-        double* weightsPointer = weights.data();
-        const double* gradientsPointer = gradients.data();
-        double* momentumPointer = momentum.data();
-        double* velocityPointer = velocity.data();
-
-        size_t elementIndex = 0;
-        for (; elementIndex + (simdLaneCount - 1) < tensorSize; elementIndex += simdLaneCount) {
-            const SimdFloat currentWeights = simdLoad(&weightsPointer[elementIndex]);
-            const SimdFloat currentGradients = simdLoad(&gradientsPointer[elementIndex]);
-            const SimdFloat currentMomentum = simdLoad(&momentumPointer[elementIndex]);
-            const SimdFloat currentVelocity = simdLoad(&velocityPointer[elementIndex]);
-
-            // Update Momentum: m = (beta1 * m) + ((1 - beta1) * gradient)
-            SimdFloat newMomentum = simdMultiply(currentGradients, simdBeta1Complement);
-            newMomentum = simdFusedMultiplyAdd(currentMomentum, simdBeta1, newMomentum);
-            simdStore(&momentumPointer[elementIndex], newMomentum);
-
-            // Update Velocity: v = (beta2 * v) + ((1 - beta2) * (gradient * gradient))
-            const SimdFloat squaredGradients = simdMultiply(currentGradients, currentGradients);
-            SimdFloat newVelocity = simdMultiply(squaredGradients, simdBeta2Complement);
-            newVelocity = simdFusedMultiplyAdd(currentVelocity, simdBeta2, newVelocity);
-            simdStore(&velocityPointer[elementIndex], newVelocity);
-
-            // Calculate the actual weight step: momentum / (sqrt(velocity) + epsilon)
-            const SimdFloat velocitySqrt = simdSqrt(newVelocity);
-            const SimdFloat denominator = simdAdd(velocitySqrt, simdEpsilon);
-            const SimdFloat stepSize = simdDivide(newMomentum, denominator);
-
-            // Apply the step to the weights: weights = weights - (alpha * stepSize)
-            // Expressed as Fused Multiply-Add: weights = (stepSize * -alpha) + weights
-            const SimdFloat updatedWeights = simdFusedMultiplyAdd(stepSize, simdNegativeAlpha, currentWeights);
-
-            simdStore(&weightsPointer[elementIndex], updatedWeights);
-        }
-
-        // Residual loop for remaining elements
-        for (; elementIndex < tensorSize; ++elementIndex) {
-            const double grad = gradientsPointer[elementIndex];
-
-            momentumPointer[elementIndex] = beta1 * momentumPointer[elementIndex] + (1.0 - beta1) * grad;
-            velocityPointer[elementIndex] = beta2 * velocityPointer[elementIndex] + (1.0 - beta2) * (grad * grad);
-
-            const double step = momentumPointer[elementIndex] / (std::sqrt(velocityPointer[elementIndex]) + epsilon);
-            weightsPointer[elementIndex] -= effectiveAlpha * step;
-        }
-    }
-
-    /**
-     * Executes the Backward Pass of a fully connected (dense) layer.
-     *
-     * Backpropagation is the core of Deep Learning. When the network makes a mistake,
-     * this function calculates two things:
-     * 1. How much each weight contributed to the error (Weight Gradients).
-     * 2. How much the previous layer's output contributed to the error (Input Gradients).
-     *
-     * To find the input gradients, we must mathematically reverse the forward pass
-     * by multiplying the output gradients by the Transposed weight matrix.
-     */
-    void TensorOps::denseBackwardPass(
-            const std::span<const double> inputs,
-            const std::span<const double> outputGradients,
-            const std::span<const double> weights,
-            const std::span<double> outWeightGradients,
-            const std::span<double> outInputGradients) {
-
-        const size_t inputSize = inputs.size();
-        const size_t outputSize = outputGradients.size();
-
-        const double* inputDataPointer = inputs.data();
-        const double* outputGradientDataPointer = outputGradients.data();
-        const double* weightDataPointer = weights.data();
-        double* weightGradientDataPointer = outWeightGradients.data();
-        double* inputGradientDataPointer = outInputGradients.data();
-
-        // 1. Clear the input gradients accumulator
-        std::fill(outInputGradients.begin(), outInputGradients.end(), 0.0);
-
-        // 2. Iterate over each neuron in the output layer
-        for (size_t neuronIndex = 0; neuronIndex < outputSize; ++neuronIndex) {
-            const double currentOutputGradient = outputGradientDataPointer[neuronIndex];
-            const SimdFloat broadcastedGradient = simdBroadcast(currentOutputGradient);
-
-            const double* weightRowPointer = &weightDataPointer[neuronIndex * inputSize];
-            double* weightGradientRowPointer = &weightGradientDataPointer[neuronIndex * inputSize];
-
-            size_t elementIndex = 0;
-            for (; elementIndex + (simdLaneCount - 1) < inputSize; elementIndex += simdLaneCount) {
-                // Calculate Weight Gradients: dW = dW + (dY * X)
-                const SimdFloat inputVector = simdLoad(&inputDataPointer[elementIndex]);
-                const SimdFloat currentWeightGradient = simdLoad(&weightGradientRowPointer[elementIndex]);
-                const SimdFloat updatedWeightGradient = simdFusedMultiplyAdd(broadcastedGradient, inputVector, currentWeightGradient);
-                simdStore(&weightGradientRowPointer[elementIndex], updatedWeightGradient);
-
-                // Calculate Input Gradients (Backpropagate to previous layer): dX = dX + (dY * W)
-                const SimdFloat weightVector = simdLoad(&weightRowPointer[elementIndex]);
-                const SimdFloat currentInputGradient = simdLoad(&inputGradientDataPointer[elementIndex]);
-                const SimdFloat updatedInputGradient = simdFusedMultiplyAdd(broadcastedGradient, weightVector, currentInputGradient);
-                simdStore(&inputGradientDataPointer[elementIndex], updatedInputGradient);
-            }
-
-            // Residual loop
-            for (; elementIndex < inputSize; ++elementIndex) {
-                weightGradientRowPointer[elementIndex] += currentOutputGradient * inputDataPointer[elementIndex];
-                inputGradientDataPointer[elementIndex] += currentOutputGradient * weightRowPointer[elementIndex];
-            }
-        }
-    }
-
-    /**
-     * Applies Gaussian noise to a policy output for exploration.
-     *
-     * In Soft Actor-Critic algorithms, the agent doesn't choose a fixed action.
-     * It chooses a probability distribution (a Mean and a Standard Deviation).
-     * To actually make a move, we sample from this distribution.
-     *
-     * This uses a thread-local random number generator to ensure that parallel
-     * agent evaluations (tickAll) do not suffer from lock contention or data races.
-     */
-    void TensorOps::applyGaussianNoise(
-            const std::span<const double> means,
-            const std::span<const double> stdDevs,
-            const std::span<double> outActions,
-            const uint64_t seed) {
-
-        // Thread-local RNG guarantees thread-safety during parallel processing without locks
-        thread_local std::mt19937_64 generator(seed == 0 ? std::random_device{}() : seed);
-        std::normal_distribution standardNormal(0.0, 1.0);
-
-        const size_t size = means.size();
-        for (size_t i = 0; i < size; ++i) {
-            // Reparameterization Trick: Action = Mean + (StdDev * N(0,1))
-            const double noise = standardNormal(generator);
-            outActions[i] = means[i] + (stdDevs[i] * noise);
+        // Tail loop for remaining elements
+        for (; i < size; ++i) {
+            gradPtr[i] = (predPtr[i] - targPtr[i]) * scale;
         }
     }
 }

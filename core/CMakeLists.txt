@@ -107,6 +107,8 @@ add_library(spartan_core SHARED
         ${ML_PATH}/model/DoubleDeepQNetworkSpartanModel.cpp
         ${ML_PATH}/model/AutoEncoderCompressorSpartanModel.h
         ${ML_PATH}/model/AutoEncoderCompressorSpartanModel.cpp
+        ${ML_PATH}/model/CuriosityDrivenRecurrentSoftActorCriticSpartanModel.h
+        ${ML_PATH}/model/CuriosityDrivenRecurrentSoftActorCriticSpartanModel.cpp
 
         # --- Machine Learning: Registry ---
         ${ML_PATH}/registry/SpartanModelRegistry.h

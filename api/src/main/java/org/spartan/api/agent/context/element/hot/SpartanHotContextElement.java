@@ -5,12 +5,17 @@ import org.spartan.api.agent.context.element.SpartanContextElement;
 
 import java.util.Arrays;
 
+/**
+ * Base class for fixed-size hot-encoded elements.
+ * The backing array is cleared on each {@link #prepare()} call.
+ */
 public abstract class SpartanHotContextElement implements SpartanContextElement {
     protected final double[] dataCache;
     final int size;
 
     /**
-     * Size is needed for hot encoding, since elements should have a fixed amount of characteristics
+     * Size is needed for hot encoding, since elements should have a fixed amount of characteristics.
+     *
      * @param size the size of the data array returned by {@link #getData()}
      */
     protected SpartanHotContextElement(int size) {
@@ -18,6 +23,9 @@ public abstract class SpartanHotContextElement implements SpartanContextElement 
         this.dataCache = new double[this.size];
     }
 
+    /**
+     * Clears the backing array to zeros.
+     */
     protected void clear() {
         Arrays.fill(dataCache, 0.0);
     }

@@ -9,47 +9,52 @@ import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 
 /**
- * Base interface for all Spartan ML models.
+ * Represents an instance of a Machine Learning brain.
  * <p>
- * A SpartanModel represents a machine learning model that operates on shared memory
- * between Java and C++. Java owns all memory (via Arena), while C++ operates on
- * non-owning views (std::span).
+ * <b>Concept:</b> This is the bridge between the Java and the C++ Core .
+ * It holds the Neural Network weights and coordinates the learning process.
  * <p>
- * Lifecycle:
+ * <b>Lifecycle:</b>
  * <ol>
- *   <li>Construct model with config and context</li>
- *   <li>Call {@link #register()} to register with C++ engine</li>
- *   <li>Call {@link #tick()} in game loop (updates context, triggers C++ inference)</li>
- *   <li>Call {@link #close()} when done (unregisters and releases resources)</li>
+ *   <li><b>Create:</b> Define configuration and context.</li>
+ *   <li><b>Register:</b> Uploads the initial brain structure to C++.</li>
+ *   <li><b>Tick:</b> The main heartbeat. Observations go in, Actions come out, Learning happens.</li>
+ *   <li><b>Close:</b> Frees the memory.</li>
  * </ol>
  *
- * @param <C> the configuration type for this model
+ * @param <SpartanModelConfigType> the specific configuration type for this model
  */
-public interface SpartanModel<C extends SpartanModelConfig> extends AutoCloseable {
+public interface SpartanModel<SpartanModelConfigType extends SpartanModelConfig> extends AutoCloseable {
 
     /**
-     * Returns the unique 64-bit identifier for this model instance.
-     * Used to identify the agent in the C++ model registry.
+     * Returns the unique ID assigned to this agent by the Spartan Engine.
+     * Useful for debugging logs or matching with saved files.
      *
      * @return the agent identifier
      */
     long getAgentIdentifier();
 
     /**
-     * Returns the observation context for this model.
-     * The context contains elements that are flattened into a MemorySegment
-     * for C++ to read during inference.
+     * Returns the unique string identifier provided at creation.
      *
-     * @return the SpartanContext (never null)
+     * @return the user-defined identifier
+     */
+    @NotNull String getIdentifier();
+
+    /**
+     * Returns the context attached to this model.
+     *
+     * @return the active observation context
      */
     @NotNull SpartanContext getSpartanContext();
 
     /**
-     * Returns the configuration for this model.
+     * Returns the configuration used to create this model.
      *
-     * @return the model configuration (never null)
+     * @return the immutable configuration
      */
-    @NotNull C getSpartanModelConfig();
+
+    @NotNull SpartanModelConfigType getSpartanModelConfig();
 
     /**
      * Returns the action output buffer where C++ writes predictions.
@@ -102,7 +107,6 @@ public interface SpartanModel<C extends SpartanModelConfig> extends AutoCloseabl
      */
     boolean isRegistered();
 
-    // ==================== Persistence ====================
 
     /**
      * Saves the model's complete state to a .spartan binary file.
@@ -132,7 +136,6 @@ public interface SpartanModel<C extends SpartanModelConfig> extends AutoCloseabl
      */
     void loadModel(@NotNull Path filePath) throws SpartanPersistenceException;
 
-    // ==================== Exploration Management ====================
 
     /**
      * Triggers exploration rate decay for this agent.

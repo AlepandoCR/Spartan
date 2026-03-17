@@ -1,0 +1,78 @@
+name: Build Spartan Native Library
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - "core/**"
+      - "internal/**"
+      - "api/**"
+      - ".github/workflows/build-native.yml"
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - "core/**"
+      - "internal/**"
+      - "api/**"
+      - ".github/workflows/build-native.yml"
+  workflow_dispatch:
+
+jobs:
+  build-native:
+    name: Build Native (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            cmake_build_dir: core/build-windows
+            native_dir: windows
+            lib_name: spartan_core.dll
+          - os: ubuntu-latest
+            cmake_build_dir: core/build-linux
+            native_dir: linux
+            lib_name: libspartan_core.so
+          - os: macos-latest
+            cmake_build_dir: core/build-macos
+            native_dir: macos
+            lib_name: libspartan_core.dylib
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Configure CMake
+        run: |
+          cmake -S core -B ${{ matrix.cmake_build_dir }} -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build Native
+        run: |
+          cmake --build ${{ matrix.cmake_build_dir }} --config Release
+
+      - name: Stage Native Into Resources
+        shell: bash
+        run: |
+          cmake -E make_directory internal/src/main/resources/native/${{ matrix.native_dir }}
+          cmake -E copy ${{ matrix.cmake_build_dir }}/bin/${{ matrix.lib_name }} internal/src/main/resources/native/${{ matrix.native_dir }}/
+
+      - name: Build Internal Jar (OS Specific)
+        shell: bash
+        run: |
+          ./gradlew :internal:shadowJar -PnativeClassifier=${{ matrix.native_dir }}
+
+      - name: Publish to Maven (OS Specific)
+        if: github.ref == 'refs/heads/main'
+        env:
+          MAVEN_URL: ${{ secrets.MAVEN_URL }}
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+        shell: bash
+        run: |
+          ./gradlew :api:publish :internal:publish -PnativeClassifier=${{ matrix.native_dir }}

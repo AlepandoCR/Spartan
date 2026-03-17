@@ -2,38 +2,44 @@ package org.spartan.api.agent.context.element;
 
 import org.jetbrains.annotations.NotNull;
 
+/**
+ * Base contract for a single context element (sensor) that contributes values to a SpartanContext.
+ * Implementations should return a stable array reference and update its contents on each tick.
+ */
 public interface SpartanContextElement {
 
     /**
-     * Can be a single value or collection that represents the current element
+     * Returns the backing data array for this element.
+     * Implementations should reuse the same array instance to avoid allocations.
+     *
      * @return the data for this context element
      */
     double @NotNull [] getData();
 
     /**
-     * @return the size of the data returned by {@link #getData()}
+     * @return the number of valid values in {@link #getData()}
      */
     int getSize();
 
     /**
-     * Performs any necessary logic to prepare the element for ticking
+     * Prepares the element for ticking (clears caches, resets counters, etc.).
      */
     void prepare();
 
     /**
-     * Performs the tick logic where data is set for the element
+     * Updates the element values for the current tick.
      */
     void tick();
 
     /**
-     * @return an identifier for this context element
+     * @return a stable identifier for this element
      */
     @NotNull String getIdentifier();
 
     /**
-     * Internal use calls {@link #tick()} and {@link #prepare()}
+     * Internal lifecycle hook that calls {@link #prepare()} and {@link #tick()} in order.
      */
-    default void update(){
+    default void update() {
         prepare();
         tick();
     }

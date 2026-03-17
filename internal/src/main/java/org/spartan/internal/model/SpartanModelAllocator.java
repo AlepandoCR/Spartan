@@ -1,12 +1,7 @@
 package org.spartan.internal.model;
 
 import org.jetbrains.annotations.NotNull;
-import org.jspecify.annotations.NonNull;
-import org.spartan.api.agent.config.AutoEncoderCompressorConfig;
-import org.spartan.api.agent.config.DoubleDeepQNetworkConfig;
-import org.spartan.api.agent.config.NestedEncoderSlotDescriptor;
-import org.spartan.api.agent.config.RecurrentSoftActorCriticConfig;
-import org.spartan.internal.util.SpartanMemoryUtil;
+import org.spartan.api.agent.config.*;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -16,278 +11,140 @@ import java.lang.foreign.ValueLayout;
  * Utility class responsible for allocating C-compatible memory buffers
  * required by the Spartan native engine for model weights and parameters.
  * <p>
- * All allocations are performed using Project Panama's Arena API to ensure
- * proper alignment and lifecycle management. Buffers are contiguous and
- * suitable for direct access by C++26 code via FFM.
+ * All allocations use a strict 64-byte alignment to support AVX-512 (8 doubles per SIMD register).
+ * This provides optimal performance on Zen 5 processors (256-bit L1 cache lines) and prevents
+ * over-read violations during vectorized tensor operations.
  * <p>
- * Memory Layout Strategy:
- * <ul>
- *   <li>All weight buffers use JAVA_DOUBLE (8 bytes) with natural alignment</li>
- *   <li>Count/size parameters use JAVA_INT (4 bytes)</li>
- *   <li>Buffers are zero-initialized by the Arena</li>
- * </ul>
+ * Element padding ensures all weight buffers contain a multiple of 8 doubles, allowing
+ * SIMD kernels to process the entire buffer without special case handling at boundaries.
  */
 public final class SpartanModelAllocator {
 
-    private static final ValueLayout.OfDouble DOUBLE_LAYOUT = ValueLayout.JAVA_DOUBLE;
-    private static final ValueLayout.OfInt INT_LAYOUT = ValueLayout.JAVA_INT;
-
-    private SpartanModelAllocator() {} // Utility class
-
-    // RSAC (Recurrent Soft Actor-Critic)
+    /**
+     * Alignment for AVX-512 and optimal cache line utilization.
+     * 64 bytes = 8 doubles = 512 bits.
+     */
+    private static final long SIMD_ALIGNMENT_BYTES = 64;
 
     /**
-     * Allocates weight buffers for an RSAC (Recurrent Soft Actor-Critic) model.
-     * <p>
-     * RSAC Architecture Memory Layout:
-     * <pre>
-     * Actor Network:
-     *   - Input Layer:  contextSize × hiddenSize weights
-     *   - Hidden Layers: (numHiddenLayers - 1) × hiddenSize × hiddenSize weights
-     *   - Output Layer: hiddenSize × actionSize weights
-     *   - Biases: numHiddenLayers × hiddenSize + actionSize
-     *   - GRU Cell: 3 × hiddenSize × hiddenSize (for recurrent state)
-     *
-     * Total = inputWeights + hiddenWeights + outputWeights + biases + gruWeights
-     * </pre>
-     *
-     * @param arena the Arena for allocation (controls memory lifecycle)
-     * @param contextSize number of input features (from SpartanContext)
-     * @param hiddenSize neurons per hidden layer
-     * @param numHiddenLayers number of hidden layers
-     * @param actionSize number of output actions
-     * @return allocated weight buffer with proper alignment
+     * Extra padding elements to prevent AVX-512 over-read for unaligned tail accesses.
+     * Increased to 1024 to provide robust safety margin against strided access patterns.
      */
-    public static MemorySegment allocateRSACWeights(
-            @NotNull Arena arena,
-            int contextSize,
-            int hiddenSize,
-            int numHiddenLayers,
-            int actionSize
-    ) {
-        // Calculate total weight count for actor network
-        long inputWeights = (long) contextSize * hiddenSize;
-        long hiddenWeights = (long) (numHiddenLayers - 1) * hiddenSize * hiddenSize;
-        long outputWeights = (long) hiddenSize * actionSize;
-        long biases = (long) numHiddenLayers * hiddenSize + actionSize;
+    private static final long SAFETY_PADDING_ELEMENTS = 1024L;
 
-        // GRU cell: 3 gates (reset, update, new) each with hiddenSize × hiddenSize
-        long gruWeights = 3L * hiddenSize * hiddenSize;
+    private SpartanModelAllocator() {}
 
-        long totalWeights = inputWeights + hiddenWeights + outputWeights + biases + gruWeights;
-
-        return arena.allocate(DOUBLE_LAYOUT, totalWeights);
+    /**
+     * Pads a double element count to the nearest multiple of 8.
+     * <p>
+     * AVX-512 processes 8 doubles per instruction (_mm512_load_pd).
+     * This ensures that all weight buffers can be safely processed by vectorized kernels
+     * without remainder loops or boundary violations.
+     * <p>
+     * Guard: Input validation to prevent integer overflows during SIMD padding calculations.
+     *
+     * @param elementCount the number of double elements
+     * @return the padded element count (always a multiple of 8)
+     * @throws IllegalArgumentException if elementCount is negative
+     */
+    private static long simdPadElementCount(long elementCount) {
+        if (elementCount < 0L) {
+            throw new IllegalArgumentException("Element count cannot be negative: " + elementCount);
+        }
+        // Pad to nearest multiple of 8
+        return ((elementCount + 7L) >> 3) << 3;
     }
 
     /**
-     * Allocates critic weight buffers for RSAC (twin Q-networks).
+     * Pads a byte count to the nearest multiple of 64.
      * <p>
-     * RSAC uses twin critics to reduce overestimation bias.
-     * Each critic takes (context + action) as input.
+     * Ensures that memory allocations are always sized to full cache lines (512 bits / 64 bytes),
+     * enabling safe AVX-512 read operations without page boundary crossings.
      *
-     * @param arena the Arena for allocation
-     * @param contextSize number of context features
-     * @param actionSize number of action dimensions
-     * @param hiddenSize neurons per hidden layer
-     * @param numHiddenLayers number of hidden layers
-     * @return allocated critic weight buffer (for both Q1 and Q2)
+     * @param byteCount raw number of bytes
+     * @return padded byte count (always a multiple of 64)
      */
-    public static MemorySegment allocateRSACCriticWeights(
-            @NotNull Arena arena,
-            int contextSize,
-            int actionSize,
-            int hiddenSize,
-            int numHiddenLayers
-    ) {
-        int criticInputSize = contextSize + actionSize;
-
-        // Single critic network
-        long inputWeights = (long) criticInputSize * hiddenSize;
-        long hiddenWeights = (long) (numHiddenLayers - 1) * hiddenSize * hiddenSize;
-        long outputWeights = hiddenSize; // Q-value is scalar
-        long biases = (long) numHiddenLayers * hiddenSize + 1;
-
-        long singleCriticWeights = inputWeights + hiddenWeights + outputWeights + biases;
-
-        // Twin critics (Q1 and Q2)
-        long totalWeights = singleCriticWeights * 2;
-
-        return arena.allocate(DOUBLE_LAYOUT, totalWeights);
+    private static long simdPadBytes(long byteCount) {
+        if (byteCount < 0L) {
+            throw new IllegalArgumentException("Byte count cannot be negative: " + byteCount);
+        }
+        return (byteCount + 63L) & ~63L;
     }
 
-    //  DDQN (Double Deep Q-Network)
-
     /**
-     * Allocates weight buffers for a DDQN (Double Deep Q-Network) model.
+     * Pads a raw element count to the nearest multiple of 8.
      * <p>
-     * DDQN Architecture Memory Layout:
-     * <pre>
-     * Main Network + Target Network (identical structure):
-     *   - Input Layer:  contextSize × hiddenSize weights
-     *   - Hidden Layers: (numHiddenLayers - 1) × hiddenSize × hiddenSize weights
-     *   - Output Layer: hiddenSize × numActions weights (Q-value per action)
-     *   - Biases: numHiddenLayers × hiddenSize + numActions
+     * This is a lightweight helper for padding counts that are known to be safe (e.g., already validated).
      *
-     * Total = 2 × (inputWeights + hiddenWeights + outputWeights + biases)
-     * </pre>
-     *
-     * @param arena the Arena for allocation
-     * @param contextSize number of input features
-     * @param hiddenSize neurons per hidden layer
-     * @param numHiddenLayers number of hidden layers
-     * @param numActions number of discrete actions
-     * @return allocated weight buffer for both main and target networks
+     * @param elementCount the raw element count
+     * @return the padded element count (multiple of 8)
      */
-    public static MemorySegment allocateDDQNWeights(
-            @NotNull Arena arena,
-            int contextSize,
-            int hiddenSize,
-            int numHiddenLayers,
-            int numActions
-    ) {
-        // Single network weight count
-        long inputWeights = (long) contextSize * hiddenSize;
-        long hiddenWeights = (long) (numHiddenLayers - 1) * hiddenSize * hiddenSize;
-        long outputWeights = (long) hiddenSize * numActions;
-        long biases = (long) numHiddenLayers * hiddenSize + numActions;
-
-        long singleNetworkWeights = inputWeights + hiddenWeights + outputWeights + biases;
-
-        // Main network + Target network
-        long totalWeights = singleNetworkWeights * 2;
-
-        return arena.allocate(DOUBLE_LAYOUT, totalWeights);
+    private static long simdPad(long elementCount) {
+        return (elementCount + 7) & ~7;
     }
 
-    // PPO (Proximal Policy Optimization)
-
     /**
-     * Allocates weight buffers for a PPO model.
-     * <p>
-     * PPO Architecture Memory Layout:
-     * <pre>
-     * Actor Network (Policy):
-     *   - Input → Hidden → Output (action logits or mean/std for continuous)
+     * Allocates a buffer for model weights with explicit count.
+     * The buffer is padded to a multiple of 8 elements and aligned to 64 bytes.
      *
-     * Critic Network (Value):
-     *   - Input → Hidden → Scalar value output
-     * </pre>
-     *
+     * @param modelWeightCount total number of double weights
      * @param arena the Arena for allocation
-     * @param contextSize number of input features
-     * @param hiddenSize neurons per hidden layer
-     * @param numHiddenLayers number of hidden layers
-     * @param actionSize number of actions (discrete) or action dimensions (continuous)
-     * @param continuous true if continuous action space (allocates mean + std outputs)
-     * @return allocated weight buffer for actor + critic
-     */
-    public static MemorySegment allocatePPOWeights(
-            @NotNull Arena arena,
-            int contextSize,
-            int hiddenSize,
-            int numHiddenLayers,
-            int actionSize,
-            boolean continuous
-    ) {
-        // Actor network
-        long actorInputWeights = (long) contextSize * hiddenSize;
-        long actorHiddenWeights = (long) (numHiddenLayers - 1) * hiddenSize * hiddenSize;
-        // Continuous: outputs mean and log_std for each action dimension
-        int actorOutputSize = continuous ? actionSize * 2 : actionSize;
-        long actorOutputWeights = (long) hiddenSize * actorOutputSize;
-        long actorBiases = (long) numHiddenLayers * hiddenSize + actorOutputSize;
-
-        long actorWeights = actorInputWeights + actorHiddenWeights + actorOutputWeights + actorBiases;
-
-        // Critic network (same structure, scalar output)
-        long criticInputWeights = (long) contextSize * hiddenSize;
-        long criticHiddenWeights = (long) (numHiddenLayers - 1) * hiddenSize * hiddenSize;
-        long criticOutputWeights = hiddenSize; // Single value output
-        long criticBiases = (long) numHiddenLayers * hiddenSize + 1;
-
-        long criticWeights = criticInputWeights + criticHiddenWeights + criticOutputWeights + criticBiases;
-
-        return arena.allocate(DOUBLE_LAYOUT, actorWeights + criticWeights);
-    }
-
-    //  Generic Allocation
-    /**
-     * Allocates a generic weight buffer with explicit count.
-     * Use when you have pre-calculated the exact weight count.
-     *
-     * @param arena the Arena for allocation
-     * @param weightCount total number of double weights
      * @return allocated weight buffer
      */
-    public static MemorySegment allocateWeights(@NotNull Arena arena, long weightCount) {
-        return arena.allocate(DOUBLE_LAYOUT, weightCount);
+    public static MemorySegment allocateModelWeightsBuffer(long modelWeightCount, Arena arena) {
+        return allocateDoubles(arena, modelWeightCount);
     }
 
     /**
-     * Allocates a buffer for context data (doubles).
+     * Allocates a buffer for critic weights with explicit count.
+     * The buffer is padded to a multiple of 8 elements and aligned to 64 bytes.
      *
+     * @param criticWeightCount total number of double weights for critic
      * @param arena the Arena for allocation
-     * @param contextSize number of context elements
-     * @return allocated context buffer
+     * @return allocated critic weight buffer
      */
-    public static MemorySegment allocateContextBuffer(@NotNull Arena arena, int contextSize) {
-        return arena.allocate(DOUBLE_LAYOUT, contextSize);
+    public static MemorySegment allocateCriticWeightsBuffer(long criticWeightCount, Arena arena) {
+        return allocateDoubles(arena, criticWeightCount);
     }
 
     /**
      * Allocates a buffer for action outputs.
+     * Padded to support SIMD operations.
      *
      * @param arena the Arena for allocation
      * @param actionSize number of action dimensions
-     * @return allocated action buffer
+     * @return allocated action buffer with 64-byte alignment
      */
-    public static MemorySegment allocateActionBuffer(@NotNull Arena arena, int actionSize) {
-        return arena.allocate(DOUBLE_LAYOUT, actionSize);
+    public static @NotNull MemorySegment allocateActionOutputBuffer(@NotNull Arena arena, int actionSize) {
+        return allocateDoubles(arena, actionSize);
     }
 
     /**
-     * Allocates a segment for a single int value (e.g., count parameters).
+     * Allocates a buffer for context data (doubles).
+     * Padded to support SIMD operations.
      *
      * @param arena the Arena for allocation
-     * @param value initial value
-     * @return allocated segment
+     * @param contextSize number of context elements
+     * @return allocated context buffer with 64-byte alignment
      */
-    public static @NonNull MemorySegment allocateIntScalar(@NotNull Arena arena, int value) {
-        MemorySegment segment = arena.allocate(INT_LAYOUT);
-        segment.set(INT_LAYOUT, 0, value);
-        return segment;
+    public static @NotNull MemorySegment allocateContextBuffer(@NotNull Arena arena, int contextSize) {
+        return allocateDoubles(arena, contextSize);
     }
 
     /**
-     * Allocates a segment for a single long value (e.g., agent identifiers).
+     * Allocates a generic buffer of doubles with SIMD padding and alignment.
      *
      * @param arena the Arena for allocation
-     * @param value initial value
-     * @return allocated segment
+     * @param count the number of double elements
+     * @return allocated buffer with 64-byte alignment
      */
-    public static @NonNull MemorySegment allocateLongScalar(@NotNull Arena arena, long value) {
-        return SpartanMemoryUtil.allocateLong(arena, value);
+    public static @NotNull MemorySegment allocateDoubles(@NotNull Arena arena, long count) {
+        long paddedCount = simdPad(count);
+        return arena.allocate(paddedCount * Double.BYTES, 64);
     }
+
 
     // ==================== Topology Calculations ====================
-
-    /**
-     * Calculates the total weight count for a fully-connected MLP.
-     *
-     * @param inputSize input layer size
-     * @param hiddenSize hidden layer size
-     * @param numHiddenLayers number of hidden layers
-     * @param outputSize output layer size
-     * @return total number of weights (including biases)
-     */
-    public static long calculateMLPWeightCount(int inputSize, int hiddenSize, int numHiddenLayers, int outputSize) {
-        long inputWeights = (long) inputSize * hiddenSize;
-        long hiddenWeights = (long) (numHiddenLayers - 1) * hiddenSize * hiddenSize;
-        long outputWeights = (long) hiddenSize * outputSize;
-        long biases = (long) numHiddenLayers * hiddenSize + outputSize;
-
-        return inputWeights + hiddenWeights + outputWeights + biases;
-    }
 
     // ==================== RSAC Config Serialization ====================
 
@@ -296,17 +153,21 @@ public final class SpartanModelAllocator {
      * <p>
      * The resulting segment can be passed directly to C++ as a void* pointer.
      * The layout matches {@code RecurrentSoftActorCriticHyperparameterConfig} exactly.
+     * Allocated with 64-byte alignment.
      *
      * @param arena  the Arena for allocation
      * @param config the Java config record
-     * @return MemorySegment containing the serialized config (408 bytes)
+     * @return MemorySegment containing the serialized config (aligned to 64 bytes)
      */
-    public static @NonNull MemorySegment writeRSACConfig(
+    public static @NotNull MemorySegment writeRSACConfig(
             @NotNull Arena arena,
-            @NotNull RecurrentSoftActorCriticConfig config
+            @NotNull RecurrentSoftActorCriticConfig config,
+            int stateSize,
+            int actionSize
     ) {
-        // Allocate with 8-byte alignment for double fields
-        MemorySegment segment = arena.allocate(SpartanConfigLayout.RSAC_CONFIG_TOTAL_SIZE, 8);
+        // Allocate with 64-byte alignment for AVX-512 safety
+        // Ensure size is padded to 64-byte boundary
+        MemorySegment segment = arena.allocate(simdPadBytes(SpartanConfigLayout.RSAC_CONFIG_TOTAL_SIZE), SIMD_ALIGNMENT_BYTES);
 
         // Write BaseHyperparameterConfig fields
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_MODEL_TYPE_OFFSET,
@@ -322,11 +183,13 @@ public final class SpartanModelAllocator {
         segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_EPSILON_DECAY_OFFSET,
                 config.epsilonDecay());
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_STATE_SIZE_OFFSET,
-                config.stateSize());
+                stateSize);
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_ACTION_SIZE_OFFSET,
-                config.actionSize());
+                actionSize);
         segment.set(ValueLayout.JAVA_BYTE, SpartanConfigLayout.BASE_IS_TRAINING_OFFSET,
                 (byte) (config.isTraining() ? 1 : 0));
+        segment.set(ValueLayout.JAVA_BYTE, SpartanConfigLayout.BASE_DEBUG_LOGGING_OFFSET,
+                (byte) (config.debugLogging() ? 1 : 0));
 
         // Write RSAC-specific fields
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_HIDDEN_STATE_SIZE_OFFSET,
@@ -385,57 +248,74 @@ public final class SpartanModelAllocator {
 
     /**
      * Calculates the total weight count for an RSAC model's actor network.
-     * <p>
-     * Includes:
-     * <ul>
-     *   <li>Actor MLP: GRU_output → actor hidden layers → output (mean + log_std for each action)</li>
-     *   <li>Nested AutoEncoders: encoder + decoder weights for each slot</li>
-     * </ul>
-     * <p>
-     * NOTE: GRU weights are stored in the CRITIC buffer, not here. See {@link #calculateRSACCriticWeightCount}.
+     * * Includes:
+     * 1. Policy Network (Actor): Multi-layer MLP with GRU input.
+     * 2. Nested AutoEncoders: Weights, biases, and scratchpads for all slots.
+     * * Each sub-module is SIMD-padded individually to ensure safe vectorized memory access.
      *
      * @param config the RSAC configuration
-     * @return total number of double weights for the model (actor + nested encoders)
+     * @return total number of double weights for the model (actor + nested encoders, SIMD-padded)
      */
-    public static long calculateRSACModelWeightCount(@NotNull RecurrentSoftActorCriticConfig config) {
-        // Actor Network (post-GRU)
-        // Input: GRU hidden state output (hiddenStateSize)
-        // First layer: gruHiddenSize -> actorHiddenLayerNeuronCount
-        int gruHiddenSize = config.hiddenStateSize();
-        int actorHiddenSize = config.actorHiddenLayerNeuronCount();
-        int actionSize = config.actionSize();
+    public static long calculateRSACModelWeightCount(
+            @NotNull RecurrentSoftActorCriticConfig config,
+            int stateSize,
+            int actionSize
+    ) {
+        // Convert to long to prevent integer overflow
+        long gruHiddenSize = config.hiddenStateSize();
+        long actorHiddenSize = config.actorHiddenLayerNeuronCount();
+        long actorLayerCount = config.actorHiddenLayerCount();
 
-        // Policy layer 1: GRU output -> actor hidden
-        long policyLayer1Weights = (long) actorHiddenSize * gruHiddenSize;
+        // Policy Network (Actor) Calculation
+        // Input layer: GRU Hidden State -> First Actor Hidden Layer
+        long policyLayer1Weights = actorHiddenSize * gruHiddenSize;
 
-        // Additional hidden layers (if actorHiddenLayerCount > 1)
-        long actorHiddenLayers = (long) Math.max(0, config.actorHiddenLayerCount() - 1)
-                * actorHiddenSize * actorHiddenSize;
+        // Intermediate Hidden Layers: (actorLayerCount - 1) * hidden * hidden
+        long additionalHiddenLayersCount = Math.max(0L, actorLayerCount - 1L);
+        long intermediateWeights = additionalHiddenLayersCount * actorHiddenSize * actorHiddenSize;
 
-        // Output layers: mean + log_std for continuous actions
+        // Output layers: Final Hidden -> Mean and Final Hidden -> LogStd
+        // These are parallel dense layers mapping to action space
         long policyMeanWeights = (long) actionSize * actorHiddenSize;
         long policyLogStdWeights = (long) actionSize * actorHiddenSize;
 
-        // Biases: actor hidden layers + mean output + log_std output
-        long actorBiases = (long) config.actorHiddenLayerCount() * actorHiddenSize
-                + actionSize + actionSize;
+        // Biases: Hidden neurons per layer + Output neurons (Mean + LogStd)
+        long actorBiases = (actorLayerCount * actorHiddenSize) + ((long) actionSize * 2);
 
-        long actorTotal = policyLayer1Weights + actorHiddenLayers
-                + policyMeanWeights + policyLogStdWeights + actorBiases;
+        // Individual SIMD Padding for the Actor block
+        // We pad the sum of weights and biases to ensure the next module starts aligned
+        long actorTotalRaw = policyLayer1Weights + intermediateWeights +
+                policyMeanWeights + policyLogStdWeights + actorBiases;
+        long actorTotalPadded = simdPadElementCount(actorTotalRaw);
 
-        // Nested AutoEncoders (if any)
-        long nestedEncoderTotal = 0;
+        // Nested AutoEncoders Calculation
+        long nestedEncoderTotal = 0L;
         int encoderCount = config.nestedEncoderCount();
+
+        // Safety check against config inconsistencies
+        if (encoderCount < 0 || encoderCount > SpartanConfigLayout.MAX_NESTED_ENCODER_SLOTS) {
+            throw new IllegalArgumentException("Invalid encoder count: " + encoderCount);
+        }
+
         for (int i = 0; i < encoderCount; i++) {
             NestedEncoderSlotDescriptor slot = config.encoderSlot(i);
-            nestedEncoderTotal += calculateAutoEncoderWeightCount(
+
+            // Use the specialized AE calculator for each slot
+            long slotWeightCount = calculateAutoEncoderWeightCount(
                     slot.contextSliceElementCount(),
                     slot.hiddenNeuronCount(),
                     slot.latentDimensionSize()
             );
+
+            // Pad each encoder individually so they don't bleed into each other's cache lines
+            nestedEncoderTotal += simdPadElementCount(slotWeightCount);
         }
 
-        return actorTotal + nestedEncoderTotal;
+        // 4. Final Aggregation
+        // Combined size of Actor + all Encoders + Safety Margin
+        long totalModelWeights = actorTotalPadded + nestedEncoderTotal;
+
+        return totalModelWeights + SAFETY_PADDING_ELEMENTS;
     }
 
     /**
@@ -447,60 +327,90 @@ public final class SpartanModelAllocator {
      *   <li>Twin Q-Critics (Q1, Q2): each takes (GRU_output + action) → hidden → scalar Q-value</li>
      * </ul>
      * <p>
-     * NOTE: Target networks are handled separately by C++ (soft updates from online networks).
      *
      * @param config the RSAC configuration
-     * @return total number of double weights for GRU + critics
+     * @return total number of double weights for GRU + critics (SIMD-padded)
+     * @throws IllegalArgumentException if configuration parameters would cause arithmetic overflow
      */
-    public static long calculateRSACCriticWeightCount(@NotNull RecurrentSoftActorCriticConfig config) {
-        int gruHiddenSize = config.hiddenStateSize();
-        int gruInputSize = config.recurrentInputFeatureCount() > 0
-                ? config.recurrentInputFeatureCount()
-                : config.stateSize();
-        int gruConcatSize = gruHiddenSize + gruInputSize;
+    public static long calculateRSACCriticWeightCount(
+            @NotNull RecurrentSoftActorCriticConfig config,
+            int stateSize,
+            int actionSize
+    ) {
+        long gruHiddenSize = config.hiddenStateSize();
+        long gruInputSize = config.recurrentInputFeatureCount() > 0 ? config.recurrentInputFeatureCount() : stateSize;
+        long gruConcatSize = gruHiddenSize + gruInputSize;
 
-        // GRU: 3 gates (reset, update, candidate)
+        // 1. GRU Components
         long gruGateWeights = 3L * gruHiddenSize * gruConcatSize;
         long gruGateBiases = 3L * gruHiddenSize;
         long gruHiddenState = gruHiddenSize;
-        long gruTotal = gruGateWeights + gruGateBiases + gruHiddenState;
+        long gruTotal = simdPadElementCount(gruGateWeights + gruGateBiases + gruHiddenState);
 
-        // Critic input: GRU hidden state + action vector
-        int criticInput = gruHiddenSize + config.actionSize();
-        int criticHiddenSize = config.criticHiddenLayerNeuronCount();
+        // 2. Twin Critic Components (Multi-Layer)
+        long criticInput = gruHiddenSize + actionSize;
+        long criticHidden = config.criticHiddenLayerNeuronCount();
+        long criticLayers = config.criticHiddenLayerCount();
 
-        // Single critic network: input -> hidden -> scalar Q-value
-        // Weights: (input × hidden) + (hidden × 1 for output)
-        // Biases: hidden + 1 (for output)
-        long criticWeightsPerNetwork = (long) criticHiddenSize * criticInput + criticHiddenSize;
-        long criticBiasesPerNetwork = criticHiddenSize + 1L;
-        long singleCriticTotal = criticWeightsPerNetwork + criticBiasesPerNetwork;
+        // Weights: Input->L1 + (L1->Ln) + Ln->Output
+        long weightCountPerNetwork = (criticInput * criticHidden)
+                + (criticHidden * criticHidden * (criticLayers - 1))
+                + criticHidden;
 
-        // Twin critics: Q1 + Q2
-        long twinCriticsTotal = singleCriticTotal * 2;
+        // Biases: Hidden Layers + Output Scalar
+        long biasCountPerNetwork = (criticHidden * criticLayers) + 1L;
 
-        return gruTotal + twinCriticsTotal;
+        long singleCriticTotal = simdPadElementCount(weightCountPerNetwork + biasCountPerNetwork);
+        long twinCriticsTotal = singleCriticTotal * 2L;
+
+        return gruTotal + twinCriticsTotal + SAFETY_PADDING_ELEMENTS;
     }
 
     /**
      * Calculates the weight count for an AutoEncoder (encoder + decoder).
+     * <p>
+     * Validates dimensions and ensures all intermediate calculations use long type
+     * to prevent integer overflow.
      *
      * @param inputSize      input/output dimensionality
      * @param hiddenNeurons  neurons in hidden layer
      * @param latentSize     bottleneck dimensionality
      * @return total number of weights
+     * @throws IllegalArgumentException if dimensions are invalid or would cause overflow
      */
     public static long calculateAutoEncoderWeightCount(int inputSize, int hiddenNeurons, int latentSize) {
+        // Convert to long to prevent integer overflow
+
+        // Validate dimensions
+        if ((long) inputSize <= 0L || (long) hiddenNeurons <= 0L || (long) latentSize <= 0L) {
+            throw new IllegalArgumentException(
+                    "Invalid AutoEncoder dimensions: input=" + (long) inputSize + ", hidden=" + (long) hiddenNeurons + ", latent=" + (long) latentSize);
+        }
+
         // Encoder: input -> hidden -> latent
-        long encoderInputLayer = (long) inputSize * hiddenNeurons;
-        long encoderLatentLayer = (long) hiddenNeurons * latentSize;
+        long total = getTotalWeight(inputSize, hiddenNeurons, latentSize);
+
+        // Validate total is positive
+        if (total <= 0L) {
+            throw new IllegalArgumentException(
+                    "AutoEncoder weight calculation resulted in non-positive value: " + total);
+        }
+
+        // Add safety padding
+        return total + SAFETY_PADDING_ELEMENTS;
+    }
+
+    private static long getTotalWeight(long inputSize, long hiddenNeurons, long latentSize) {
+        long encoderInputLayer = inputSize * hiddenNeurons;
+        long encoderLatentLayer = hiddenNeurons * latentSize;
         long encoderBiases = hiddenNeurons + latentSize;
 
         // Decoder: latent -> hidden -> output
-        long decoderHiddenLayer = (long) latentSize * hiddenNeurons;
-        long decoderOutputLayer = (long) hiddenNeurons * inputSize;
+        long decoderHiddenLayer = latentSize * hiddenNeurons;
+        long decoderOutputLayer = hiddenNeurons * inputSize;
         long decoderBiases = hiddenNeurons + inputSize;
 
+        // Sum all weights
         return encoderInputLayer + encoderLatentLayer + encoderBiases
                 + decoderHiddenLayer + decoderOutputLayer + decoderBiases;
     }
@@ -512,24 +422,55 @@ public final class SpartanModelAllocator {
      * <p>
      * DDQN uses two networks: online and target (identical structure).
      * Each network is an MLP: state -> hidden layers -> Q-values per action.
+     * <p>
+     * Each network is SIMD-padded individually before multiplication to 2 to ensure
+     * safe vectorized memory access for both online and target networks.
      *
      * @param config the DDQN configuration
-     * @return total number of double weights for both networks
+     * @return total number of double weights for both networks (SIMD-padded)
+     * @throws IllegalArgumentException if configuration parameters would cause arithmetic overflow
      */
-    public static long calculateDDQNModelWeightCount(@NotNull DoubleDeepQNetworkConfig config) {
-        // Single Q-network: MLP from state to Q-values
-        long inputLayer = (long) config.stateSize() * config.hiddenLayerNeuronCount();
-        long hiddenLayers = (long) Math.max(0, config.hiddenLayerCount() - 1)
-                * config.hiddenLayerNeuronCount()
-                * config.hiddenLayerNeuronCount();
-        long outputLayer = (long) config.hiddenLayerNeuronCount() * config.actionSize();
-        long biases = (long) config.hiddenLayerCount() * config.hiddenLayerNeuronCount()
-                + config.actionSize();
+    public static long calculateDDQNModelWeightCount(
+            @NotNull DoubleDeepQNetworkConfig config,
+            int stateSize,
+            int actionSize
+    ) {
+        // Convert to long to prevent integer overflow
+        long hiddenNeurons = config.hiddenLayerNeuronCount();
+        long hiddenLayers = config.hiddenLayerCount();
 
-        long singleNetworkWeights = inputLayer + hiddenLayers + outputLayer + biases;
+        // Validate dimensions
+        if ((long) stateSize <= 0L || hiddenNeurons <= 0L || hiddenLayers <= 0L || (long) actionSize <= 0L) {
+            throw new IllegalArgumentException(
+                    "Invalid DDQN dimensions: state=" + (long) stateSize + ", hidden=" + hiddenNeurons
+                            + ", layers=" + hiddenLayers + ", actions=" + (long) actionSize);
+        }
+
+        long inputLayer = (long) stateSize * hiddenNeurons;
+        long additionalHiddenLayers = Math.max(0L, hiddenLayers - 1L);
+        long hiddenLayersWeights = additionalHiddenLayers * hiddenNeurons * hiddenNeurons;
+        long outputLayer = hiddenNeurons * (long) actionSize;
+        long biases = hiddenLayers * hiddenNeurons + (long) actionSize;
+
+        long singleNetworkRawWeights = inputLayer + hiddenLayersWeights + outputLayer + biases;
+
+        // Validate positive
+        if (singleNetworkRawWeights <= 0L) {
+            throw new IllegalArgumentException(
+                    "Single network weight calculation resulted in non-positive value: " + singleNetworkRawWeights);
+        }
+
+        // SIMD-pad single network
+        long singleNetworkWeights = simdPadElementCount(singleNetworkRawWeights);
 
         // Online network + Target network
-        return singleNetworkWeights * 2;
+        if (singleNetworkWeights > Long.MAX_VALUE / 2L) {
+            throw new IllegalArgumentException(
+                    "Total DDQN weight count would overflow: single=" + singleNetworkWeights);
+        }
+
+        // Add safety padding
+        return singleNetworkWeights * 2L + SAFETY_PADDING_ELEMENTS;
     }
 
     /**
@@ -548,16 +489,19 @@ public final class SpartanModelAllocator {
      * Allocates and writes a DDQN config to a MemorySegment with C-compatible layout.
      * <p>
      * Layout matches {@code DoubleDeepQNetworkHyperparameterConfig} exactly.
+     * Allocated with 64-byte alignment.
      *
      * @param arena  the Arena for allocation
      * @param config the Java config record
-     * @return MemorySegment containing the serialized config (88 bytes)
+     * @return MemorySegment containing the serialized config (aligned to 64 bytes)
      */
-    public static @NonNull MemorySegment writeDDQNConfig(
+    public static @NotNull MemorySegment writeDDQNConfig(
             @NotNull Arena arena,
-            @NotNull DoubleDeepQNetworkConfig config
+            @NotNull DoubleDeepQNetworkConfig config,
+            int stateSize,
+            int actionSize
     ) {
-        MemorySegment segment = arena.allocate(SpartanConfigLayout.DDQN_CONFIG_TOTAL_SIZE, 8);
+        MemorySegment segment = arena.allocate(simdPadBytes(SpartanConfigLayout.DDQN_CONFIG_TOTAL_SIZE), SIMD_ALIGNMENT_BYTES);
 
         // Write BaseHyperparameterConfig fields
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_MODEL_TYPE_OFFSET,
@@ -573,11 +517,13 @@ public final class SpartanModelAllocator {
         segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_EPSILON_DECAY_OFFSET,
                 config.epsilonDecay());
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_STATE_SIZE_OFFSET,
-                config.stateSize());
+                stateSize);
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_ACTION_SIZE_OFFSET,
-                config.actionSize());
+                actionSize);
         segment.set(ValueLayout.JAVA_BYTE, SpartanConfigLayout.BASE_IS_TRAINING_OFFSET,
                 (byte) (config.isTraining() ? 1 : 0));
+        segment.set(ValueLayout.JAVA_BYTE, SpartanConfigLayout.BASE_DEBUG_LOGGING_OFFSET,
+                (byte) (config.debugLogging() ? 1 : 0));
 
         // Write DDQN-specific fields
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.DDQN_TARGET_SYNC_INTERVAL_OFFSET,
@@ -597,14 +543,6 @@ public final class SpartanModelAllocator {
     // ==================== AutoEncoder Weight Calculations ====================
 
     /**
-     * Calculates the total weight count for an AutoEncoder Compressor model.
-     * <p>
-     * Architecture: input -> encoder hidden layers -> latent -> decoder hidden layers -> output
-     *
-     * @param config the AutoEncoder configuration
-     * @return total number of double weights
-     */
-    /**
      * Calculates the total weight count for an AutoEncoder model.
      * <p>
      * CRITICAL: This must match EXACTLY what C++ expects in constructAutoEncoderCompressorModel.
@@ -617,30 +555,33 @@ public final class SpartanModelAllocator {
      * Latent Buffer: latentSize doubles
      *
      * Layout: [encoderWeights | encoderBiases | decoderWeights | decoderBiases | latentBuffer]
+     * Each sub-section is SIMD-padded individually.
      * </pre>
      *
      * @param config the AutoEncoder configuration
-     * @return total number of double weights
+     * @return total number of double weights (SIMD-padded)
      */
-    public static long calculateAutoEncoderModelWeightCount(@NotNull AutoEncoderCompressorConfig config) {
-        int stateSize = config.stateSize();
+    public static long calculateAutoEncoderModelWeightCount(
+            @NotNull AutoEncoderCompressorConfig config,
+            int stateSize
+    ) {
         int hiddenSize = config.encoderHiddenNeuronCount();
         int latentSize = config.latentDimensionSize();
 
         // Encoder: 2 layers (input->hidden, hidden->latent)
         long encoderLayer1Weights = (long) hiddenSize * stateSize;
         long encoderLayer2Weights = (long) latentSize * hiddenSize;
-        long encoderWeightCount = encoderLayer1Weights + encoderLayer2Weights;
-        long encoderBiasCount = (long) hiddenSize + latentSize;
+        long encoderWeightCount = simdPadElementCount(encoderLayer1Weights + encoderLayer2Weights);
+        long encoderBiasCount = simdPadElementCount((long) hiddenSize + latentSize);
 
         // Decoder: 2 layers (latent->hidden, hidden->output)
         long decoderLayer1Weights = (long) hiddenSize * latentSize;
         long decoderLayer2Weights = (long) stateSize * hiddenSize;
-        long decoderWeightCount = decoderLayer1Weights + decoderLayer2Weights;
-        long decoderBiasCount = (long) hiddenSize + stateSize;
+        long decoderWeightCount = simdPadElementCount(decoderLayer1Weights + decoderLayer2Weights);
+        long decoderBiasCount = simdPadElementCount((long) hiddenSize + stateSize);
 
         // Latent buffer space
-        long latentBufferCount = latentSize;
+        long latentBufferCount = simdPadElementCount(latentSize);
 
         return encoderWeightCount + encoderBiasCount
                 + decoderWeightCount + decoderBiasCount
@@ -661,16 +602,19 @@ public final class SpartanModelAllocator {
      * Allocates and writes an AutoEncoder config to a MemorySegment with C-compatible layout.
      * <p>
      * Layout matches {@code AutoEncoderCompressorHyperparameterConfig} exactly.
+     * Allocated with 64-byte alignment.
      *
      * @param arena  the Arena for allocation
      * @param config the Java config record
-     * @return MemorySegment containing the serialized config (88 bytes)
+     * @return MemorySegment containing the serialized config (aligned to 64 bytes)
      */
-    public static @NonNull MemorySegment writeAutoEncoderConfig(
+    public static @NotNull MemorySegment writeAutoEncoderConfig(
             @NotNull Arena arena,
-            @NotNull AutoEncoderCompressorConfig config
+            @NotNull AutoEncoderCompressorConfig config,
+            int stateSize,
+            int actionSize
     ) {
-        MemorySegment segment = arena.allocate(SpartanConfigLayout.AE_CONFIG_TOTAL_SIZE, 8);
+        MemorySegment segment = arena.allocate(simdPadBytes(SpartanConfigLayout.AE_CONFIG_TOTAL_SIZE), SIMD_ALIGNMENT_BYTES);
 
         // Write BaseHyperparameterConfig fields
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_MODEL_TYPE_OFFSET,
@@ -686,11 +630,13 @@ public final class SpartanModelAllocator {
         segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_EPSILON_DECAY_OFFSET,
                 config.epsilonDecay());
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_STATE_SIZE_OFFSET,
-                config.stateSize());
+                stateSize);
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_ACTION_SIZE_OFFSET,
-                config.actionSize());
+                actionSize);
         segment.set(ValueLayout.JAVA_BYTE, SpartanConfigLayout.BASE_IS_TRAINING_OFFSET,
                 (byte) (config.isTraining() ? 1 : 0));
+        segment.set(ValueLayout.JAVA_BYTE, SpartanConfigLayout.BASE_DEBUG_LOGGING_OFFSET,
+                (byte) (config.debugLogging() ? 1 : 0));
 
         // Write AutoEncoder-specific fields
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.AE_LATENT_DIM_SIZE_OFFSET,
@@ -706,4 +652,195 @@ public final class SpartanModelAllocator {
 
         return segment;
     }
+
+    // ==================== Curiosity-Driven RSAC Weight Calculations ====================
+
+    /**
+     * Calculates the total weight count for the model (actor) weights in a Curiosity-Driven RSAC.
+     * <p>
+     * The Curiosity-Driven RSAC model weights are identical to the base RSAC model weights.
+     * The Forward Dynamics network parameters are stored in the critic buffer.
+     *
+     * @param config the Curiosity-Driven RSAC configuration
+     * @return total number of double weights for the model (actor + nested encoders)
+     */
+    public static long calculateCuriosityDrivenRecurrentSoftActorCriticModelWeightCount(
+            @NotNull CuriosityDrivenRecurrentSoftActorCriticConfig config,
+            int stateSize,
+            int actionSize
+    ) {
+        // Model weights are identical to base RSAC - delegate to existing method
+        return calculateRSACModelWeightCount(config.recurrentSoftActorCriticConfig(), stateSize, actionSize);
+    }
+
+    /**
+     * Calculates the total weight count for the critic buffer in a Curiosity-Driven RSAC.
+     * <p>
+     * The critic buffer contains:
+     * <ul>
+     *   <li>Base RSAC critic weights (GRU + twin Q-networks)</li>
+     *   <li>Forward Dynamics Network parameters (appended and SIMD-padded)</li>
+     * </ul>
+     * <p>
+     * Forward Dynamics Network architecture:
+     * <pre>
+     * Input: state + action (concatenated)
+     * Hidden: single dense layer with forwardDynamicsHiddenLayerDimensionSize neurons
+     * Output: predicted next state (stateSize)
+     *
+     * Weights: (inputSize * hiddenSize) + (hiddenSize * stateSize)
+     * Biases: hiddenSize + stateSize
+     *
+     * Each module is SIMD-padded individually to ensure safe memory access.
+     * </pre>
+     *
+     * @param config the Curiosity-Driven RSAC configuration
+     * @return total number of double weights for the critic buffer (RSAC critics + forward dynamics, SIMD-padded)
+     * @throws IllegalArgumentException if configuration parameters would cause arithmetic overflow
+     */
+    public static long calculateCuriosityDrivenRecurrentSoftActorCriticCriticWeightCount(
+            @NotNull CuriosityDrivenRecurrentSoftActorCriticConfig config,
+            int stateSize,
+            int actionSize
+    ) {
+
+        // Start with base RSAC critic weights (GRU + twin critics)
+        long baseRsacCriticWeightsPadded = calculateRSACCriticWeightCount(
+                config.recurrentSoftActorCriticConfig(),
+                stateSize,
+                actionSize);
+        long baseRsacWeightsRaw = baseRsacCriticWeightsPadded - SAFETY_PADDING_ELEMENTS;
+
+        if (baseRsacWeightsRaw < 0L) {
+            throw new IllegalArgumentException("Base RSAC critic weights calculation returned invalid value");
+        }
+
+        // forward dynamics network parameters
+        // long stateSize = config.stateSize(); // REMOVED
+        // long actionSize = config.actionSize(); // REMOVED
+        long hiddenSize = config.forwardDynamicsHiddenLayerDimensionSize();
+
+        if (stateSize <= 0L || actionSize < 0L || hiddenSize <= 0L) {
+            throw new IllegalArgumentException(
+                    "Invalid Forward Dynamics dimensions: state=" + stateSize
+                            + ", action=" + actionSize + ", hidden=" + hiddenSize);
+        }
+
+        // structure of forward dynamics weights and biases (before padding):
+        long forwardDynamicsTotalRaw = ((long) (stateSize + actionSize) * hiddenSize)
+                + (hiddenSize * stateSize)
+                + (hiddenSize + stateSize);
+
+        // apply SIMD padding to the forward dynamics block
+        long forwardDynamicsTotalPadded = simdPadElementCount(forwardDynamicsTotalRaw);
+
+        // sum weights: críticos base (sin padding) + forward dynamics (con padding)
+        long totalWeights = baseRsacWeightsRaw + forwardDynamicsTotalPadded;
+
+        if (totalWeights > Long.MAX_VALUE - SAFETY_PADDING_ELEMENTS) {
+            throw new IllegalArgumentException("Total critic weight count would overflow");
+        }
+
+        // Add safety padding for unaligned access at the end
+        return totalWeights + SAFETY_PADDING_ELEMENTS;
+    }
+
+    // ==================== Curiosity-Driven RSAC Config Serialization ====================
+
+    /**
+     * Allocates and writes a Curiosity-Driven RSAC config to a MemorySegment with C-compatible layout.
+     * <p>
+     * Memory Layout (Strict C++ Standard Layout compliance):
+     * <pre>
+     * Offset 0:    RecurrentSoftActorCriticHyperparameterConfig (408 bytes)
+     *              - Includes BaseHyperparameterConfig at offsets 0-64
+     *              - Includes RSAC-specific fields at offsets 64-152
+     *              - Includes Encoder Slots (5 * 16 = 80 bytes) at 152-232
+     *              - Includes padding to reach 408 bytes
+     * Offset 408:  forwardDynamicsHiddenLayerDimensionSize (int32_t)
+     * Offset 412:  [4 bytes padding for alignment]
+     * Offset 416:  intrinsicRewardScale (double)
+     * Offset 424:  intrinsicRewardClampingMinimum (double)
+     * Offset 432:  intrinsicRewardClampingMaximum (double)
+     * Offset 440:  forwardDynamicsLearningRate (double)
+     * Total: 448 bytes
+     * </pre>
+     *
+     * @param arena  the Arena for allocation
+     * @param config the Java config record
+     * @return MemorySegment containing the serialized config (aligned to 64 bytes)
+     */
+    public static @NotNull MemorySegment writeCuriosityDrivenRecurrentSoftActorCriticConfig(
+            @NotNull Arena arena,
+            @NotNull CuriosityDrivenRecurrentSoftActorCriticConfig config,
+            int stateSize,
+            int actionSize
+    ) {
+
+        // Allocate with 64-byte alignment for AVX-512 safety
+        MemorySegment segment = arena.allocate(simdPadBytes(SpartanConfigLayout.CURIOSITY_RSAC_CONFIG_TOTAL_SIZE), SIMD_ALIGNMENT_BYTES);
+
+        // Use a ConfiningArena to ensure temporary RSAC segment stays valid during the copy operation
+        try (Arena temporaryArena = Arena.ofConfined()) {
+            // Serialize the RSAC config into a temporary segment
+            // This generates 408 bytes
+            MemorySegment rsacSegment = writeRSACConfig(temporaryArena, config.recurrentSoftActorCriticConfig(), stateSize, actionSize);
+
+            // Copy the RSAC segment (full 408 bytes) to the beginning of our shared-arena segment
+            // 408 bytes = 152 header + 256 bytes (16 slots)
+            MemorySegment.copy(rsacSegment, 0, segment, 0, 408);
+        }
+        // Confined arena is closed here; temporary rsacSegment is deallocated
+
+        // CRITICAL: Overwrite model ID to 4 (CURIOSITY_DRIVEN_RSAC)
+        // The RSAC serializer wrote ID 3 (RSAC), but we need 4.
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_MODEL_TYPE_OFFSET,
+                config.modelType().getNativeValue());
+
+        // Write Curiosity-specific fields (offsets start at 408)
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.CURIOSITY_RSAC_FORWARD_DYNAMICS_HIDDEN_SIZE_OFFSET,
+                config.forwardDynamicsHiddenLayerDimensionSize());
+
+        // Implicit padding (4 bytes) at offset 412 is zero-initialized by arena allocation
+
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.CURIOSITY_RSAC_INTRINSIC_REWARD_SCALE_OFFSET,
+                config.intrinsicRewardScale());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.CURIOSITY_RSAC_INTRINSIC_REWARD_CLAMPING_MINIMUM_OFFSET,
+                config.intrinsicRewardClampingMinimum());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.CURIOSITY_RSAC_INTRINSIC_REWARD_CLAMPING_MAXIMUM_OFFSET,
+                config.intrinsicRewardClampingMaximum());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.CURIOSITY_RSAC_FORWARD_DYNAMICS_LEARNING_RATE_OFFSET,
+                config.forwardDynamicsLearningRate());
+
+        return segment;
+    }
+
+    /**
+     * Serializes any SpartanModelConfig into a C-compatible MemorySegment.
+     * Dispatches to the specific write method based on the config type.
+     *
+     * @param arena  the Arena for allocation
+     * @param config the configuration object
+     * @return the serialized MemorySegment
+     * @throws IllegalArgumentException if the config type is unknown
+     */
+    public static MemorySegment serialize(Arena arena, SpartanModelConfig config, int stateSize, int actionSize) {
+        if (config instanceof RecurrentSoftActorCriticConfig rsac) {
+            // Check if it's actually a CuriosityDriven config which extends RSAC but is a distinct type in C++
+            if (config instanceof CuriosityDrivenRecurrentSoftActorCriticConfig curiosity) {
+                return writeCuriosityDrivenRecurrentSoftActorCriticConfig(arena, curiosity, stateSize, actionSize);
+            }
+            return writeRSACConfig(arena, rsac, stateSize, actionSize);
+        } else if (config instanceof DoubleDeepQNetworkConfig ddqn) {
+            return writeDDQNConfig(arena, ddqn, stateSize, actionSize);
+        } else if (config instanceof AutoEncoderCompressorConfig ae) {
+            return writeAutoEncoderConfig(arena, ae, stateSize, actionSize);
+        }
+        throw new IllegalArgumentException("Unknown config type: " + config.getClass().getName());
+    }
 }
+
+
+
+
+

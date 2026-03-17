@@ -4,15 +4,6 @@ package org.spartan.api.agent.config;
  * Descriptor for a nested AutoEncoder slot within an RSAC agent.
  * Mirrors C++ struct NestedEncoderSlotDescriptor (16 bytes, Standard Layout).
  * <p>
- * Memory Layout:
- * <pre>
- * ┌────────────────────────────────────────────────┐
- * │ int32_t contextSliceStartIndex    (4 bytes)   │
- * │ int32_t contextSliceElementCount  (4 bytes)   │
- * │ int32_t latentDimensionSize       (4 bytes)   │
- * │ int32_t hiddenNeuronCount         (4 bytes)   │
- * └────────────────────────────────────────────────┘
- * </pre>
  *
  * @param contextSliceStartIndex   Zero-based index into context buffer where encoder input begins
  * @param contextSliceElementCount Number of doubles this encoder reads from context

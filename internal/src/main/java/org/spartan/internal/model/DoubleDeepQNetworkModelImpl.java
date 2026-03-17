@@ -3,6 +3,7 @@ package org.spartan.internal.model;
 import org.jetbrains.annotations.NotNull;
 import org.spartan.api.agent.SpartanAgent;
 import org.spartan.api.agent.action.SpartanActionManager;
+import org.spartan.api.agent.model.DoubleDeepQNetworkModel; // Add import
 import org.spartan.api.agent.config.DoubleDeepQNetworkConfig;
 import org.spartan.api.agent.context.SpartanContext;
 
@@ -26,9 +27,9 @@ import java.lang.foreign.ValueLayout;
  * Action output buffer contains Q-values for each discrete action.
  * The agent selects argmax(Q) during exploitation or random action during exploration.
  */
-public class DoubleDeepQNetworkModel
+public class DoubleDeepQNetworkModelImpl
         extends AbstractSpartanModel<DoubleDeepQNetworkConfig>
-        implements SpartanAgent<DoubleDeepQNetworkConfig> {
+        implements DoubleDeepQNetworkModel {
 
     // DDQN doesn't use separate critic weights - combined in model weights
     // We allocate a minimal buffer for interface compatibility
@@ -44,13 +45,15 @@ public class DoubleDeepQNetworkModel
     /**
      * Constructs a DDQN model with all necessary allocations.
      *
+     * @param identifier      unique string ID
      * @param agentIdentifier unique 64-bit ID for this agent
      * @param config          DDQN configuration
      * @param context         observation context
      * @param sharedArena     Arena for memory allocation
      * @param actionManager   action interpreter for discrete actions
      */
-    public DoubleDeepQNetworkModel(
+    public DoubleDeepQNetworkModelImpl(
+            @NotNull String identifier,
             long agentIdentifier,
             @NotNull DoubleDeepQNetworkConfig config,
             @NotNull SpartanContext context,
@@ -58,59 +61,31 @@ public class DoubleDeepQNetworkModel
             @NotNull SpartanActionManager actionManager
     ) {
         super(
+                identifier,
                 agentIdentifier,
                 config,
                 context,
                 sharedArena,
-                SpartanModelAllocator.calculateDDQNModelWeightCount(config),
-                SpartanConfigLayout.DDQN_CONFIG_TOTAL_SIZE
+                SpartanModelAllocator.calculateDDQNModelWeightCount(config, requireContextSize(context), actionManager.getActions().size()),
+                SpartanConfigLayout.DDQN_CONFIG_TOTAL_SIZE_PADDED,
+                actionManager.getActions().size()
         );
 
         this.actionManager = actionManager;
 
-        // DDQN uses a minimal critic buffer (1 element) for interface compatibility
-        // The actual Q-network is in the model weights buffer
         this.criticWeightsCount = 1;
-        this.criticWeightsBuffer = arena.allocate(ValueLayout.JAVA_DOUBLE, 1);
+        this.criticWeightsBuffer = arena.allocate(ValueLayout.JAVA_DOUBLE, 1 + SIMD_PADDING_DOUBLES);
     }
 
     @Override
     protected void writeConfigToSegment() {
-        // Write BaseHyperparameterConfig fields
-        configSegment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_MODEL_TYPE_OFFSET,
-                config.modelType().getNativeValue());
-        configSegment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_LEARNING_RATE_OFFSET,
-                config.learningRate());
-        configSegment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_GAMMA_OFFSET,
-                config.gamma());
-        configSegment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_EPSILON_OFFSET,
-                config.epsilon());
-        configSegment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_EPSILON_MIN_OFFSET,
-                config.epsilonMin());
-        configSegment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_EPSILON_DECAY_OFFSET,
-                config.epsilonDecay());
-        configSegment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_STATE_SIZE_OFFSET,
-                config.stateSize());
-        configSegment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_ACTION_SIZE_OFFSET,
-                config.actionSize());
-        configSegment.set(ValueLayout.JAVA_BYTE, SpartanConfigLayout.BASE_IS_TRAINING_OFFSET,
-                (byte) (config.isTraining() ? 1 : 0));
-
-        // Write DDQN-specific fields
-        configSegment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.DDQN_TARGET_SYNC_INTERVAL_OFFSET,
-                config.targetNetworkSyncInterval());
-        configSegment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.DDQN_REPLAY_BUFFER_CAPACITY_OFFSET,
-                config.replayBufferCapacity());
-        configSegment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.DDQN_REPLAY_BATCH_SIZE_OFFSET,
-                config.replayBatchSize());
-        configSegment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.DDQN_HIDDEN_NEURON_COUNT_OFFSET,
-                config.hiddenLayerNeuronCount());
-        configSegment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.DDQN_HIDDEN_LAYER_COUNT_OFFSET,
-                config.hiddenLayerCount());
+        int stateSize = requireContextSize(context);
+        MemorySegment temp = SpartanModelAllocator.writeDDQNConfig(arena, config, stateSize, actionManager.getActions().size());
+        MemorySegment.copy(temp, 0, this.configSegment, 0, temp.byteSize());
     }
 
     @Override
-    protected MemorySegment getCriticWeightsBufferInternal() {
+    protected @NotNull MemorySegment getCriticWeightsBufferInternal() {
         return criticWeightsBuffer;
     }
 
@@ -119,7 +94,6 @@ public class DoubleDeepQNetworkModel
         return criticWeightsCount;
     }
 
-    // ==================== SpartanAgent Implementation ====================
 
     @Override
     public @NotNull SpartanActionManager getActionManager() {
@@ -159,7 +133,6 @@ public class DoubleDeepQNetworkModel
         episodeReward = 0.0;
     }
 
-    // ==================== DDQN-Specific Methods ====================
 
     /**
      * Reads Q-value for a specific action.
@@ -170,7 +143,7 @@ public class DoubleDeepQNetworkModel
      * @return the Q-value for the given action
      */
     public double readQValue(int actionIndex) {
-        if (actionIndex < 0 || actionIndex >= config.actionSize()) {
+        if (actionIndex < 0 || actionIndex >= actionCount) {
             throw new IndexOutOfBoundsException("Action index " + actionIndex + " out of bounds");
         }
         return actionOutputBuffer.getAtIndex(ValueLayout.JAVA_DOUBLE, actionIndex);
@@ -187,7 +160,7 @@ public class DoubleDeepQNetworkModel
         int bestIndex = 0;
         double bestValue = actionOutputBuffer.getAtIndex(ValueLayout.JAVA_DOUBLE, 0);
 
-        for (int i = 1; i < config.actionSize(); i++) {
+        for (int i = 1; i < actionCount; i++) {
             double value = actionOutputBuffer.getAtIndex(ValueLayout.JAVA_DOUBLE, i);
             if (value > bestValue) {
                 bestValue = value;
@@ -206,7 +179,7 @@ public class DoubleDeepQNetworkModel
      * @return array of Q-values for each action
      */
     public double[] readAllQValues() {
-        double[] qValues = new double[config.actionSize()];
+        double[] qValues = new double[actionCount];
         for (int i = 0; i < qValues.length; i++) {
             qValues[i] = actionOutputBuffer.getAtIndex(ValueLayout.JAVA_DOUBLE, i);
         }
@@ -218,8 +191,8 @@ public class DoubleDeepQNetworkModel
      *
      * @param buffer the buffer to fill (must be at least actionSize length)
      */
-    public void readQValuesIntoBuffer(double[] buffer) {
-        int count = Math.min(buffer.length, config.actionSize());
+    public void readQValuesIntoBuffer(double @NotNull [] buffer) {
+        int count = Math.min(buffer.length, actionCount);
         for (int i = 0; i < count; i++) {
             buffer[i] = actionOutputBuffer.getAtIndex(ValueLayout.JAVA_DOUBLE, i);
         }

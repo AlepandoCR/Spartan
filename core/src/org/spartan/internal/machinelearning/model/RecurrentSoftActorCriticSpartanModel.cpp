@@ -37,8 +37,17 @@ namespace org::spartan::internal::machinelearning {
           policyNetwork_(policyWeights, policyBiases),
           firstCriticNetwork_(firstCriticWeights, firstCriticBiases),
           secondCriticNetwork_(secondCriticWeights, secondCriticBiases),
-          firstTargetCriticNetwork_(firstCriticWeights, firstCriticBiases),
-          secondTargetCriticNetwork_(secondCriticWeights, secondCriticBiases),
+          firstTargetCriticNetwork_({}, {}),
+          secondTargetCriticNetwork_({}, {}),
+          alignedInternalMemory_(nullptr, [](void* ptr) {
+              if (ptr) {
+#if defined(_WIN32)
+                  _aligned_free(ptr);
+#else
+                  free(ptr);
+#endif
+              }
+          }),
           remorseTraceBuffer_(0, 0) {
 
         const auto* config = typedConfig();
@@ -54,26 +63,19 @@ namespace org::spartan::internal::machinelearning {
             ? config->remorseTraceBufferCapacity : 256;
         remorseTraceBuffer_ = RemorseTraceBuffer(traceCapacity, hiddenSize);
 
+        // Helper to ensure SIMD alignment (64 bytes = 8 doubles)
+        auto alignSize = [](size_t size) -> size_t {
+            return (size + 7) & ~static_cast<size_t>(7);
+        };
+
         // Calculate total latent output size from all nested encoders
         int totalLatentDimensions = 0;
         for (int encoderIndex = 0; encoderIndex < encoderCount; ++encoderIndex) {
             totalLatentDimensions += config->encoderSlots[encoderIndex].latentDimensionSize;
         }
 
-        // The compressed observation is: full contextBuffer + all latent vectors concatenated
         const int compressedObservationSize = contextSize + totalLatentDimensions;
-        compressedObservationBuffer_.resize(compressedObservationSize);
 
-        // Build the nested encoder bank by slicing the encoderWeightPool
-        // Per encoder weight layout:
-        //   encoderHiddenWeights  = hiddenNeurons * inputDim
-        //   encoderHiddenBiases   = hiddenNeurons
-        //   encoderLatentWeights  = latentDim * hiddenNeurons
-        //   encoderLatentBiases   = latentDim
-        //   decoderHiddenWeights  = hiddenNeurons * latentDim
-        //   decoderHiddenBiases   = hiddenNeurons
-        //   decoderOutputWeights  = inputDim * hiddenNeurons
-        //   decoderOutputBiases   = inputDim
         int totalEncoderScratchpadSize = 0;
         size_t encoderWeightOffset = 0;
 
@@ -88,8 +90,84 @@ namespace org::spartan::internal::machinelearning {
             totalEncoderScratchpadSize += encoderScratchSize;
         }
 
-        // Pre-allocate all encoder scratchpads in a single flat pool
-        encoderScratchpadPool_.resize(totalEncoderScratchpadSize);
+        // --- ALLOCATION STRATEGY: Single Flat Aligned Block for all Vectors ---
+
+        size_t totalDoublesNeeded = 0;
+        totalDoublesNeeded += alignSize(compressedObservationSize);
+        totalDoublesNeeded += alignSize(totalEncoderScratchpadSize);
+
+        // Pre-allocate inference scratchpads (large enough for the biggest layer)
+        const int criticCombinedSize = hiddenSize + actionSize;
+        const int maxScratchSize = std::max({
+            hiddenSize,
+            config->criticHiddenLayerNeuronCount,
+            criticCombinedSize,
+            compressedObservationSize
+        });
+
+        totalDoublesNeeded += alignSize(maxScratchSize); // inferenceScratchpadA_
+        totalDoublesNeeded += alignSize(maxScratchSize); // inferenceScratchpadB_
+        totalDoublesNeeded += alignSize(actionSize);     // actionMeanScratchpad_
+        totalDoublesNeeded += alignSize(actionSize);     // actionLogStdScratchpad_
+
+        // GRU gate memory: [concat(hidden, input)] + [Z] + [R] + [H~]
+        size_t gruMemSize = (hiddenSize + compressedObservationSize) + (hiddenSize * 3);
+        totalDoublesNeeded += alignSize(gruMemSize);
+
+        // Blame scores scratchpad (one per trace entry)
+        totalDoublesNeeded += alignSize(traceCapacity);
+
+        // Pre-allocate Adam optimizer state for twin Q-critics
+        const size_t criticWeightCount = firstCriticWeights.size();
+        const size_t criticBiasCount = firstCriticBiases.size();
+
+        totalDoublesNeeded += alignSize(criticWeightCount); // firstCriticWeightMomentum_
+        totalDoublesNeeded += alignSize(criticWeightCount); // firstCriticWeightVelocity_
+        totalDoublesNeeded += alignSize(criticBiasCount);   // firstCriticBiasMomentum_
+        totalDoublesNeeded += alignSize(criticBiasCount);   // firstCriticBiasVelocity_
+
+        totalDoublesNeeded += alignSize(criticWeightCount); // secondCriticWeightMomentum_
+        totalDoublesNeeded += alignSize(criticWeightCount); // secondCriticWeightVelocity_
+        totalDoublesNeeded += alignSize(criticBiasCount);   // secondCriticBiasMomentum_
+        totalDoublesNeeded += alignSize(criticBiasCount);   // secondCriticBiasVelocity_
+
+        // Gradient scratchpads for critic backward pass
+        totalDoublesNeeded += alignSize(criticWeightCount); // criticWeightGradientScratchpad_
+        totalDoublesNeeded += alignSize(criticBiasCount);   // criticBiasGradientScratchpad_
+        totalDoublesNeeded += alignSize(maxScratchSize);    // criticInputGradientScratchpad_
+
+        // Target Critic Storage
+        totalDoublesNeeded += alignSize(criticWeightCount); // firstTargetCriticWeightStorage_
+        totalDoublesNeeded += alignSize(criticBiasCount);   // firstTargetCriticBiasStorage_
+        totalDoublesNeeded += alignSize(criticWeightCount); // secondTargetCriticWeightStorage_
+        totalDoublesNeeded += alignSize(criticBiasCount);   // secondTargetCriticBiasStorage_
+
+        // Allocate
+        void* rawMemory = nullptr;
+#if defined(_WIN32)
+        rawMemory = _aligned_malloc(totalDoublesNeeded * sizeof(double), 64);
+#else
+        if (posix_memalign(&rawMemory, 64, totalDoublesNeeded * sizeof(double)) != 0) {
+            rawMemory = nullptr;
+        }
+#endif
+        if (!rawMemory) return; // Allocation failed
+
+        // Initialize to Zero (important for Momentum/Velocity/Gradients)
+        std::memset(rawMemory, 0, totalDoublesNeeded * sizeof(double));
+
+        alignedInternalMemory_.reset(rawMemory);
+        auto* memoryCursor = static_cast<double*>(alignedInternalMemory_.get());
+
+        auto bindSpan = [&](size_t size) -> std::span<double> {
+            std::span<double> boundSpan(memoryCursor, size);
+            memoryCursor += alignSize(size);
+            return boundSpan;
+        };
+
+        // Bind Spans
+        compressedObservationBuffer_ = bindSpan(compressedObservationSize);
+        encoderScratchpadPool_ = bindSpan(totalEncoderScratchpadSize);
 
         // Now actually construct the encoder units
         size_t scratchpadOffset = 0;
@@ -130,13 +208,13 @@ namespace org::spartan::internal::machinelearning {
             encoderWeightOffset += inputDim;
 
             // Slice scratchpads from the flat pool
-            auto hiddenScratch = std::span(encoderScratchpadPool_).subspan(scratchpadOffset, hiddenNeurons);
+            auto hiddenScratch = encoderScratchpadPool_.subspan(scratchpadOffset, hiddenNeurons);
             scratchpadOffset += hiddenNeurons;
 
-            auto latentScratch = std::span(encoderScratchpadPool_).subspan(scratchpadOffset, latentDim);
+            auto latentScratch = encoderScratchpadPool_.subspan(scratchpadOffset, latentDim);
             scratchpadOffset += latentDim;
 
-            auto reconstructionScratch = std::span(encoderScratchpadPool_).subspan(scratchpadOffset, inputDim);
+            auto reconstructionScratch = encoderScratchpadPool_.subspan(scratchpadOffset, inputDim);
             scratchpadOffset += inputDim;
 
             nestedEncoderBank_.emplace_back(
@@ -151,54 +229,38 @@ namespace org::spartan::internal::machinelearning {
             );
         }
 
-        // Pre-allocate inference scratchpads (large enough for the biggest layer)
-        const int criticCombinedSize = hiddenSize + actionSize;
-        const int maxScratchSize = std::max({
-            hiddenSize,
-            config->criticHiddenLayerNeuronCount,
-            criticCombinedSize,
-            compressedObservationSize
-        });
+        inferenceScratchpadA_ = bindSpan(maxScratchSize);
+        inferenceScratchpadB_ = bindSpan(maxScratchSize);
+        actionMeanScratchpad_ = bindSpan(actionSize);
+        actionLogStdScratchpad_ = bindSpan(actionSize);
+        recurrentGateMemoryBuffer_ = bindSpan(gruMemSize);
+        blameScoresScratchpad_ = bindSpan(traceCapacity);
 
-        inferenceScratchpadA_.resize(maxScratchSize);
-        inferenceScratchpadB_.resize(maxScratchSize);
+        firstCriticWeightMomentum_ = bindSpan(criticWeightCount);
+        firstCriticWeightVelocity_ = bindSpan(criticWeightCount);
+        firstCriticBiasMomentum_ = bindSpan(criticBiasCount);
+        firstCriticBiasVelocity_ = bindSpan(criticBiasCount);
 
-        // Action output scratchpads
-        actionMeanScratchpad_.resize(actionSize);
-        actionLogStdScratchpad_.resize(actionSize);
+        secondCriticWeightMomentum_ = bindSpan(criticWeightCount);
+        secondCriticWeightVelocity_ = bindSpan(criticWeightCount);
+        secondCriticBiasMomentum_ = bindSpan(criticBiasCount);
+        secondCriticBiasVelocity_ = bindSpan(criticBiasCount);
 
-        // GRU gate memory: [concat(hidden, input)] + [Z] + [R] + [H~]
-        recurrentGateMemoryBuffer_.resize(
-            (hiddenSize + compressedObservationSize) + (hiddenSize * 3));
+        criticWeightGradientScratchpad_ = bindSpan(criticWeightCount);
+        criticBiasGradientScratchpad_ = bindSpan(criticBiasCount);
+        criticInputGradientScratchpad_ = bindSpan(maxScratchSize);
 
-        // Blame scores scratchpad (one per trace entry)
-        blameScoresScratchpad_.resize(traceCapacity);
-
-        // Pre-allocate Adam optimizer state for twin Q-critics
-        const size_t criticWeightCount = firstCriticWeights.size();
-        const size_t criticBiasCount = firstCriticBiases.size();
-
-        firstCriticWeightMomentum_.resize(criticWeightCount);
-        firstCriticWeightVelocity_.resize(criticWeightCount);
-        firstCriticBiasMomentum_.resize(criticBiasCount);
-        firstCriticBiasVelocity_.resize(criticBiasCount);
-
-        secondCriticWeightMomentum_.resize(criticWeightCount);
-        secondCriticWeightVelocity_.resize(criticWeightCount);
-        secondCriticBiasMomentum_.resize(criticBiasCount);
-        secondCriticBiasVelocity_.resize(criticBiasCount);
-
-        // Gradient scratchpads for critic backward pass
-        criticWeightGradientScratchpad_.resize(criticWeightCount);
-        criticBiasGradientScratchpad_.resize(criticBiasCount);
-        criticInputGradientScratchpad_.resize(maxScratchSize);
+        firstTargetCriticWeightStorage_ = bindSpan(criticWeightCount);
+        firstTargetCriticBiasStorage_ = bindSpan(criticBiasCount);
+        secondTargetCriticWeightStorage_ = bindSpan(criticWeightCount);
+        secondTargetCriticBiasStorage_ = bindSpan(criticBiasCount);
 
         // Pre-allocate target critic weight/bias storage as C++-owned copies.
         // Initialise from the online critic weights so target starts identical.
-        firstTargetCriticWeightStorage_.assign(firstCriticWeights.begin(), firstCriticWeights.end());
-        firstTargetCriticBiasStorage_.assign(firstCriticBiases.begin(), firstCriticBiases.end());
-        secondTargetCriticWeightStorage_.assign(secondCriticWeights.begin(), secondCriticWeights.end());
-        secondTargetCriticBiasStorage_.assign(secondCriticBiases.begin(), secondCriticBiases.end());
+        std::copy(firstCriticWeights.begin(), firstCriticWeights.end(), firstTargetCriticWeightStorage_.begin());
+        std::copy(firstCriticBiases.begin(), firstCriticBiases.end(), firstTargetCriticBiasStorage_.begin());
+        std::copy(secondCriticWeights.begin(), secondCriticWeights.end(), secondTargetCriticWeightStorage_.begin());
+        std::copy(secondCriticBiases.begin(), secondCriticBiases.end(), secondTargetCriticBiasStorage_.begin());
 
         // Rebind the target critic networks to point at the C++-owned storage.
         firstTargetCriticNetwork_.rebindNetworkBuffers(
@@ -209,21 +271,27 @@ namespace org::spartan::internal::machinelearning {
             std::span(secondTargetCriticBiasStorage_));
 
         // Store a non-owning view over the full JVM-owned critic buffer for persistence.
-        criticWeightsSpan_ = std::span<const double>(
-            gruGateWeights.data(),
-            static_cast<size_t>(gruGateWeights.size() + gruGateBiases.size() + gruHiddenState.size()
-                + firstCriticWeights.size() + firstCriticBiases.size()
-                + secondCriticWeights.size() + secondCriticBiases.size()));
+        this->criticWeightsSpan_ = std::span<const double>(gruGateWeights.data(),
+             gruGateWeights.size() + gruGateBiases.size() + gruHiddenState.size()
+             + firstCriticWeights.size() + firstCriticBiases.size()
+             + secondCriticWeights.size() + secondCriticBiases.size());
     }
 
     void RecurrentSoftActorCriticSpartanModel::processTick() {
+        logging::SpartanLogger::debug("[RSAC-INTERNAL] processTick() START");
+
         const auto* config = typedConfig();
-        if (!config) return;
+        if (!config) {
+             logging::SpartanLogger::error("[RSAC-INTERNAL] Config is null!");
+             return;
+        }
 
         const int actionSize = config->baseConfig.actionSize;
         const int hiddenSize = config->actorHiddenLayerNeuronCount;
         const int contextSize = static_cast<int>(contextBuffer_.size());
         const int encoderCount = config->nestedEncoderCount;
+
+        logging::SpartanLogger::debug("[RSAC-INTERNAL] Phase A: Observation Build");
 
         //
         // Phase A: Build the observation vector for the GRU.
@@ -277,6 +345,8 @@ namespace org::spartan::internal::machinelearning {
             gruInputObservation = std::span<const double>(compressedObservationBuffer_);
         }
 
+        logging::SpartanLogger::debug("[RSAC-INTERNAL] Phase B: GRU Forward");
+
         //
         // Phase B Pass the observation through the Gated Recurrent Unit
         //          to update the temporal hidden state.
@@ -286,6 +356,8 @@ namespace org::spartan::internal::machinelearning {
             recurrentLayer_.getMutableHiddenState(),
             config,
             std::span(recurrentGateMemoryBuffer_));
+
+        logging::SpartanLogger::debug("[RSAC-INTERNAL] Phase C: Policy Forward");
 
         //
         //  Run the Gaussian policy network to produce action mean and log-std.
