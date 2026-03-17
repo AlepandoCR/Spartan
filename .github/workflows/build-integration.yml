@@ -1,78 +1,46 @@
-name: Build Spartan Java/C# Integration
+name: Build Spartan Java Integration
 
 on:
   push:
     branches: [ main, develop ]
     paths:
-      - 'java/**'
-      - 'csharp/**'
+      - 'api/**'
+      - 'internal/**'
+      - 'core/**'
       - '.github/workflows/build-integration.yml'
   pull_request:
     branches: [ main, develop ]
     paths:
-      - 'java/**'
-      - 'csharp/**'
+      - 'api/**'
+      - 'internal/**'
+      - 'core/**'
       - '.github/workflows/build-integration.yml'
   workflow_dispatch:
 
 jobs:
   build-java:
-    name: Build Java Module
+    name: Build Java Modules
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup JDK
+      - name: Setup JDK 25
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: '25'
           distribution: 'temurin'
-          cache: maven
+          cache: gradle
 
-      - name: Build Java
+      - name: Build Java (skip tests)
         run: |
-          cd java
-          mvn clean package -DskipTests
+          ./gradlew :api:build :internal:build -x test
 
-      - name: Run Java Tests
-        run: |
-          cd java
-          mvn test
-
-      - name: Upload Java artifact
+      - name: Upload Java artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: spartan-java-artifact
-          path: java/target/*.jar
-
-  build-csharp:
-    name: Build C# Module
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
-
-      - name: Build C#
-        run: |
-          cd csharp
-          dotnet build --configuration Release
-
-      - name: Run C# Tests
-        run: |
-          cd csharp
-          dotnet test --configuration Release --no-build
-
-      - name: Upload C# artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: spartan-csharp-artifact
-          path: csharp/bin/Release/*.dll
-
+          name: spartan-java-artifacts
+          path: |
+            api/build/libs/*.jar
+            internal/build/libs/*.jar

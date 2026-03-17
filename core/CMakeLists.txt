@@ -1,7 +1,12 @@
 cmake_minimum_required(VERSION 3.28)
-project(spartan_core CXX) #package name is just core
+project(spartan_core CXX)
 
 # --- Compiler Configuration ---
+
+# Prefer C++26, but allow fallback to C++2b on compilers without full CXX26 support.
+set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD_REQUIRED OFF)
+set(CMAKE_CXX_EXTENSIONS ON)
 
 if(MSVC)
     # MSVC (Visual Studio) Configuration
@@ -9,11 +14,7 @@ if(MSVC)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 
 elseif(MINGW OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
-    # MinGW (GCC) Configuration
-
-    #Enforce C++26 Standard
-    set(CMAKE_CXX_STANDARD 26)
-    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    # MinGW/GCC Configuration
 
     # experimental contracts (not used atm, until full support is available)
     add_compile_options(-fcontracts)
@@ -24,7 +25,12 @@ elseif(MINGW OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     # optimize for native architecture
     add_compile_options(-O3 -march=native)
 
-    message(STATUS "Configuring for MinGW with C++26 and Contracts support.")
+    # GCC 13/14: use C++2b flag if CXX26 is not known
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "14")
+        add_compile_options(-std=gnu++2b)
+    endif()
+
+    message(STATUS "Configuring for MinGW/GCC with C++2b fallback.")
 endif()
 
 # --- Source Definitions ---

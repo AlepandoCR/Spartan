@@ -17,6 +17,8 @@
     #include <cmath>
 #endif
 
+#include <algorithm>
+
 namespace org::spartan::internal::math::simd {
 
     /**
