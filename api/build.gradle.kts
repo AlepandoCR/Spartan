@@ -44,11 +44,22 @@ val mavenReleaseUrl = System.getenv("MAVEN_RELEASE_URL") ?: dotEnv.getProperty("
 val mavenUser = System.getenv("MAVEN_USERNAME") ?: dotEnv.getProperty("MAVEN_USERNAME")
 val mavenPass = System.getenv("MAVEN_PASSWORD") ?: dotEnv.getProperty("MAVEN_PASSWORD")
 val isSnapshot = project.version.toString().endsWith("-SNAPSHOT")
+val nativeClassifier = providers.gradleProperty("nativeClassifier").orNull
+val prebuiltApiJar = providers.gradleProperty("prebuiltApiJar").orNull
 
 publishing {
     publications {
         create<MavenPublication>("api") {
-            from(components["java"])
+            if (prebuiltApiJar.isNullOrBlank()) {
+                from(components["java"])
+                if (!nativeClassifier.isNullOrBlank()) {
+                    artifact(tasks.named("jar")) {
+                        classifier = nativeClassifier
+                    }
+                }
+            } else {
+                artifact(file(prebuiltApiJar))
+            }
             groupId = project.group.toString()
             artifactId = "spartan-api"
             version = project.version.toString()

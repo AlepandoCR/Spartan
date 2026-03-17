@@ -108,11 +108,25 @@ val mavenReleaseUrl = System.getenv("MAVEN_RELEASE_URL") ?: dotEnv.getProperty("
 val mavenUser = System.getenv("MAVEN_USERNAME") ?: dotEnv.getProperty("MAVEN_USERNAME")
 val mavenPass = System.getenv("MAVEN_PASSWORD") ?: dotEnv.getProperty("MAVEN_PASSWORD")
 val isSnapshot = project.version.toString().endsWith("-SNAPSHOT")
+val nativeClassifier = providers.gradleProperty("nativeClassifier").orNull
+val prebuiltInternalJar = providers.gradleProperty("prebuiltInternalJar").orNull
 
 publishing {
     publications {
         create<MavenPublication>("internal") {
-            artifact(tasks.named("shadowJar"))
+            if (prebuiltInternalJar.isNullOrBlank()) {
+                artifact(tasks.named("shadowJar")) {
+                    if (!nativeClassifier.isNullOrBlank()) {
+                        classifier = nativeClassifier
+                    }
+                }
+            } else {
+                artifact(file(prebuiltInternalJar)) {
+                    if (!nativeClassifier.isNullOrBlank()) {
+                        classifier = nativeClassifier
+                    }
+                }
+            }
             groupId = project.group.toString()
             artifactId = "spartan-internal"
             version = project.version.toString()
