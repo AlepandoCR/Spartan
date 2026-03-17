@@ -22,6 +22,10 @@ on:
         required: false
         default: "false"
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build-os:
     name: Build Native (${{ matrix.os }})
@@ -148,44 +152,37 @@ jobs:
 
       - name: Publish API (generic)
         env:
-          MAVEN_URL: ${{ secrets.MAVEN_URL }}
-          MAVEN_SNAPSHOT_URL: ${{ secrets.MAVEN_SNAPSHOT_URL }}
-          MAVEN_RELEASE_URL: ${{ secrets.MAVEN_RELEASE_URL }}
-          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+          MAVEN_URL: https://maven.pkg.github.com/${{ github.repository }}
+          MAVEN_USERNAME: ${{ github.actor }}
+          MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
           SKIP_NATIVE_BINDINGS: "1"
         run: |
+          echo "Publishing to $MAVEN_URL"
           ./gradlew :api:publish -PprebuiltApiJar="$API_JAR" -x test
 
       - name: Publish Internal (windows)
         env:
-          MAVEN_URL: ${{ secrets.MAVEN_URL }}
-          MAVEN_SNAPSHOT_URL: ${{ secrets.MAVEN_SNAPSHOT_URL }}
-          MAVEN_RELEASE_URL: ${{ secrets.MAVEN_RELEASE_URL }}
-          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+          MAVEN_URL: https://maven.pkg.github.com/${{ github.repository }}
+          MAVEN_USERNAME: ${{ github.actor }}
+          MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
           SKIP_NATIVE_BINDINGS: "1"
         run: |
           ./gradlew :internal:publish -PnativeClassifier=windows -PprebuiltInternalJar="$INTERNAL_WIN" -x test
 
       - name: Publish Internal (linux)
         env:
-          MAVEN_URL: ${{ secrets.MAVEN_URL }}
-          MAVEN_SNAPSHOT_URL: ${{ secrets.MAVEN_SNAPSHOT_URL }}
-          MAVEN_RELEASE_URL: ${{ secrets.MAVEN_RELEASE_URL }}
-          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+          MAVEN_URL: https://maven.pkg.github.com/${{ github.repository }}
+          MAVEN_USERNAME: ${{ github.actor }}
+          MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
           SKIP_NATIVE_BINDINGS: "1"
         run: |
           ./gradlew :internal:publish -PnativeClassifier=linux -PprebuiltInternalJar="$INTERNAL_LINUX" -x test
 
       - name: Publish Internal (macos)
         env:
-          MAVEN_URL: ${{ secrets.MAVEN_URL }}
-          MAVEN_SNAPSHOT_URL: ${{ secrets.MAVEN_SNAPSHOT_URL }}
-          MAVEN_RELEASE_URL: ${{ secrets.MAVEN_RELEASE_URL }}
-          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+          MAVEN_URL: https://maven.pkg.github.com/${{ github.repository }}
+          MAVEN_USERNAME: ${{ github.actor }}
+          MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
           SKIP_NATIVE_BINDINGS: "1"
         run: |
           ./gradlew :internal:publish -PnativeClassifier=macos -PprebuiltInternalJar="$INTERNAL_MAC" -x test

@@ -399,7 +399,7 @@ public class SpartanIntegrationTest {
                 assertEquals(3e-4, learningRate, 1e-10);
             }
 
-            System.out.println("✅ RSAC Config test passed");
+            System.out.println("OK - RSAC Config test passed");
         }
 
         @Test

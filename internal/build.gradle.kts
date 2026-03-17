@@ -103,11 +103,8 @@ fun loadDotEnv(rootDir: File): Properties {
 
 val dotEnv = loadDotEnv(rootProject.projectDir)
 val mavenUrl = System.getenv("MAVEN_URL") ?: dotEnv.getProperty("MAVEN_URL")
-val mavenSnapshotUrl = System.getenv("MAVEN_SNAPSHOT_URL") ?: dotEnv.getProperty("MAVEN_SNAPSHOT_URL")
-val mavenReleaseUrl = System.getenv("MAVEN_RELEASE_URL") ?: dotEnv.getProperty("MAVEN_RELEASE_URL")
 val mavenUser = System.getenv("MAVEN_USERNAME") ?: dotEnv.getProperty("MAVEN_USERNAME")
 val mavenPass = System.getenv("MAVEN_PASSWORD") ?: dotEnv.getProperty("MAVEN_PASSWORD")
-val isSnapshot = project.version.toString().endsWith("-SNAPSHOT")
 val nativeClassifier = providers.gradleProperty("nativeClassifier").orNull
 val prebuiltInternalJar = providers.gradleProperty("prebuiltInternalJar").orNull
 
@@ -133,14 +130,9 @@ publishing {
         }
     }
     repositories {
-        val selectedUrl = when {
-            isSnapshot && !mavenSnapshotUrl.isNullOrBlank() -> mavenSnapshotUrl
-            !isSnapshot && !mavenReleaseUrl.isNullOrBlank() -> mavenReleaseUrl
-            else -> mavenUrl
-        }
-        if (!selectedUrl.isNullOrBlank()) {
+        if (!mavenUrl.isNullOrBlank()) {
             maven {
-                url = uri(selectedUrl)
+                url = uri(mavenUrl)
                 credentials {
                     username = mavenUser
                     password = mavenPass

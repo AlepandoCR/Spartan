@@ -17,6 +17,10 @@ on:
       - '.github/workflows/build-integration.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   build-java:
     name: Build Java Modules
