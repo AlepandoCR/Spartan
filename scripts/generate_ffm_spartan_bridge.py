@@ -49,9 +49,21 @@ def parse_args():
 def main():
     args = parse_args()
 
+    # Resolve paths to absolute to handle CI environments
+    cpp_source = args.cpp_source.resolve() if not args.cpp_source.is_absolute() else args.cpp_source
+    output_dir = args.output.resolve() if not args.output.is_absolute() else args.output
+
+    # Validate C++ source exists
+    if not cpp_source.exists():
+        print(f"[Fatal] C++ source not found: {cpp_source}")
+        return 1
+
+    print(f"[Info] C++ source: {cpp_source}")
+    print(f"[Info] Output directory: {output_dir}")
+
     config = BridgeConfig(
-        cpp_source=args.cpp_source,
-        java_output=args.output,
+        cpp_source=cpp_source,
+        java_output=output_dir,
         lib_name=args.lib_name,
         generate_async=not args.no_async
     )

@@ -35,27 +35,56 @@ val generateNativeBindings by tasks.registering(Exec::class) {
 
     onlyIf { System.getenv("SKIP_NATIVE_BINDINGS") != "1" }
 
-    workingDir = rootProject.projectDir.resolve("internal")
-    commandLine("py", rootProject.projectDir.resolve("scripts/generate_ffm_spartan_bridge.py").absolutePath)
+    val rootDir = rootProject.projectDir
+    val scriptDir = rootDir.resolve("scripts")
+    val cppSourceFile = rootDir.resolve("core/src/org/spartan/api/SpartanApi.cpp")
+    val outputDir = project.projectDir.resolve("src/main/java/org/spartan/internal/bridge")
+    val outputFile = outputDir.resolve("SpartanNative.java")
 
-    val inputFile = rootProject.projectDir.resolve("core/src/org/spartan/api/SpartanApi.cpp")
-    val generatorDir = rootProject.projectDir.resolve("scripts/ffm_bridge")
-    val outputFile = project.projectDir.resolve("src/main/java/org/spartan/internal/bridge/SpartanNative.java")
+    workingDir = scriptDir
 
-    // Track C++ source as input
-    inputs.file(inputFile)
+    // Detect Python executable - prioritize python3, then py, then python
+    val pythonCmd = when {
+        System.getProperty("os.name").lowercase().contains("windows") -> {
+            // On Windows, try py first (Python launcher), then python
+            listOf("py", "python3", "python").firstOrNull { cmd ->
+                try {
+                    ProcessBuilder(cmd, "--version").redirectError(ProcessBuilder.Redirect.DISCARD).start().waitFor() == 0
+                } catch (e: Exception) {
+                    false
+                }
+            } ?: "py"
+        }
+        else -> {
+            // On Unix-like systems, prefer python3
+            listOf("python3", "python").firstOrNull { cmd ->
+                try {
+                    ProcessBuilder(cmd, "--version").redirectError(ProcessBuilder.Redirect.DISCARD).start().waitFor() == 0
+                } catch (e: Exception) {
+                    false
+                }
+            } ?: "python3"
+        }
+    }
 
-    // Track all Python generator files as inputs - changes to the generator should trigger regeneration
-    inputs.dir(generatorDir)
-    inputs.file(rootProject.projectDir.resolve("scripts/generate_ffm_spartan_bridge.py"))
+    commandLine(pythonCmd, "generate_ffm_spartan_bridge.py",
+        "--cpp-source", cppSourceFile.absolutePath,
+        "--output", outputDir.absolutePath
+    )
 
+    // Track inputs for incremental builds
+    inputs.file(cppSourceFile)
+    inputs.dir(scriptDir)
+
+    // Track output
     outputs.file(outputFile)
 
-    // Delete output file before execution to ensure regeneration
-    // This forces the script to always run when inputs change
+    // Force regeneration on missing output (handles CI where cache might not exist)
     doFirst {
-        if (outputFile.exists()) {
-            outputFile.delete()
+        if (!outputFile.exists()) {
+            logger.info("SpartanNative.java not found, forcing regeneration")
+            // Ensure output directory exists
+            outputDir.mkdirs()
         }
     }
 }

@@ -37,12 +37,20 @@ class FFMBridgeGenerator:
             True if generation was successful, False otherwise.
         """
         try:
+            # Validate config paths
+            if not self.config.cpp_source.exists():
+                print(f"[Fatal] C++ source file not found: {self.config.cpp_source}")
+                return False
+
             # Parse C++ source
+            print(f"[Info] Parsing C++ source: {self.config.cpp_source}")
             functions = self.parser.parse(self.config.cpp_source)
 
             if not functions:
                 print("[Warning] No exportable functions found.")
                 return False
+
+            print(f"[Info] Found {len(functions)} exportable functions")
 
             # Generate code components
             handle_decls = self._generate_handle_declarations(functions)
@@ -64,6 +72,8 @@ class FFMBridgeGenerator:
 
         except Exception as e:
             print(f"[Fatal] Generation failed: {e}")
+            import traceback
+            traceback.print_exc()
             raise
 
     def _generate_handle_declarations(self, functions: list[NativeFunction]) -> str:
@@ -90,10 +100,22 @@ class FFMBridgeGenerator:
     def _write_output(self, content: str):
         """Write generated code to output file."""
         output_path = self.config.native_class_file
-        os.makedirs(output_path.parent, exist_ok=True)
 
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(content)
+        # Create output directory with proper error handling
+        try:
+            os.makedirs(output_path.parent, exist_ok=True)
+        except OSError as e:
+            print(f"[Fatal] Failed to create output directory {output_path.parent}: {e}")
+            raise
+
+        try:
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            print(f"[Info] Wrote {len(content)} bytes to {output_path}")
+        except IOError as e:
+            print(f"[Fatal] Failed to write output file {output_path}: {e}")
+            raise
+
 
 
 
