@@ -68,6 +68,22 @@ jobs:
         run: |
           cmake -S core -B ${{ matrix.cmake_build_dir }} -DCMAKE_BUILD_TYPE=Release
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Python Dependencies (clang)
+        run: |
+          pip install libclang==18.1.1
+
+      - name: Generate FFM Bindings (Java-Native Bridge)
+        run: |
+          python scripts/generate_ffm_spartan_bridge.py \
+            --cpp-source core/src/org/spartan/api/SpartanApi.cpp \
+            --output internal/src/main/java/org/spartan/internal/bridge
+
       - name: Ensure Gradle Wrapper Executable
         if: matrix.os != 'windows-latest'
         run: |
