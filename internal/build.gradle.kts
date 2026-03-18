@@ -38,8 +38,26 @@ val generateNativeBindings by tasks.registering(Exec::class) {
     workingDir = rootProject.projectDir.resolve("internal")
     commandLine("py", rootProject.projectDir.resolve("scripts/generate_ffm_spartan_bridge.py").absolutePath)
 
-    inputs.file(rootProject.projectDir.resolve("core/src/org/spartan/api/SpartanApi.cpp"))
-    outputs.file(project.projectDir.resolve("src/main/java/org/spartan/internal/bridge/SpartanNative.java"))
+    val inputFile = rootProject.projectDir.resolve("core/src/org/spartan/api/SpartanApi.cpp")
+    val generatorDir = rootProject.projectDir.resolve("scripts/ffm_bridge")
+    val outputFile = project.projectDir.resolve("src/main/java/org/spartan/internal/bridge/SpartanNative.java")
+
+    // Track C++ source as input
+    inputs.file(inputFile)
+
+    // Track all Python generator files as inputs - changes to the generator should trigger regeneration
+    inputs.dir(generatorDir)
+    inputs.file(rootProject.projectDir.resolve("scripts/generate_ffm_spartan_bridge.py"))
+
+    outputs.file(outputFile)
+
+    // Delete output file before execution to ensure regeneration
+    // This forces the script to always run when inputs change
+    doFirst {
+        if (outputFile.exists()) {
+            outputFile.delete()
+        }
+    }
 }
 
 tasks {

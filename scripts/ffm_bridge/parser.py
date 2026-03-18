@@ -5,6 +5,7 @@ Handles C++ source parsing and function extraction using LibClang.
 """
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -12,6 +13,55 @@ from typing import Optional
 from clang.cindex import Index, CursorKind, Cursor
 
 from .types import TypeRegistry, TypeDescriptor, TYPE_REGISTRY
+
+
+# Explicit parameter type mappings for cross-platform compatibility
+# libclang resolves uint64_t differently on different platforms/compilers
+# These mappings override libclang's resolution with the actual C++ source intent
+EXPLICIT_PARAM_TYPES = {
+    # Map: (function_name, param_name) -> TypeDescriptor
+    ("spartan_register_model", "agentIdentifier"): TypeDescriptor(
+        java_type="long",
+        java_wrapper="Long",
+        ffm_layout="ValueLayout.JAVA_LONG"
+    ),
+    ("spartan_unregister_model", "agentIdentifier"): TypeDescriptor(
+        java_type="long",
+        java_wrapper="Long",
+        ffm_layout="ValueLayout.JAVA_LONG"
+    ),
+    ("spartan_tick_all", "agentIdentifiersBuffer"): TypeDescriptor(
+        java_type="MemorySegment",
+        java_wrapper="MemorySegment",
+        ffm_layout="ValueLayout.ADDRESS",
+        needs_nullable=True
+    ),
+    ("updateContextPointer", "agentIdentifier"): TypeDescriptor(
+        java_type="long",
+        java_wrapper="Long",
+        ffm_layout="ValueLayout.JAVA_LONG"
+    ),
+    ("spartan_update_clean_sizes", "agentIdentifier"): TypeDescriptor(
+        java_type="long",
+        java_wrapper="Long",
+        ffm_layout="ValueLayout.JAVA_LONG"
+    ),
+    ("spartan_save_model", "agentIdentifier"): TypeDescriptor(
+        java_type="long",
+        java_wrapper="Long",
+        ffm_layout="ValueLayout.JAVA_LONG"
+    ),
+    ("spartan_decay_exploration", "agentIdentifier"): TypeDescriptor(
+        java_type="long",
+        java_wrapper="Long",
+        ffm_layout="ValueLayout.JAVA_LONG"
+    ),
+    ("spartan_tick_agent", "agentIdentifier"): TypeDescriptor(
+        java_type="long",
+        java_wrapper="Long",
+        ffm_layout="ValueLayout.JAVA_LONG"
+    ),
+}
 
 
 @dataclass
@@ -96,8 +146,15 @@ class ASTParser:
 
         print(f"--- Initializing AST Parsing for: {source_path} ---")
 
-        # Parse with C++26 standard
-        tu = self._index.parse(str(source_path), args=['-std=c++26'])
+        # Parse with C++26 standard + explicit flags for consistent uint64_t resolution
+        # These flags ensure libclang resolves uint64_t as unsigned long long, not unsigned int
+        parse_args = [
+            '-std=c++26',
+            '-D__SIZEOF_POINTER__=8',  # Force 64-bit pointers
+            '-D__SIZEOF_LONG__=8',     # Force long = 64-bit (Unix-like behavior)
+            '-D__SIZEOF_LONG_LONG__=8' # Force long long = 64-bit
+        ]
+        tu = self._index.parse(str(source_path), args=parse_args)
 
         functions = self._extract_functions(tu.cursor, source_path)
 
@@ -142,7 +199,14 @@ class ASTParser:
         parameters = []
         for idx, arg in enumerate(cursor.get_arguments()):
             param_name = arg.spelling if arg.spelling else f"arg{idx}"
-            param_type = self.type_registry.resolve(arg.type)
+
+            # Check if this parameter has an explicit type mapping (for cross-platform compatibility)
+            explicit_type = EXPLICIT_PARAM_TYPES.get((func_name, param_name))
+            if explicit_type:
+                param_type = explicit_type
+            else:
+                param_type = self.type_registry.resolve(arg.type)
+
             parameters.append(FunctionParameter(
                 name=param_name,
                 type_desc=param_type,
