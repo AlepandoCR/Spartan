@@ -1,15 +1,15 @@
 package org.spartan.internal.test.model;
 
 import org.junit.jupiter.api.*;
-import org.spartan.api.agent.action.SpartanActionManager;
-import org.spartan.api.agent.action.type.SpartanAction;
-import org.spartan.api.agent.config.RecurrentSoftActorCriticConfig;
-import org.spartan.api.agent.context.SpartanContext;
-import org.spartan.api.agent.context.element.SpartanContextElement;
-import org.spartan.internal.agent.context.SpartanContextImpl;
+import org.spartan.api.engine.action.SpartanActionManager;
+import org.spartan.api.engine.action.type.SpartanAction;
+import org.spartan.api.engine.config.RecurrentSoftActorCriticConfig;
+import org.spartan.api.engine.context.SpartanContext;
+import org.spartan.api.engine.context.element.SpartanContextElement;
+import org.spartan.internal.engine.context.SpartanContextImpl;
 import org.spartan.internal.bridge.SpartanNative;
-import org.spartan.internal.config.spi.SpartanConfigFactoryServiceProviderImpl;
-import org.spartan.internal.model.RecurrentSoftActorCriticModelImpl;
+import org.spartan.internal.engine.config.spi.SpartanConfigFactoryServiceProviderImpl;
+import org.spartan.internal.engine.model.RecurrentSoftActorCriticModelImpl;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -467,7 +467,7 @@ public class RecurrentSoftActorCriticModelTest {
         public void prepare() {}
 
         @Override
-        public double[] getData() {
+        public double [] getData() {
             return observationData;
         }
 

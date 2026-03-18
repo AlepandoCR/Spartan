@@ -1,14 +1,14 @@
 package org.spartan.internal.test.model;
 
 import org.junit.jupiter.api.*;
-import org.spartan.api.agent.context.SpartanContext;
-import org.spartan.api.agent.context.element.SpartanContextElement;
-import org.spartan.internal.agent.context.SpartanContextImpl;
+import org.spartan.api.engine.context.SpartanContext;
+import org.spartan.api.engine.context.element.SpartanContextElement;
+import org.spartan.internal.engine.context.SpartanContextImpl;
 import org.spartan.internal.bridge.SpartanNative;
-import org.spartan.api.agent.config.AutoEncoderCompressorConfig;
-import org.spartan.internal.model.AutoEncoderCompressorModelImpl;
-import org.spartan.internal.agent.action.SpartanActionManagerImpl;
-import org.spartan.internal.config.spi.SpartanConfigFactoryServiceProviderImpl;
+import org.spartan.api.engine.config.AutoEncoderCompressorConfig;
+import org.spartan.internal.engine.model.AutoEncoderCompressorModelImpl;
+import org.spartan.internal.engine.action.SpartanActionManagerImpl;
+import org.spartan.internal.engine.config.spi.SpartanConfigFactoryServiceProviderImpl;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -361,7 +361,7 @@ public class AutoEncoderCompressorModelTest {
         }
 
         @Override
-        public double[] getData() {
+        public double [] getData() {
             return inputData;
         }
 

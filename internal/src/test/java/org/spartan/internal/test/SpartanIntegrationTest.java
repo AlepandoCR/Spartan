@@ -1,17 +1,17 @@
 package org.spartan.internal.test;
 
 import org.junit.jupiter.api.*;
-import org.spartan.api.agent.action.SpartanActionManager;
-import org.spartan.api.agent.action.type.SpartanAction;
-import org.spartan.api.agent.config.NestedEncoderSlotDescriptor;
-import org.spartan.api.agent.config.RecurrentSoftActorCriticConfig;
-import org.spartan.api.agent.context.element.SpartanSingleContextElement;
-import org.spartan.api.agent.context.element.variable.SpartanVariableContextElement;
-import org.spartan.internal.agent.context.SpartanContextImpl;
+import org.spartan.api.engine.action.SpartanActionManager;
+import org.spartan.api.engine.action.type.SpartanAction;
+import org.spartan.api.engine.config.NestedEncoderSlotDescriptor;
+import org.spartan.api.engine.config.RecurrentSoftActorCriticConfig;
+import org.spartan.api.engine.context.element.SpartanSingleContextElement;
+import org.spartan.api.engine.context.element.variable.SpartanVariableContextElement;
+import org.spartan.internal.engine.context.SpartanContextImpl;
 import org.spartan.internal.bridge.SpartanNative;
-import org.spartan.internal.config.spi.SpartanConfigFactoryServiceProviderImpl;
-import org.spartan.internal.model.SpartanConfigLayout;
-import org.spartan.internal.model.SpartanModelAllocator;
+import org.spartan.internal.engine.config.spi.SpartanConfigFactoryServiceProviderImpl;
+import org.spartan.internal.engine.model.SpartanConfigLayout;
+import org.spartan.internal.engine.model.SpartanModelAllocator;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;

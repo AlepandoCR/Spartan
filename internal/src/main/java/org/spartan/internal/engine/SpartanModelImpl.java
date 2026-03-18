@@ -1,0 +1,200 @@
+package org.spartan.internal.engine;
+
+import org.jetbrains.annotations.NotNull;
+import org.spartan.api.engine.SpartanModel;
+import org.spartan.api.engine.action.type.SpartanAction;
+import org.spartan.api.engine.config.*;
+import org.spartan.api.engine.context.SpartanContext;
+import org.spartan.api.exception.SpartanPersistenceException;
+import org.spartan.internal.engine.context.SpartanContextImpl;
+import org.spartan.internal.bridge.SpartanNative;
+import org.spartan.internal.engine.model.SpartanModelAllocator;
+
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+
+public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig> implements SpartanModel<SpartanModelConfigType> {
+
+    private final Arena arena;
+    private final long agentId;
+    private final SpartanModelConfigType config;
+    private final SpartanContextImpl context;
+    private final List<SpartanAction> actions;
+
+    private final MemorySegment configBuffer;
+    private final MemorySegment modelWeightsBuffer;
+    private final MemorySegment criticWeightsBuffer;
+    private final MemorySegment actionOutputBuffer;
+    private final MemorySegment contextBuffer; // Reference to context's buffer
+
+    private final int modelWeightsCount;
+    private final int criticWeightsCount;
+    private final int actionCount;
+
+    private final String identifier;
+
+    private boolean isRegistered = false;
+    private boolean isClosed = false;
+
+    public SpartanModelImpl(@NotNull String identifier, long agentId, SpartanModelConfigType config, SpartanContext context, Iterable<SpartanAction> actions) {
+        this.identifier = identifier;
+        this.arena = Arena.ofShared(); // Controlled by this model instance
+        this.config = config;
+        this.agentId = agentId;
+
+        if (!(context instanceof SpartanContextImpl)) {
+            throw new IllegalArgumentException("SpartanContext must be created via SpartanApi");
+        }
+        this.context = (SpartanContextImpl) context;
+
+        this.actions = new ArrayList<>();
+        actions.forEach(this.actions::add);
+        this.actionCount = this.actions.size();
+        int stateSize = context.getSize();
+
+        // Serialize Config
+        this.configBuffer = SpartanModelAllocator.serialize(this.arena, config, stateSize, actionCount);
+
+        // Allocate Buffers
+
+        long mWeights;
+        long cWeights;
+
+        switch (config) {
+            case CuriosityDrivenRecurrentSoftActorCriticConfig cConfig -> {
+                mWeights = SpartanModelAllocator.calculateCuriosityDrivenRecurrentSoftActorCriticModelWeightCount(cConfig, stateSize, actionCount);
+                cWeights = SpartanModelAllocator.calculateCuriosityDrivenRecurrentSoftActorCriticCriticWeightCount(cConfig, stateSize, actionCount);
+            }
+            case RecurrentSoftActorCriticConfig rConfig -> {
+                mWeights = SpartanModelAllocator.calculateRSACModelWeightCount(rConfig, stateSize, actionCount);
+                cWeights = SpartanModelAllocator.calculateRSACCriticWeightCount(rConfig, stateSize, actionCount);
+            }
+            case DoubleDeepQNetworkConfig dConfig -> {
+                mWeights = SpartanModelAllocator.calculateDDQNModelWeightCount(dConfig, stateSize, actionCount);
+                cWeights = SpartanModelAllocator.calculateDDQNCriticWeightCount(dConfig);
+            }
+            case AutoEncoderCompressorConfig aConfig -> {
+                mWeights = SpartanModelAllocator.calculateAutoEncoderModelWeightCount(aConfig, stateSize);
+                cWeights = SpartanModelAllocator.calculateAutoEncoderCriticWeightCount(aConfig);
+            }
+            default ->
+                // Fallback or error? Assuming known types from factory.
+                    throw new IllegalArgumentException("Unsupported config type: " + config.getClass());
+        }
+
+        this.modelWeightsCount = (int) mWeights;
+        this.criticWeightsCount = (int) cWeights;
+
+        this.modelWeightsBuffer = SpartanModelAllocator.allocateModelWeightsBuffer(mWeights, arena);
+        this.criticWeightsBuffer = SpartanModelAllocator.allocateCriticWeightsBuffer(cWeights, arena);
+        this.actionOutputBuffer = SpartanModelAllocator.allocateActionOutputBuffer(arena, actionCount);
+
+        this.contextBuffer = this.context.getData(); // SpartanContextImpl.getData() returns MemorySegment
+    }
+
+    @Override
+    public long getAgentIdentifier() {
+        return agentId;
+    }
+
+    @Override
+    public @NotNull String getIdentifier() {
+        return identifier;
+    }
+
+    @Override
+    public @NotNull SpartanContext getSpartanContext() {
+        return context;
+    }
+
+    @Override
+    public @NotNull SpartanModelConfigType getSpartanModelConfig() {
+        return config;
+    }
+
+    @Override
+    public @NotNull MemorySegment getActionOutputBuffer() {
+        return actionOutputBuffer;
+    }
+
+    @Override
+    public @NotNull MemorySegment getModelWeightsBuffer() {
+        return modelWeightsBuffer;
+    }
+
+    @Override
+    public void register() {
+       if (isRegistered) return;
+
+       SpartanNative.spartanRegisterModel(
+           agentId,
+           configBuffer,
+           criticWeightsBuffer,
+           criticWeightsCount,
+           modelWeightsBuffer,
+           modelWeightsCount,
+           contextBuffer,
+           context.getSize(),
+           actionOutputBuffer,
+           actionCount
+       );
+       isRegistered = true;
+    }
+
+    @Override
+    public boolean isRegistered() {
+        return isRegistered;
+    }
+
+    @Override
+    public void tick() {
+        if (!isRegistered) throw new IllegalStateException("Model not registered");
+
+        //  Update Context (Sensors -> Memory)
+        context.update();
+
+        // Aggregate Rewards (Actions -> Total Reward)
+        double totalReward = 0.0;
+        for (SpartanAction action : actions) {
+            totalReward += action.award();
+        }
+
+        SpartanNative.spartanTickAgent(agentId, totalReward);
+
+        for (int i = 0; i < actions.size(); i++) {
+            double rawOutput = actionOutputBuffer.getAtIndex(ValueLayout.JAVA_DOUBLE, i);
+            actions.get(i).tick(rawOutput); // action.tick() handles denormalization + execute + award (for next tick?)
+        }
+    }
+
+    @Override
+    public void saveModel(@NotNull Path filePath) throws SpartanPersistenceException {
+        // Implementation calling SpartanNative.spartanSaveModel(agentId, pathString)
+        SpartanNative.spartanSaveModel(agentId, filePath.toString());
+    }
+
+    @Override
+    public void loadModel(@NotNull Path filePath) throws SpartanPersistenceException {
+        SpartanNative.spartanLoadModel(filePath.toString(), modelWeightsBuffer, modelWeightsCount);
+    }
+
+    @Override
+    public void decayExploration() {
+        SpartanNative.spartanDecayExploration(agentId);
+    }
+
+    @Override
+    public void close() {
+        if (!isClosed) {
+            if (isRegistered) {
+                SpartanNative.spartanUnregisterModel(agentId);
+            }
+            arena.close();
+            isClosed = true;
+        }
+    }
+}

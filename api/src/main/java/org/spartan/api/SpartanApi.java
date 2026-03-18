@@ -1,12 +1,13 @@
 package org.spartan.api;
 
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
-import org.spartan.api.agent.SpartanModel;
-import org.spartan.api.agent.action.SpartanActionManager;
-import org.spartan.api.agent.config.SpartanModelConfig;
-import org.spartan.api.agent.context.SpartanContext;
-import org.spartan.api.agent.config.*;
-import org.spartan.api.agent.model.*;
+import org.spartan.api.engine.SpartanModel;
+import org.spartan.api.engine.action.SpartanActionManager;
+import org.spartan.api.engine.config.SpartanModelConfig;
+import org.spartan.api.engine.context.SpartanContext;
+import org.spartan.api.engine.config.*;
+import org.spartan.api.engine.model.*;
 import org.spartan.api.spi.SpartanCoreRegistry;
 
 /**
@@ -31,7 +32,8 @@ public interface SpartanApi extends AutoCloseable {
      *
      * @return a new API instance
      */
-    static SpartanApi create() {
+    @Contract(" -> new")
+    static @NotNull SpartanApi create() {
         return SpartanCoreRegistry.get().createApi();
     }
 
@@ -45,7 +47,8 @@ public interface SpartanApi extends AutoCloseable {
      *
      * @return an empty context ready for elements
      */
-    SpartanContext createContext(@NotNull String identifier);
+    @Contract("_ -> new")
+    @NotNull SpartanContext createContext(@NotNull String identifier);
 
     /**
      * Creates a new Action Manager.
@@ -55,7 +58,8 @@ public interface SpartanApi extends AutoCloseable {
      *
      * @return a new, empty action manager
      */
-    SpartanActionManager createActionManager();
+    @Contract(" -> new")
+    @NotNull SpartanActionManager createActionManager();
 
 
     /**
@@ -68,7 +72,8 @@ public interface SpartanApi extends AutoCloseable {
      * @param <SpartanModelConfigType> the type of configuration
      * @return the instantiated model
      */
-    <SpartanModelConfigType extends SpartanModelConfig> SpartanModel<SpartanModelConfigType> createModel(
+    @Contract("_, _, _, _ -> new")
+    @NotNull <SpartanModelConfigType extends SpartanModelConfig> SpartanModel<SpartanModelConfigType> createModel(
             @NotNull String identifier,
             @NotNull SpartanModelConfigType config,
             @NotNull SpartanContext context,
@@ -84,7 +89,8 @@ public interface SpartanApi extends AutoCloseable {
      * @param actions the action manager
      * @return the RSAC model instance
      */
-    RecurrentSoftActorCriticModel createRecurrentSoftActorCritic(
+    @Contract("_, _, _, _ -> new")
+    @NotNull RecurrentSoftActorCriticModel createRecurrentSoftActorCritic(
             @NotNull String identifier,
             @NotNull RecurrentSoftActorCriticConfig config,
             @NotNull SpartanContext context,
@@ -100,7 +106,8 @@ public interface SpartanApi extends AutoCloseable {
      * @param actions the action manager
      * @return the Curiosity model instance
      */
-    CuriosityDrivenRecurrentSoftActorCriticModel createCuriosityDrivenRecurrentSoftActorCritic(
+    @Contract("_, _, _, _ -> new")
+    @NotNull CuriosityDrivenRecurrentSoftActorCriticModel createCuriosityDrivenRecurrentSoftActorCritic(
             @NotNull String identifier,
             @NotNull CuriosityDrivenRecurrentSoftActorCriticConfig config,
             @NotNull SpartanContext context,
@@ -116,7 +123,8 @@ public interface SpartanApi extends AutoCloseable {
      * @param actions the action manager
      * @return the DDQN model instance
      */
-    DoubleDeepQNetworkModel createDoubleDeepQNetwork(
+    @Contract("_, _, _, _ -> new")
+    @NotNull DoubleDeepQNetworkModel createDoubleDeepQNetwork(
             @NotNull String identifier,
             @NotNull DoubleDeepQNetworkConfig config,
             @NotNull SpartanContext context,
@@ -132,7 +140,8 @@ public interface SpartanApi extends AutoCloseable {
      * @param actions the action manager
      * @return the AutoEncoder model instance
      */
-    AutoEncoderCompressorModel createAutoEncoderCompressor(
+    @Contract("_, _, _, _ -> new")
+    @NotNull AutoEncoderCompressorModel createAutoEncoderCompressor(
             @NotNull String identifier,
             @NotNull AutoEncoderCompressorConfig config,
             @NotNull SpartanContext context,

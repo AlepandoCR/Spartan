@@ -2,22 +2,22 @@ package org.spartan.internal.facade;
 
 import org.jetbrains.annotations.NotNull;
 import org.spartan.api.SpartanApi;
-import org.spartan.api.agent.SpartanModel;
-import org.spartan.api.agent.action.SpartanActionManager;
-import org.spartan.api.agent.config.*;
-import org.spartan.api.agent.context.SpartanContext;
-import org.spartan.api.agent.model.AutoEncoderCompressorModel;
-import org.spartan.api.agent.model.CuriosityDrivenRecurrentSoftActorCriticModel;
-import org.spartan.api.agent.model.DoubleDeepQNetworkModel;
-import org.spartan.api.agent.model.RecurrentSoftActorCriticModel;
-import org.spartan.internal.agent.SpartanModelImpl;
-import org.spartan.internal.agent.action.SpartanActionManagerImpl;
-import org.spartan.internal.agent.context.SpartanContextImpl;
+import org.spartan.api.engine.SpartanModel;
+import org.spartan.api.engine.action.SpartanActionManager;
+import org.spartan.api.engine.config.*;
+import org.spartan.api.engine.context.SpartanContext;
+import org.spartan.api.engine.model.AutoEncoderCompressorModel;
+import org.spartan.api.engine.model.CuriosityDrivenRecurrentSoftActorCriticModel;
+import org.spartan.api.engine.model.DoubleDeepQNetworkModel;
+import org.spartan.api.engine.model.RecurrentSoftActorCriticModel;
+import org.spartan.internal.engine.SpartanModelImpl;
+import org.spartan.internal.engine.action.SpartanActionManagerImpl;
+import org.spartan.internal.engine.context.SpartanContextImpl;
 import org.spartan.internal.bridge.SpartanNative;
-import org.spartan.internal.model.AutoEncoderCompressorModelImpl;
-import org.spartan.internal.model.CuriosityDrivenRecurrentSoftActorCriticModelImpl;
-import org.spartan.internal.model.DoubleDeepQNetworkModelImpl;
-import org.spartan.internal.model.RecurrentSoftActorCriticModelImpl;
+import org.spartan.internal.engine.model.AutoEncoderCompressorModelImpl;
+import org.spartan.internal.engine.model.CuriosityDrivenRecurrentSoftActorCriticModelImpl;
+import org.spartan.internal.engine.model.DoubleDeepQNetworkModelImpl;
+import org.spartan.internal.engine.model.RecurrentSoftActorCriticModelImpl;
 
 import java.lang.foreign.Arena;
 import java.util.concurrent.ThreadLocalRandom;
@@ -33,18 +33,18 @@ public class SpartanApiImpl implements SpartanApi {
     }
 
     @Override
-    public SpartanContext createContext(@NotNull String identifier) {
+    public @NotNull SpartanContext createContext(@NotNull String identifier) {
         // Pass the shared arena. When API closes, arena closes, invalidating all contexts context.
         return new SpartanContextImpl(identifier, arena);
     }
 
     @Override
-    public SpartanActionManager createActionManager() {
+    public @NotNull SpartanActionManager createActionManager() {
         return new SpartanActionManagerImpl();
     }
 
     @Override
-    public <SpartanModelConfigType extends SpartanModelConfig> SpartanModel<SpartanModelConfigType> createModel(
+    public <SpartanModelConfigType extends SpartanModelConfig> @NotNull SpartanModel<SpartanModelConfigType> createModel(
             @NotNull String identifier,
             @NotNull SpartanModelConfigType config,
             @NotNull SpartanContext context,
@@ -54,7 +54,7 @@ public class SpartanApiImpl implements SpartanApi {
     }
 
     @Override
-    public RecurrentSoftActorCriticModel createRecurrentSoftActorCritic(
+    public @NotNull RecurrentSoftActorCriticModel createRecurrentSoftActorCritic(
             @NotNull String identifier,
             @NotNull RecurrentSoftActorCriticConfig config,
             @NotNull SpartanContext context,
@@ -71,7 +71,7 @@ public class SpartanApiImpl implements SpartanApi {
     }
 
     @Override
-    public CuriosityDrivenRecurrentSoftActorCriticModel createCuriosityDrivenRecurrentSoftActorCritic(
+    public @NotNull CuriosityDrivenRecurrentSoftActorCriticModel createCuriosityDrivenRecurrentSoftActorCritic(
             @NotNull String identifier,
             @NotNull CuriosityDrivenRecurrentSoftActorCriticConfig config,
             @NotNull SpartanContext context,
@@ -88,7 +88,7 @@ public class SpartanApiImpl implements SpartanApi {
     }
 
     @Override
-    public DoubleDeepQNetworkModel createDoubleDeepQNetwork(
+    public @NotNull DoubleDeepQNetworkModel createDoubleDeepQNetwork(
             @NotNull String identifier,
             @NotNull DoubleDeepQNetworkConfig config,
             @NotNull SpartanContext context,
@@ -105,7 +105,7 @@ public class SpartanApiImpl implements SpartanApi {
     }
 
     @Override
-    public AutoEncoderCompressorModel createAutoEncoderCompressor(
+    public @NotNull AutoEncoderCompressorModel createAutoEncoderCompressor(
             @NotNull String identifier,
             @NotNull AutoEncoderCompressorConfig config,
             @NotNull SpartanContext context,
