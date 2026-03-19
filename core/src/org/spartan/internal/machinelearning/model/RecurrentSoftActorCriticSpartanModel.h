@@ -79,7 +79,7 @@ namespace org::spartan::internal::machinelearning {
                 std::span<double> gateMemoryBuffer) const {
 
             const int inputSize = static_cast<int>(inputVector.size());
-            const int hiddenSize = config->actorHiddenLayerNeuronCount;
+            const int hiddenSize = config->hiddenStateSize;
             const int concatSize = hiddenSize + inputSize;
 
             // Guard: Check if concatenatedInput size matches available source data size
@@ -106,7 +106,11 @@ namespace org::spartan::internal::machinelearning {
             std::span<const double> updateGateBiases = this->gateBiases_.subspan(biasOffset, hiddenSize);
 
             math::tensor::TensorOps::denseForwardPass(concatenatedInput, updateGateWeights, updateGateBiases, updateGateZ);
-            math::tensor::TensorOps::applySigmoidFast(updateGateZ);
+            if (config->baseConfig.isTraining) {
+                math::tensor::TensorOps::applySigmoidExact(updateGateZ);
+            } else {
+                math::tensor::TensorOps::applySigmoidFast(updateGateZ);
+            }
 
             weightOffset += hiddenSize * concatSize;
             biasOffset += hiddenSize;
@@ -117,7 +121,11 @@ namespace org::spartan::internal::machinelearning {
             const std::span<const double> resetGateBiases = this->gateBiases_.subspan(biasOffset, hiddenSize);
 
             TensorOps::denseForwardPass(concatenatedInput, resetGateWeights, resetGateBiases, resetGateR);
-            TensorOps::applySigmoidFast(resetGateR);
+            if (config->baseConfig.isTraining) {
+                TensorOps::applySigmoidExact(resetGateR);
+            } else {
+                TensorOps::applySigmoidFast(resetGateR);
+            }
 
             weightOffset += hiddenSize * concatSize;
             biasOffset += hiddenSize;
@@ -133,7 +141,11 @@ namespace org::spartan::internal::machinelearning {
             std::span<const double> candidateBiases = this->gateBiases_.subspan(biasOffset, hiddenSize);
 
             TensorOps::denseForwardPass(concatenatedInput, candidateWeights, candidateBiases, candidateStateH);
-            TensorOps::applyTanh(candidateStateH);
+            if (config->baseConfig.isTraining) {
+                TensorOps::applyTanhExact(candidateStateH);
+            } else {
+                TensorOps::applyTanh(candidateStateH);
+            }
 
             // Final Hidden State (h_t): Blend the old state and candidate state using the update gate.
             // h_t = (1 - Z) * h_{t-1} + Z * H~
@@ -186,7 +198,11 @@ namespace org::spartan::internal::machinelearning {
             const std::span<const double> layer1Biases = this->policyBiases_.subspan(biasOffset, hiddenSize);
 
             TensorOps::denseForwardPass(observationState, layer1Weights, layer1Biases, hiddenActivation);
-            TensorOps::applyTanh(hiddenActivation);
+            if (config->baseConfig.isTraining) {
+                TensorOps::applyTanhExact(hiddenActivation);
+            } else {
+                TensorOps::applyTanh(hiddenActivation);
+            }
 
             weightOffset += hiddenSize * inputSize;
             biasOffset += hiddenSize;
@@ -452,6 +468,11 @@ namespace org::spartan::internal::machinelearning {
         // Dedicated scratchpads for action mean and log-standard-deviation.
         std::span<double> actionMeanScratchpad_;
         std::span<double> actionLogStdScratchpad_;
+        std::span<double> actionStdScratchpad_;
+        std::span<double> actionNoiseScratchpad_;
+        std::span<double> actionGradientScratchpad_;
+        std::span<double> policyLogStdCache_;
+        std::span<double> policyHiddenActivationCache_;
 
         // Additional dedicated memory for the Gated Recurrent Unit's complex gate calculations
         std::span<double> recurrentGateMemoryBuffer_;
@@ -474,10 +495,24 @@ namespace org::spartan::internal::machinelearning {
         std::span<double> secondCriticBiasMomentum_;
         std::span<double> secondCriticBiasVelocity_;
 
+        // Policy optimizer state and gradients
+        std::span<double> policyWeightMomentum_;
+        std::span<double> policyWeightVelocity_;
+        std::span<double> policyBiasMomentum_;
+        std::span<double> policyBiasVelocity_;
+        std::span<double> policyWeightGradientScratchpad_;
+        std::span<double> policyBiasGradientScratchpad_;
+        std::span<double> policyHiddenGradientScratchpad_;
+
         // Gradient scratchpads for critic backward pass
         std::span<double> criticWeightGradientScratchpad_;
         std::span<double> criticBiasGradientScratchpad_;
         std::span<double> criticInputGradientScratchpad_;
+
+        // Critic training buffers (multi-layer backprop)
+        std::span<double> criticCombinedInputBuffer_;
+        std::span<double> firstCriticActivationCache_;
+        std::span<double> secondCriticActivationCache_;
 
         // Non-owning span over the full JVM-owned critic weight buffer for persistence.
         std::span<const double> criticWeightsSpan_;
@@ -487,8 +522,11 @@ namespace org::spartan::internal::machinelearning {
 
         // Training step counter for Adam bias correction in critics
         int32_t criticTrainingStepCounter_ = 0;
+
+        // Training step counter for Adam bias correction in the policy
+        int32_t policyTrainingStepCounter_ = 0;
+
+        bool hasPolicySnapshot_ = false;
     };
 
 }
-
-

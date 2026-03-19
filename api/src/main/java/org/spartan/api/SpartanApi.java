@@ -3,6 +3,7 @@ package org.spartan.api;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.spartan.api.engine.SpartanModel;
+import org.spartan.api.engine.SpartanMultiAgentModel;
 import org.spartan.api.engine.action.SpartanActionManager;
 import org.spartan.api.engine.config.SpartanModelConfig;
 import org.spartan.api.engine.context.SpartanContext;
@@ -144,6 +145,42 @@ public interface SpartanApi extends AutoCloseable {
     @NotNull AutoEncoderCompressorModel createAutoEncoderCompressor(
             @NotNull String identifier,
             @NotNull AutoEncoderCompressorConfig config,
+            @NotNull SpartanContext context,
+            @NotNull SpartanActionManager actions
+    );
+
+    /**
+     * Creates a Multi-Agent model that shares the same context and action manager.
+     * <p>
+     * <b>Concept:</b> This is useful for scenarios where you have multiple agents observing the same environment
+     * and you want to conserve resources by sharing the context and action manager instances.
+     *
+     * @param identifier the model identifier
+     * @param context the shared observation context
+     * @param actions the shared action manager
+     * @param <SpartanModelConfigType> the type of configuration
+     * @return the instantiated multi-agent model
+     */
+    @Contract("_, _, _ -> new")
+    @NotNull <SpartanModelConfigType extends SpartanModelConfig> SpartanMultiAgentModel<SpartanModelConfigType> createMultiAgentModel(
+            @NotNull String identifier,
+            @NotNull SpartanContext context,
+            @NotNull SpartanActionManager actions
+    );
+
+    /**
+     * Creates a Multi-Agent model with an explicit group configuration.
+     *
+     * @param identifier the model identifier
+     * @param config the multi-agent group configuration
+     * @param context the shared observation context
+     * @param actions the shared action manager
+     * @return the instantiated multi-agent model
+     */
+    @Contract("_, _, _, _ -> new")
+    @NotNull SpartanMultiAgentModel<SpartanModelConfig> createMultiAgentModel(
+            @NotNull String identifier,
+            @NotNull SpartanMultiAgentGroupConfig config,
             @NotNull SpartanContext context,
             @NotNull SpartanActionManager actions
     );

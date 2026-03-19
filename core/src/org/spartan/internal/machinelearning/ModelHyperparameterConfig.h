@@ -33,6 +33,7 @@ extern "C" {
         SPARTAN_MODEL_TYPE_DOUBLE_DEEP_Q_NETWORK                        = 2,
         SPARTAN_MODEL_TYPE_AUTO_ENCODER_COMPRESSOR                      = 3,
         SPARTAN_MODEL_TYPE_CURIOSITY_DRIVEN_RECURRENT_SOFT_ACTOR_CRITIC = 4,
+        SPARTAN_MODEL_TYPE_MULTI_AGENT_GROUP                            = 5,
     };
 
     //
@@ -126,6 +127,16 @@ extern "C" {
         double intrinsicRewardClampingMinimum;
         double intrinsicRewardClampingMaximum;
         double forwardDynamicsLearningRate;
+    };
+
+    //
+    //  Multi-Agent Group Configuration
+    //
+
+    struct SpartanMultiAgentGroupHyperparameterConfig {
+        BaseHyperparameterConfig baseConfig;
+        int32_t maxAgents;
+        int32_t _padding5; // EXPLICIT: Pads struct to 8-byte alignment
     };
 
 }

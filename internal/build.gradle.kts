@@ -134,6 +134,7 @@ tasks {
         mergeServiceFiles()
     }
 
+
     build {
         dependsOn(shadowJar)
     }

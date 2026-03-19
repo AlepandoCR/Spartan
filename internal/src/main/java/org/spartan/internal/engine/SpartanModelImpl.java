@@ -1,8 +1,11 @@
 package org.spartan.internal.engine;
 
 import org.jetbrains.annotations.NotNull;
+import org.spartan.api.engine.SpartanAgent;
 import org.spartan.api.engine.SpartanModel;
+import org.spartan.api.engine.action.SpartanActionManager;
 import org.spartan.api.engine.action.type.SpartanAction;
+import org.spartan.internal.engine.action.SpartanActionManagerImpl;
 import org.spartan.api.engine.config.*;
 import org.spartan.api.engine.context.SpartanContext;
 import org.spartan.api.exception.SpartanPersistenceException;
@@ -17,13 +20,15 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig> implements SpartanModel<SpartanModelConfigType> {
+public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
+        implements SpartanAgent<SpartanModelConfigType> {
 
     private final Arena arena;
     private final long agentId;
     private final SpartanModelConfigType config;
     private final SpartanContextImpl context;
     private final List<SpartanAction> actions;
+    private final SpartanActionManager actionManager;
 
     private final MemorySegment configBuffer;
     private final MemorySegment modelWeightsBuffer;
@@ -40,6 +45,9 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
     private boolean isRegistered = false;
     private boolean isClosed = false;
 
+    private double pendingReward = 0.0;
+    private double episodeReward = 0.0;
+
     public SpartanModelImpl(@NotNull String identifier, long agentId, SpartanModelConfigType config, SpartanContext context, Iterable<SpartanAction> actions) {
         this.identifier = identifier;
         this.arena = Arena.ofShared(); // Controlled by this model instance
@@ -53,6 +61,10 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
 
         this.actions = new ArrayList<>();
         actions.forEach(this.actions::add);
+        this.actionManager = new SpartanActionManagerImpl();
+        for (SpartanAction action : this.actions) {
+            this.actionManager.registerAction(action);
+        }
         this.actionCount = this.actions.size();
         int stateSize = context.getSize();
 
@@ -127,6 +139,16 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
     }
 
     @Override
+    public @NotNull SpartanActionManager getActionManager() {
+        return actionManager;
+    }
+
+    @Override
+    public @NotNull MemorySegment getCriticWeightsBuffer() {
+        return criticWeightsBuffer;
+    }
+
+    @Override
     public void register() {
        if (isRegistered) return;
 
@@ -151,23 +173,42 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
     }
 
     @Override
+    public void tick(double reward) {
+        applyReward(reward);
+        tick();
+    }
+
+    @Override
+    public void applyReward(double reward) {
+        pendingReward += reward;
+    }
+
+    @Override
+    public double getEpisodeReward() {
+        return episodeReward;
+    }
+
+    @Override
+    public void resetEpisode() {
+        pendingReward = 0.0;
+        episodeReward = 0.0;
+    }
+
+    @Override
     public void tick() {
         if (!isRegistered) throw new IllegalStateException("Model not registered");
 
-        //  Update Context (Sensors -> Memory)
         context.update();
 
-        // Aggregate Rewards (Actions -> Total Reward)
-        double totalReward = 0.0;
-        for (SpartanAction action : actions) {
-            totalReward += action.award();
-        }
+        double totalReward = pendingReward;
+        pendingReward = 0.0;
+        episodeReward += totalReward;
 
         SpartanNative.spartanTickAgent(agentId, totalReward);
 
         for (int i = 0; i < actions.size(); i++) {
             double rawOutput = actionOutputBuffer.getAtIndex(ValueLayout.JAVA_DOUBLE, i);
-            actions.get(i).tick(rawOutput); // action.tick() handles denormalization + execute + award (for next tick?)
+            actions.get(i).tick(rawOutput);
         }
     }
 

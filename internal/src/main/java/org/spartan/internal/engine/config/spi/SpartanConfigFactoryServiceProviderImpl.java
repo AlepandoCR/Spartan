@@ -8,6 +8,7 @@ import org.spartan.internal.engine.config.AutoEncoderCompressorConfigImpl;
 import org.spartan.internal.engine.config.CuriosityDrivenRecurrentSoftActorCriticConfigImpl;
 import org.spartan.internal.engine.config.DoubleDeepQNetworkConfigImpl;
 import org.spartan.internal.engine.config.RecurrentSoftActorCriticConfigImpl;
+import org.spartan.internal.engine.config.SpartanMultiAgentGroupConfigImpl;
 
 public class SpartanConfigFactoryServiceProviderImpl implements SpartanConfigFactoryServiceProvider {
 
@@ -76,6 +77,29 @@ public class SpartanConfigFactoryServiceProviderImpl implements SpartanConfigFac
                 debugLogging, isTraining,
                 latentDimensionSize, encoderHiddenNeuronCount, encoderLayerCount,
                 decoderLayerCount, bottleneckRegularisationWeight
+        );
+    }
+
+    @Override
+    public @NotNull SpartanMultiAgentGroupConfig createMultiAgentGroupConfig(
+            double learningRate,
+            double gamma,
+            double epsilon,
+            double epsilonMin,
+            double epsilonDecay,
+            boolean debugLogging,
+            boolean isTraining,
+            int maxAgents) {
+
+        return new SpartanMultiAgentGroupConfigImpl(
+                learningRate,
+                gamma,
+                epsilon,
+                epsilonMin,
+                epsilonDecay,
+                debugLogging,
+                isTraining,
+                maxAgents
         );
     }
 }

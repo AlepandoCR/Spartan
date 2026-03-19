@@ -653,6 +653,46 @@ public final class SpartanModelAllocator {
         return segment;
     }
 
+    /**
+     * Allocates and writes a Multi-Agent Group config to a MemorySegment with C-compatible layout.
+     *
+     * @param arena  the Arena for allocation
+     * @param config the Java config record
+     * @return MemorySegment containing the serialized config (aligned to 64 bytes)
+     */
+    public static @NotNull MemorySegment writeMultiAgentGroupConfig(
+            @NotNull Arena arena,
+            @NotNull SpartanMultiAgentGroupConfig config
+    ) {
+        MemorySegment segment = arena.allocate(
+                simdPadBytes(SpartanConfigLayout.MULTI_AGENT_CONFIG_TOTAL_SIZE),
+                SIMD_ALIGNMENT_BYTES);
+
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_MODEL_TYPE_OFFSET,
+                config.modelType().getNativeValue());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_LEARNING_RATE_OFFSET,
+                config.learningRate());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_GAMMA_OFFSET,
+                config.gamma());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_EPSILON_OFFSET,
+                config.epsilon());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_EPSILON_MIN_OFFSET,
+                config.epsilonMin());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_EPSILON_DECAY_OFFSET,
+                config.epsilonDecay());
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_STATE_SIZE_OFFSET, 0);
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_ACTION_SIZE_OFFSET, 0);
+        segment.set(ValueLayout.JAVA_BYTE, SpartanConfigLayout.BASE_IS_TRAINING_OFFSET,
+                (byte) (config.isTraining() ? 1 : 0));
+        segment.set(ValueLayout.JAVA_BYTE, SpartanConfigLayout.BASE_DEBUG_LOGGING_OFFSET,
+                (byte) (config.debugLogging() ? 1 : 0));
+
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.MULTI_AGENT_MAX_AGENTS_OFFSET,
+                config.maxAgents());
+
+        return segment;
+    }
+
     // ==================== Curiosity-Driven RSAC Weight Calculations ====================
 
     /**
@@ -778,7 +818,7 @@ public final class SpartanModelAllocator {
     ) {
 
         // Allocate with 64-byte alignment for AVX-512 safety
-        MemorySegment segment = arena.allocate(simdPadBytes(SpartanConfigLayout.CURIOSITY_RSAC_CONFIG_TOTAL_SIZE), SIMD_ALIGNMENT_BYTES);
+        MemorySegment segment = arena.allocate(simdPadBytes(SpartanConfigLayout.CURIOSITY_RSAC_CONFIG_TOTAL_SIZE_PADDED), SIMD_ALIGNMENT_BYTES);
 
         // Use a ConfiningArena to ensure temporary RSAC segment stays valid during the copy operation
         try (Arena temporaryArena = Arena.ofConfined()) {
@@ -835,10 +875,16 @@ public final class SpartanModelAllocator {
             return writeDDQNConfig(arena, ddqn, stateSize, actionSize);
         } else if (config instanceof AutoEncoderCompressorConfig ae) {
             return writeAutoEncoderConfig(arena, ae, stateSize, actionSize);
+        } else if (config instanceof SpartanMultiAgentGroupConfig groupConfig) {
+            return writeMultiAgentGroupConfig(arena, groupConfig);
         }
         throw new IllegalArgumentException("Unknown config type: " + config.getClass().getName());
     }
 }
+
+
+
+
 
 
 

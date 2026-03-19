@@ -11,6 +11,8 @@
 
 #include "logging/SpartanLogger.h"
 #include "machinelearning/registry/SpartanModelRegistry.h"
+#include "machinelearning/registry/SpartanSlotMap.h"
+#include "machinelearning/model/SpartanMultiAgentGroup.h"
 
 /**
  * @file SpartanEngine.h
@@ -181,9 +183,77 @@ namespace org::spartan::internal {
          */
         bool tickAgent(uint64_t agentIdentifier, double rewardSignal);
 
+         /**
+          * @brief Registers a new multi-agent group with shared buffers.
+          *
+          * @param groupIdentifier       Unique identifier for the group.
+          * @param sharedContextBuffer   Pointer to the shared context buffer [stateSize * N].
+          * @param sharedContextCount    Number of doubles in the shared context buffer.
+          * @param sharedActionsBuffer   Pointer to the shared action buffer [actionSize * N].
+          * @param sharedActionsCount    Number of doubles in the shared action buffer.
+          * @param stateSize             State size per agent.
+          * @param actionSize            Action size per agent.
+          * @param maxAgents             Maximum number of agents in the group.
+          */
+         void registerMultiAgentGroup(uint64_t groupIdentifier,
+                                      double* sharedContextBuffer,
+                                      int32_t sharedContextCount,
+                                      double* sharedActionsBuffer,
+                                      int32_t sharedActionsCount,
+                                      int32_t stateSize,
+                                      int32_t actionSize,
+                                      int32_t maxAgents);
+
+         /**
+          * @brief Adds an agent to an existing multi-agent group.
+          *
+          * @param groupIdentifier    Unique identifier for the group.
+          * @param agentIdentifier    Unique identifier for the agent.
+          * @param opaqueConfig       Opaque pointer to the agent's hyperparameter config.
+          * @param modelWeights       Pointer to model weights buffer.
+          * @param modelWeightsCount  Size of model weights buffer.
+          * @param criticWeights      Pointer to critic weights buffer (optional/shared).
+          * @param criticWeightsCount Size of critic weights buffer.
+          * @return True on success, false if group not found or config invalid.
+          */
+         bool addAgentToMultiAgentGroup(uint64_t groupIdentifier,
+                                        uint64_t agentIdentifier,
+                                        void* opaqueConfig,
+                                        double* modelWeights,
+                                        int32_t modelWeightsCount,
+                                        double* criticWeights,
+                                        int32_t criticWeightsCount);
+
+         /**
+          * @brief Removes an agent from a multi-agent group.
+          *
+          * @param groupIdentifier Unique identifier for the group.
+          * @param agentIdentifier Unique identifier for the agent.
+          * @return True on success, false if group or agent not found.
+          */
+         bool removeAgentFromMultiAgentGroup(uint64_t groupIdentifier,
+                                             uint64_t agentIdentifier);
+
+         /**
+          * @brief Executes a tick for a specific multi-agent group.
+          *
+          * @param groupIdentifier Unique identifier for the group.
+          */
+         void tickMultiAgentGroup(uint64_t groupIdentifier);
+
+         /**
+          * @brief Unregisters a multi-agent group and releases its C++ object.
+          *
+          * @param groupIdentifier Unique identifier for the group.
+          */
+         void unregisterMultiAgentGroup(uint64_t groupIdentifier);
+
     private:
         /** @brief The model registry owned by this engine instance. */
         machinelearning::SpartanModelRegistry modelRegistry_;
+
+        /** @brief The multi-agent registry owned by this engine instance. */
+        machinelearning::SpartanSlotMap<std::unique_ptr<machinelearning::SpartanMultiAgentGroup>> multiAgentRegistry_;
     };
 
 }

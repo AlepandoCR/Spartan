@@ -132,6 +132,11 @@ namespace org::spartan::internal::machinelearning {
             return {modelWeights_.data(), modelWeights_.size()};
         }
 
+        /** @brief Returns a mutable view of the model's weight buffer for rebind. */
+        [[nodiscard]] std::span<double> getModelWeightsMutable() noexcept {
+            return modelWeights_;
+        }
+
         /**
          * @brief Returns a read-only view of the critic/secondary weight buffer for persistence.
          *

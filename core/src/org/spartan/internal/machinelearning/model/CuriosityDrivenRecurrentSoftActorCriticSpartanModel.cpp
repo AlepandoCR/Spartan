@@ -140,6 +140,11 @@ namespace org::spartan::internal::machinelearning {
         }
         #endif
 
+        if (rawMemory == nullptr) {
+            logging::SpartanLogger::error("[CURIOSITY-CONSTRUCT] FAILED to allocate aligned memory! aborting constructor");
+            throw std::bad_alloc();
+        }
+
         alignedScratchpadMemory_.reset(rawMemory);
 
         // DEBUG: Log aligned memory allocation
@@ -255,13 +260,14 @@ namespace org::spartan::internal::machinelearning {
         double mse = 0.0;
         const auto* config = typedConfig();
         const size_t stateSize = contextBuffer_.size();
+        const double mseScale = stateSize > 0 ? (2.0 / static_cast<double>(stateSize)) : 0.0;
 
         logging::SpartanLogger::debug(std::format("[CURIOSITY-TICK] Calculating MSE. State size: {}", stateSize));
 
         for (size_t i = 0; i < stateSize; ++i) {
-
-            double diff = contextBuffer_[i] - predictedNextStateBuffer_[i];
-            forwardNetworkOutputGradient_[i] = diff;
+            const double diff = contextBuffer_[i] - predictedNextStateBuffer_[i];
+            // Exact MSE gradient: 2*(pred-target)/N
+            forwardNetworkOutputGradient_[i] = diff * mseScale;
             mse += diff * diff;
         }
         mse /= static_cast<double>(stateSize);

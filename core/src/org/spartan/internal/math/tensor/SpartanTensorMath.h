@@ -65,10 +65,19 @@ namespace org::spartan::internal::math::tensor {
          * @brief Applies the Hyperbolic Tangent (Tanh) activation function in-place.
          * Formula: f(x) = tanh(x)
          *
+         * Uses a fast approximation in the implementation; prefer exact for correctness-sensitive paths.
          *
          * @param tensor Writable span of the target vector. Mutated in-place.
          */
         static void applyTanh(std::span<double> tensor);
+
+        /**
+         * @brief Applies the Hyperbolic Tangent (Tanh) activation function in-place using std::tanh.
+         * Formula: f(x) = tanh(x)
+         *
+         * @param tensor Writable span of the target vector. Mutated in-place.
+         */
+        static void applyTanhExact(std::span<double> tensor);
 
         /**
          * @brief Applies the Softmax activation function in-place.
@@ -83,17 +92,41 @@ namespace org::spartan::internal::math::tensor {
          * @brief Applies the Sigmoid activation function in-place using a fast approximation.
          * Formula: f(x) = 1 / (1 + e^-x)
          *
+         * This uses a rational approximation for speed; prefer exact for correctness-sensitive paths.
+         *
          * @param tensor Writable span of the target vector. Mutated in-place.
          */
         static void applySigmoidFast(std::span<double> tensor);
 
         /**
+         * @brief Applies the Sigmoid activation function in-place using std::exp.
+         * Formula: f(x) = 1 / (1 + e^-x)
+         *
+         * Use this for exactness-critical training paths.
+         *
+         * @param tensor Writable span of the target vector. Mutated in-place.
+         */
+        static void applySigmoidExact(std::span<double> tensor);
+
+        /**
          * @brief Applies a fast polynomial approximation of the Exponential function.
          * Formula: f(x) = e^x
+         *
+         * Uses a Taylor series approximation; prefer exact for correctness-sensitive paths.
          *
          * @param tensor Writable span of the target vector. Mutated in-place.
          */
         static void applyExpFast(std::span<double> tensor);
+
+        /**
+         * @brief Applies the Exponential function in-place using std::exp.
+         * Formula: f(x) = e^x
+         *
+         * Use this for exactness-critical training paths.
+         *
+         * @param tensor Writable span of the target vector. Mutated in-place.
+         */
+        static void applyExpExact(std::span<double> tensor);
 
         /**
          * @brief Performs a Polyak Averaging (Soft Update) from an online network to a target network.

@@ -259,35 +259,36 @@ namespace org::spartan::internal::machinelearning {
 
         // Snapshot of the previous tick's state for storing transitions
         std::vector<double> previousStateSnapshot_;
-
-        // Snapshot of the previous tick's action for storing transitions
         std::vector<double> previousActionSnapshot_;
+        bool hasPreviousState_ = false;
 
-        // Pre-allocated batch index buffer for mini-batch sampling
-        std::vector<int32_t> batchIndicesBuffer_;
+        // Inference scratchpads
+        std::vector<double> scratchpadA_;
+        std::vector<double> scratchpadB_;
 
-        // Q-value output scratchpads (one per action for the full Q-vector)
+        // Q-value scratchpads
         std::vector<double> onlineQValuesScratchpad_;
         std::vector<double> targetQValuesScratchpad_;
 
-        // Gradient scratchpads for backpropagation
+        // Gradient scratchpads
         std::vector<double> onlineWeightGradients_;
         std::vector<double> onlineBiasGradients_;
         std::vector<double> outputGradientScratchpad_;
         std::vector<double> inputGradientScratchpad_;
 
-        // Adam optimizer state for online network weights
+        // Multi-layer training buffers
+        std::vector<double> combinedInputBuffer_;
+        std::vector<double> layerActivationBuffer_;
+
+        // Adam optimizer state
         std::vector<double> adamWeightMomentum_;
         std::vector<double> adamWeightVelocity_;
         std::vector<double> adamBiasMomentum_;
         std::vector<double> adamBiasVelocity_;
 
-        // General-purpose inference scratchpads
-        std::vector<double> scratchpadA_;
-        std::vector<double> scratchpadB_;
-
-        // Flag indicating whether we have a valid previous state to store
-        bool hasPreviousState_ = false;
+        // Replay batch indices
+        std::vector<int32_t> batchIndicesBuffer_;
     };
 
 }
+

@@ -76,7 +76,7 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelTest {
                         .intrinsicRewardClampingMinimum(-1.0)
                         .intrinsicRewardClampingMaximum(1.0)
                         .forwardDynamicsLearningRate(3e-4)
-                        .debugLogging(false)
+                        .debugLogging(true)
                         .build();
 
         System.out.println("  Curiosity Module Parameters:");
@@ -151,7 +151,7 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelTest {
                             .recurrentInputFeatureCount(OBSERVATION_SIZE)
                             .forwardDynamicsHiddenLayerDimensionSize(FORWARD_DYNAMICS_HIDDEN_SIZE)
                             .actorHiddenLayerNeuronCount(HIDDEN_STATE_SIZE) // Explicitly set actor hidden size to match hidden state size
-                            .debugLogging(false)
+                            .debugLogging(true)
                             .isTraining(true)
                             .build();
 
@@ -238,7 +238,7 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelTest {
                             .recurrentInputFeatureCount(OBSERVATION_SIZE)
                             .forwardDynamicsHiddenLayerDimensionSize(FORWARD_DYNAMICS_HIDDEN_SIZE)
                             .actorHiddenLayerNeuronCount(HIDDEN_STATE_SIZE) // Explicitly set actor hidden size to match hidden state size
-                            .debugLogging(false)
+                            .debugLogging(true)
                             .isTraining(true)
                             .build();
 
@@ -308,7 +308,7 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelTest {
                             .recurrentInputFeatureCount(OBSERVATION_SIZE)
                             .forwardDynamicsHiddenLayerDimensionSize(FORWARD_DYNAMICS_HIDDEN_SIZE)
                             .actorHiddenLayerNeuronCount(HIDDEN_STATE_SIZE) // Explicitly set actor hidden size to match hidden state size
-                            .debugLogging(false)
+                            .debugLogging(true)
                             .isTraining(true)
                             .build();
 

@@ -134,6 +134,15 @@ namespace org::spartan::internal::math::tensor {
             totalExp += ptr[i];
         }
 
+        // Guard: if all values underflow, fall back to a uniform distribution.
+        if (totalExp <= 0.0) {
+            const double uniform = 1.0 / static_cast<double>(size);
+            for (size_t i = 0; i < size; ++i) {
+                ptr[i] = uniform;
+            }
+            return;
+        }
+
         const SimdFloat invTotal = simdBroadcast(1.0 / totalExp);
         size_t i = 0;
         for (; i + (simdLaneCount - 1) < size; i += simdLaneCount) {
@@ -443,6 +452,43 @@ namespace org::spartan::internal::math::tensor {
         // Tail loop for remaining elements
         for (; i < size; ++i) {
             gradPtr[i] = (predPtr[i] - targPtr[i]) * scale;
+        }
+    }
+
+    /**
+     * Applies the Sigmoid activation function in-place using std::exp.
+     * Formula: f(x) = 1 / (1 + e^-x)
+     */
+    void TensorOps::applySigmoidExact(const std::span<double> tensor) {
+        double* ptr = tensor.data();
+        const size_t size = tensor.size();
+        for (size_t i = 0; i < size; ++i) {
+            const double x = ptr[i];
+            ptr[i] = 1.0 / (1.0 + std::exp(-x));
+        }
+    }
+
+    /**
+     * Applies the Exponential function in-place using std::exp.
+     * Formula: f(x) = e^x
+     */
+    void TensorOps::applyExpExact(const std::span<double> tensor) {
+        double* ptr = tensor.data();
+        const size_t size = tensor.size();
+        for (size_t i = 0; i < size; ++i) {
+            ptr[i] = std::exp(ptr[i]);
+        }
+    }
+
+    /**
+     * Applies the Hyperbolic Tangent (Tanh) activation function in-place using std::tanh.
+     * Formula: f(x) = tanh(x)
+     */
+    void TensorOps::applyTanhExact(const std::span<double> tensor) {
+        double* ptr = tensor.data();
+        const size_t size = tensor.size();
+        for (size_t i = 0; i < size; ++i) {
+            ptr[i] = std::tanh(ptr[i]);
         }
     }
 }

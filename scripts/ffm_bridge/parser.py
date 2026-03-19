@@ -61,6 +61,59 @@ EXPLICIT_PARAM_TYPES = {
         java_wrapper="Long",
         ffm_layout="ValueLayout.JAVA_LONG"
     ),
+    # MARL (Multi-Agent) functions
+    ("spartan_register_multi_agent", "multiAgentId"): TypeDescriptor(
+        java_type="long",
+        java_wrapper="Long",
+        ffm_layout="ValueLayout.JAVA_LONG"
+    ),
+    ("spartan_register_multi_agent", "contextBuffer"): TypeDescriptor(
+        java_type="MemorySegment",
+        java_wrapper="MemorySegment",
+        ffm_layout="ValueLayout.ADDRESS",
+        needs_nullable=True
+    ),
+    ("spartan_register_multi_agent", "contextSize"): TypeDescriptor(
+        java_type="int",
+        java_wrapper="Integer",
+        ffm_layout="ValueLayout.JAVA_INT"
+    ),
+    ("spartan_register_multi_agent", "agentCount"): TypeDescriptor(
+        java_type="int",
+        java_wrapper="Integer",
+        ffm_layout="ValueLayout.JAVA_INT"
+    ),
+    ("spartan_tick_multi_agent", "multiAgentId"): TypeDescriptor(
+        java_type="long",
+        java_wrapper="Long",
+        ffm_layout="ValueLayout.JAVA_LONG"
+    ),
+    ("spartan_multi_agent_add_agent", "multiAgentId"): TypeDescriptor(
+        java_type="long",
+        java_wrapper="Long",
+        ffm_layout="ValueLayout.JAVA_LONG"
+    ),
+    ("spartan_multi_agent_add_agent", "agentIdentifier"): TypeDescriptor(
+        java_type="long",
+        java_wrapper="Long",
+        ffm_layout="ValueLayout.JAVA_LONG"
+    ),
+    ("spartan_multi_agent_add_agent", "opaqueConfig"): TypeDescriptor(
+        java_type="MemorySegment",
+        java_wrapper="MemorySegment",
+        ffm_layout="ValueLayout.ADDRESS",
+        needs_nullable=True
+    ),
+    ("spartan_multi_agent_remove_agent", "multiAgentId"): TypeDescriptor(
+        java_type="long",
+        java_wrapper="Long",
+        ffm_layout="ValueLayout.JAVA_LONG"
+    ),
+    ("spartan_multi_agent_remove_agent", "agentIdentifier"): TypeDescriptor(
+        java_type="long",
+        java_wrapper="Long",
+        ffm_layout="ValueLayout.JAVA_LONG"
+    ),
 }
 
 
@@ -224,4 +277,3 @@ class ASTParser:
             parameters=parameters,
             documentation=doc
         )
-

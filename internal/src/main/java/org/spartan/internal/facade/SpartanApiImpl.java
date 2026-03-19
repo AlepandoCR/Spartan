@@ -3,6 +3,7 @@ package org.spartan.internal.facade;
 import org.jetbrains.annotations.NotNull;
 import org.spartan.api.SpartanApi;
 import org.spartan.api.engine.SpartanModel;
+import org.spartan.api.engine.SpartanMultiAgentModel;
 import org.spartan.api.engine.action.SpartanActionManager;
 import org.spartan.api.engine.config.*;
 import org.spartan.api.engine.context.SpartanContext;
@@ -18,6 +19,7 @@ import org.spartan.internal.engine.model.AutoEncoderCompressorModelImpl;
 import org.spartan.internal.engine.model.CuriosityDrivenRecurrentSoftActorCriticModelImpl;
 import org.spartan.internal.engine.model.DoubleDeepQNetworkModelImpl;
 import org.spartan.internal.engine.model.RecurrentSoftActorCriticModelImpl;
+import org.spartan.internal.engine.SpartanMultiAgentModelImpl;
 
 import java.lang.foreign.Arena;
 import java.util.concurrent.ThreadLocalRandom;
@@ -119,6 +121,31 @@ public class SpartanApiImpl implements SpartanApi {
                 arena,
                 actions
         );
+    }
+
+    @Override
+    public @NotNull <SpartanModelConfigType extends SpartanModelConfig> SpartanMultiAgentModel<SpartanModelConfigType> createMultiAgentModel(
+            @NotNull String identifier,
+            @NotNull SpartanContext context,
+            @NotNull SpartanActionManager actions
+    ) {
+        SpartanMultiAgentGroupConfig defaultConfig = SpartanMultiAgentGroupConfig.builder().build();
+        return (SpartanMultiAgentModel<SpartanModelConfigType>) createMultiAgentModel(
+                identifier,
+                defaultConfig,
+                context,
+                actions
+        );
+    }
+
+    @Override
+    public @NotNull SpartanMultiAgentModel<SpartanModelConfig> createMultiAgentModel(
+            @NotNull String identifier,
+            @NotNull SpartanMultiAgentGroupConfig config,
+            @NotNull SpartanContext context,
+            @NotNull SpartanActionManager actions
+    ) {
+        return new SpartanMultiAgentModelImpl<>(identifier, config, context, actions.getActions());
     }
 
     @Override

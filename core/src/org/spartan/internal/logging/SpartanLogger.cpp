@@ -4,7 +4,7 @@
 
 #include "SpartanLogger.h"
 
-#include <print>
+#include <cstdio>
 
 namespace org::spartan::internal::logging {
 
@@ -19,22 +19,26 @@ namespace org::spartan::internal::logging {
     }
 
     void SpartanLogger::info(const std::string_view message) {
-        std::println("[Spartan-Core] >> {}", message);
+        std::fprintf(stderr, "[Spartan-Core] >> %.*s\n",
+                     static_cast<int>(message.size()), message.data());
     }
 
     void SpartanLogger::error(const std::string_view message) {
-        std::println("[Spartan-Core] [ERROR] >> {}", message);
+        std::fprintf(stderr, "[Spartan-Core] [ERROR] >> %.*s\n",
+                     static_cast<int>(message.size()), message.data());
     }
 
     void SpartanLogger::debug(const std::string_view message) {
         if (!debugEnabled_.load(std::memory_order_relaxed)) {
             return;
         }
-        std::println("[Spartan-Core] [DEBUG] >> {}", message);
+        std::fprintf(stderr, "[Spartan-Core] [DEBUG] >> %.*s\n",
+                     static_cast<int>(message.size()), message.data());
     }
 
     void SpartanLogger::warn(const std::string_view message) {
-        std::println("[Spartan-Core] [WARN] >> {}", message);
+        std::fprintf(stderr, "[Spartan-Core] [WARN] >> %.*s\n",
+                     static_cast<int>(message.size()), message.data());
     }
 
 

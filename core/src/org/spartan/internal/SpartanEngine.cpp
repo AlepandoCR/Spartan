@@ -319,6 +319,10 @@ namespace org::spartan::internal {
         size_t cOffset = 0;
 
         auto safeCriticSlice = [&](size_t size, std::string_view name) -> std::span<double> {
+            if (size == 0) {
+                logging::SpartanLogger::error(std::format("Critic slice size is zero: {}", name));
+                return {};
+            }
             if (cOffset + size > static_cast<size_t>(criticWeightsCount)) {
                 logging::SpartanLogger::error(std::format("OUT OF BOUNDS (Critic): {} needs {}, but only {} left", name, size, criticWeightsCount - cOffset));
                 return {};
@@ -334,27 +338,46 @@ namespace org::spartan::internal {
 
         // Important: Java might apply SIMD padding between GRU and Critics
         cOffset = simdPad(cOffset);
+        if (cOffset > static_cast<size_t>(criticWeightsCount)) {
+            logging::SpartanLogger::error("Critic padding exceeded buffer size before Critic 1 slices");
+            return nullptr;
+        }
 
         auto c1W = safeCriticSlice(criticW_Count, "Critic 1 weights");
         auto c1B = safeCriticSlice(criticB_Count, "Critic 1 biases");
 
         cOffset = simdPad(cOffset);
+        if (cOffset > static_cast<size_t>(criticWeightsCount)) {
+            logging::SpartanLogger::error("Critic padding exceeded buffer size before Critic 2 slices");
+            return nullptr;
+        }
 
         auto c2W = safeCriticSlice(criticW_Count, "Critic 2 weights");
         auto c2B = safeCriticSlice(criticB_Count, "Critic 2 biases");
 
         cOffset = simdPad(cOffset);
+        if (cOffset > static_cast<size_t>(criticWeightsCount)) {
+            logging::SpartanLogger::error("Critic padding exceeded buffer size before Curiosity slices");
+            return nullptr;
+        }
 
         auto curW = safeCriticSlice(curiosityWeights, "Curiosity weights");
         auto curB = safeCriticSlice(curiosityBiases, "Curiosity biases");
 
-        if (gruW.empty() || c1W.empty() || curW.empty()) return nullptr;
+        if (gruW.empty() || gruB.empty() || gruS.empty() || c1W.empty() || c1B.empty() || c2W.empty() || c2B.empty() || curW.empty() || curB.empty()) {
+            logging::SpartanLogger::error("Curiosity critic slicing failed; aborting model construction");
+            return nullptr;
+        }
 
         // --- MODEL (ACTOR) SLICING ---
         auto modelSpan = std::span(modelWeightsBuffer, static_cast<size_t>(modelWeightsCount));
         size_t mOffset = 0;
 
         auto safeModelSlice = [&](size_t size, std::string_view name) -> std::span<double> {
+            if (size == 0) {
+                logging::SpartanLogger::error(std::format("Model slice size is zero: {}", name));
+                return {};
+            }
             if (mOffset + size > static_cast<size_t>(modelWeightsCount)) {
                 logging::SpartanLogger::error(std::format("OUT OF BOUNDS (Model): {} needs {}, but only {} left", name, size, modelWeightsCount - mOffset));
                 return {};
@@ -373,7 +396,16 @@ namespace org::spartan::internal {
         auto pW = safeModelSlice(policyW_Count, "Policy weights");
         auto pB = safeModelSlice(policyB_Count, "Policy biases");
 
+        if (pW.empty() || pB.empty()) {
+            logging::SpartanLogger::error("Curiosity actor slicing failed; aborting model construction");
+            return nullptr;
+        }
+
         mOffset = simdPad(mOffset);
+        if (mOffset > static_cast<size_t>(modelWeightsCount)) {
+            logging::SpartanLogger::error("Model padding exceeded buffer size before encoder pool");
+            return nullptr;
+        }
         auto encoderPool = modelSpan.subspan(mOffset);
 
         // 4. Final Object Construction
@@ -381,18 +413,23 @@ namespace org::spartan::internal {
         auto contextSpan = std::span<const double>(contextBuffer, static_cast<size_t>(contextCount));
         auto actionSpan = std::span(actionOutputBuffer, static_cast<size_t>(actionOutputCount));
 
+        if (cOffset < (curiosityWeights + curiosityBiases)) {
+            logging::SpartanLogger::error("Curiosity critic offset underflow; aborting model construction");
+            return nullptr;
+        }
+
         auto internalRSAC = std::make_unique<machinelearning::RecurrentSoftActorCriticSpartanModel>(
             rsacId, const_cast<RecurrentSoftActorCriticHyperparameterConfig*>(rsacConfig),
             modelSpan, contextSpan, actionSpan,
             gruW, gruB, gruS,
-            pW, pB, // Correctly sliced Actor spans
+            pW, pB,
             c1W, c1B, c2W, c2B,
             encoderPool);
 
         return std::make_unique<machinelearning::CuriosityDrivenRecurrentSoftActorCriticSpartanModel>(
             agentIdentifier, opaqueHyperparameterConfig,
             modelSpan, contextSpan, actionSpan,
-            criticSpan.subspan(0, cOffset - (curiosityWeights + curiosityBiases)), // RSAC Critic block
+            criticSpan.subspan(0, cOffset - (curiosityWeights + curiosityBiases)),
             curW, curB, std::move(internalRSAC));
     }
 
@@ -492,6 +529,12 @@ namespace org::spartan::internal {
                 return;
         }
 
+        if (!model) {
+            logging::SpartanLogger::error(
+                std::format("Failed to construct model type {} for agent {}", modelType, agentIdentifier));
+            return;
+        }
+
         modelRegistry_.registerModel(std::move(model));
     }
 
@@ -557,6 +600,160 @@ namespace org::spartan::internal {
 
     bool SpartanEngine::tickAgent(const uint64_t agentIdentifier, const double rewardSignal) {
         return modelRegistry_.tickSingleAgent(agentIdentifier, rewardSignal);
+    }
+
+    void SpartanEngine::registerMultiAgentGroup(const uint64_t groupIdentifier,
+                                                double* sharedContextBuffer,
+                                                const int32_t sharedContextCount,
+                                                double* sharedActionsBuffer,
+                                                const int32_t sharedActionsCount,
+                                                const int32_t stateSize,
+                                                const int32_t actionSize,
+                                                const int32_t maxAgents) {
+        if (sharedContextBuffer == nullptr || sharedActionsBuffer == nullptr) {
+            logging::SpartanLogger::error("registerMultiAgentGroup: received null shared buffers.");
+            return;
+        }
+        if (sharedContextCount <= 0 || sharedActionsCount <= 0 || stateSize <= 0 || actionSize <= 0 || maxAgents <= 0) {
+            logging::SpartanLogger::error("registerMultiAgentGroup: received invalid sizes.");
+            return;
+        }
+
+        auto contextSpan = std::span<const double>(sharedContextBuffer, sharedContextCount);
+        auto actionsSpan = std::span<double>(sharedActionsBuffer, sharedActionsCount);
+
+        auto group = std::make_unique<machinelearning::SpartanMultiAgentGroup>(
+            groupIdentifier,
+            contextSpan,
+            actionsSpan,
+            stateSize,
+            actionSize,
+            maxAgents);
+
+        multiAgentRegistry_.insert(groupIdentifier, std::move(group));
+        logging::SpartanLogger::info(
+            std::format("Registered multi-agent group {}", groupIdentifier));
+    }
+
+    void SpartanEngine::tickMultiAgentGroup(const uint64_t groupIdentifier) {
+        auto groupPtr = multiAgentRegistry_.get(groupIdentifier);
+        if (groupPtr && *groupPtr) {
+            (*groupPtr)->processTick();
+            return;
+        }
+        logging::SpartanLogger::error(
+            std::format("tickMultiAgentGroup: No active group found for ID {}", groupIdentifier));
+    }
+
+    void SpartanEngine::unregisterMultiAgentGroup(const uint64_t groupIdentifier) {
+        auto groupPtr = multiAgentRegistry_.get(groupIdentifier);
+        if (groupPtr && *groupPtr) {
+            multiAgentRegistry_.erase(groupIdentifier);
+            logging::SpartanLogger::info(
+                std::format("Unregistered multi-agent group {}", groupIdentifier));
+            return;
+        }
+        logging::SpartanLogger::error(
+            std::format("unregisterMultiAgentGroup: No active group found for ID {}", groupIdentifier));
+    }
+
+    bool SpartanEngine::addAgentToMultiAgentGroup(const uint64_t groupIdentifier,
+                                                  const uint64_t agentIdentifier,
+                                                  void* opaqueConfig,
+                                                  double* modelWeights,
+                                                  int32_t modelWeightsCount,
+                                                  double* criticWeights,
+                                                  int32_t criticWeightsCount) {
+        auto groupPtr = multiAgentRegistry_.get(groupIdentifier);
+        if (!groupPtr || !*groupPtr) {
+            logging::SpartanLogger::error(
+                std::format("addAgentToMultiAgentGroup: No active group found for ID {}", groupIdentifier));
+            return false;
+        }
+
+        const auto* baseConfig = static_cast<const BaseHyperparameterConfig*>(opaqueConfig);
+        std::unique_ptr<machinelearning::SpartanModel> model;
+
+        switch (baseConfig->modelTypeIdentifier) {
+            case SPARTAN_MODEL_TYPE_RECURRENT_SOFT_ACTOR_CRITIC: {
+                model = constructRecurrentSoftActorCriticModel(
+                    agentIdentifier,
+                    opaqueConfig,
+                    criticWeights,
+                    criticWeightsCount,
+                    modelWeights,
+                    modelWeightsCount,
+                    nullptr, 0, // Context handled by group
+                    nullptr, 0  // Actions handled by group
+                );
+                break;
+            }
+            case SPARTAN_MODEL_TYPE_DOUBLE_DEEP_Q_NETWORK: {
+                model = constructDoubleDeepQNetworkModel(
+                    agentIdentifier,
+                    opaqueConfig,
+                    criticWeights,
+                    criticWeightsCount,
+                    modelWeights,
+                    modelWeightsCount,
+                    nullptr, 0,
+                    nullptr, 0
+                );
+                break;
+            }
+            // AutoEncoder is a SpartanCompressor, not a SpartanAgent, so it cannot be added here.
+
+            case SPARTAN_MODEL_TYPE_CURIOSITY_DRIVEN_RECURRENT_SOFT_ACTOR_CRITIC: {
+                model = constructCuriosityDrivenRecurrentSoftActorCriticModel(
+                    agentIdentifier,
+                    opaqueConfig,
+                    criticWeights,
+                    criticWeightsCount,
+                    modelWeights,
+                    modelWeightsCount,
+                    nullptr, 0,
+                    nullptr, 0
+                );
+                break;
+            }
+            default:
+                logging::SpartanLogger::error(
+                    std::format("addAgentToMultiAgentGroup: Unsupported or unknown model type {} for agent {}",
+                    baseConfig->modelTypeIdentifier, agentIdentifier));
+                return false;
+        }
+
+        if (!model) {
+            logging::SpartanLogger::error("addAgentToMultiAgentGroup: Failed to construct agent.");
+            return false;
+        }
+
+        // Transfer ownership and cast to SpartanAgent
+        // We know these types inherit from SpartanAgent.
+        machinelearning::SpartanAgent* agentPtr = static_cast<machinelearning::SpartanAgent*>(model.release());
+        std::unique_ptr<machinelearning::SpartanAgent> agent(agentPtr);
+
+        (*groupPtr)->addAgent(agentIdentifier, std::move(agent));
+
+        logging::SpartanLogger::info(
+            std::format("Added agent {} to group {}", agentIdentifier, groupIdentifier));
+        return true;
+    }
+
+    bool SpartanEngine::removeAgentFromMultiAgentGroup(const uint64_t groupIdentifier,
+                                                       const uint64_t agentIdentifier) {
+        auto groupPtr = multiAgentRegistry_.get(groupIdentifier);
+        if (!groupPtr || !*groupPtr) {
+            logging::SpartanLogger::error(
+                std::format("removeAgentFromMultiAgentGroup: No active group found for ID {}", groupIdentifier));
+            return false;
+        }
+
+        // Remove agent from the group
+        (*groupPtr)->removeAgent(agentIdentifier);
+        logging::SpartanLogger::info(
+            std::format("Removed agent {} from group {}", agentIdentifier, groupIdentifier));
+        return true;
     }
 
 }

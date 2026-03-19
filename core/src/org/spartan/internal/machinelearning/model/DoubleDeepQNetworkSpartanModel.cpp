@@ -39,6 +39,7 @@ namespace org::spartan::internal::machinelearning {
         const int stateSize = config->baseConfig.stateSize;
         const int actionSize = config->baseConfig.actionSize;
         const int hiddenSize = config->hiddenLayerNeuronCount;
+        const int hiddenLayers = config->hiddenLayerCount;
         const int combinedInputSize = stateSize + actionSize;
 
         // Pre-allocate inference scratchpads large enough for any layer
@@ -61,6 +62,10 @@ namespace org::spartan::internal::machinelearning {
         onlineBiasGradients_.resize(totalBiasCount);
         outputGradientScratchpad_.resize(std::max(hiddenSize, actionSize));
         inputGradientScratchpad_.resize(maxCapacity);
+
+        // Multi-layer training buffers
+        combinedInputBuffer_.resize(combinedInputSize);
+        layerActivationBuffer_.resize(static_cast<size_t>(hiddenLayers) * static_cast<size_t>(hiddenSize));
 
         // Pre-allocate Adam optimizer state (zero-initialized by resize)
         adamWeightMomentum_.resize(totalWeightCount);
@@ -187,6 +192,9 @@ namespace org::spartan::internal::machinelearning {
 
         const int actionSize = config->baseConfig.actionSize;
         const int stateSize = config->baseConfig.stateSize;
+        const int hiddenSize = config->hiddenLayerNeuronCount;
+        const int hiddenLayers = config->hiddenLayerCount;
+        const int combinedInputSize = stateSize + actionSize;
         const double gamma = config->baseConfig.gamma;
         const double learningRate = config->baseConfig.learningRate;
 
@@ -200,12 +208,24 @@ namespace org::spartan::internal::machinelearning {
 
         ++trainingStepCounter_;
 
-        //
-        // Double-Q Learning update over the mini-batch:
-        //   action* = argmax_a Q_online(s', a)     (action selection by online network)
-        //   target  = r + gamma * Q_target(s', action*)  (evaluation by target network)
-        //   loss    = (Q_online(s, a) - target)^2
-        //
+        // Precompute layer offsets
+        std::vector<size_t> layerWeightOffsets(static_cast<size_t>(hiddenLayers));
+        std::vector<size_t> layerBiasOffsets(static_cast<size_t>(hiddenLayers));
+        std::vector<int> layerInputSizes(static_cast<size_t>(hiddenLayers));
+        size_t weightOffset = 0;
+        size_t biasOffset = 0;
+        for (int layer = 0; layer < hiddenLayers; ++layer) {
+            const int inputSize = (layer == 0) ? combinedInputSize : hiddenSize;
+            layerWeightOffsets[layer] = weightOffset;
+            layerBiasOffsets[layer] = biasOffset;
+            layerInputSizes[layer] = inputSize;
+            weightOffset += static_cast<size_t>(hiddenSize) * static_cast<size_t>(inputSize);
+            biasOffset += static_cast<size_t>(hiddenSize);
+        }
+        const size_t outputWeightOffset = weightOffset;
+        const size_t outputBiasOffset = biasOffset;
+
+        // Double-Q Learning update over the mini-batch
         for (int32_t batchIndex = 0; batchIndex < batchSize; ++batchIndex) {
             const int32_t transitionIndex = batchIndicesBuffer_[batchIndex];
 
@@ -219,11 +239,38 @@ namespace org::spartan::internal::machinelearning {
             const auto nextStateView = std::span(nextStatePointer, stateSize);
             const auto actionView = std::span(actionPointer, actionSize);
 
-            // Compute Q_online(s, a) for the taken action
-            const double onlineQValue = onlineNetwork_.computeQValue(
-                stateView, actionView, config,
-                std::span(scratchpadA_),
-                std::span(scratchpadB_));
+            // Forward pass with activation caching for the taken action
+            std::copy(stateView.begin(), stateView.end(), combinedInputBuffer_.begin());
+            std::copy(actionView.begin(), actionView.end(), combinedInputBuffer_.begin() + stateSize);
+
+            std::span<const double> currentInput = std::span<const double>(combinedInputBuffer_.data(), combinedInputBuffer_.size());
+
+            for (int layer = 0; layer < hiddenLayers; ++layer) {
+                const auto activationSpan = std::span(
+                    layerActivationBuffer_.data() + static_cast<size_t>(layer) * hiddenSize,
+                    static_cast<size_t>(hiddenSize));
+
+                const size_t wOffset = layerWeightOffsets[layer];
+                const size_t bOffset = layerBiasOffsets[layer];
+                const int inputSize = layerInputSizes[layer];
+
+                TensorOps::denseForwardPass(
+                    currentInput,
+                    rawOnlineWeights_.subspan(wOffset, static_cast<size_t>(hiddenSize) * inputSize),
+                    rawOnlineBiases_.subspan(bOffset, hiddenSize),
+                    activationSpan);
+                TensorOps::applyLeakyReLU(activationSpan, 0.01);
+
+                currentInput = activationSpan;
+            }
+
+            double onlineQValue = 0.0;
+            auto onlineQSpan = std::span(&onlineQValue, 1);
+            TensorOps::denseForwardPass(
+                currentInput,
+                rawOnlineWeights_.subspan(outputWeightOffset, hiddenSize),
+                rawOnlineBiases_.subspan(outputBiasOffset, 1),
+                onlineQSpan);
 
             // Step 2: Find the best next-state action using the ONLINE network (Double-Q trick)
             double bestNextOnlineQValue = -1e30;
@@ -246,7 +293,7 @@ namespace org::spartan::internal::machinelearning {
                 }
             }
 
-            //  Evaluate Q_target(s', argmax_a Q_online(s', a)) using the TARGET network
+            // Evaluate Q_target(s', argmax_a Q_online(s', a)) using the TARGET network
             double bootstrappedValue = 0.0;
             if (!isTerminal) {
                 std::fill_n(scratchpadA_.begin(), actionSize, 0.0);
@@ -260,26 +307,72 @@ namespace org::spartan::internal::machinelearning {
                     std::span(scratchpadB_));
             }
 
-            //  Compute the Bellman target: y = r + gamma * Q_target(s', a*)
+            // Bellman target
             const double bellmanTarget = transitionReward + gamma * bootstrappedValue;
 
-            //  Temporal difference error gradient: dL/dQ = 2 * (Q_online - target) / batchSize
+            // TD error gradient
             const double temporalDifferenceError = 2.0 * (onlineQValue - bellmanTarget)
                 / static_cast<double>(batchSize);
 
-            // Backpropagate the scalar TD error through the online network
-            outputGradientScratchpad_[0] = temporalDifferenceError;
+            // Output layer gradients
+            const auto lastActivation = std::span(
+                layerActivationBuffer_.data() + static_cast<size_t>(hiddenLayers - 1) * hiddenSize,
+                static_cast<size_t>(hiddenSize));
 
-            TensorOps::denseBackwardPass(
-                stateView,
-                std::span<const double>(outputGradientScratchpad_.data(), 1),
-                rawOnlineWeights_,
-                std::span(onlineWeightGradients_),
-                std::span(inputGradientScratchpad_));
+            for (int i = 0; i < hiddenSize; ++i) {
+                onlineWeightGradients_[outputWeightOffset + static_cast<size_t>(i)] += temporalDifferenceError * lastActivation[i];
+            }
+            onlineBiasGradients_[outputBiasOffset] += temporalDifferenceError;
 
-            // Bias gradient for the output layer: dL/dB = dL/dY (the TD error).
-            // Accumulated across the mini-batch (gradients were zeroed before the loop).
-            onlineBiasGradients_[0] += temporalDifferenceError;
+            // Gradient into last hidden layer
+            auto currentGrad = std::span(outputGradientScratchpad_.data(), hiddenSize);
+            for (int i = 0; i < hiddenSize; ++i) {
+                currentGrad[i] = temporalDifferenceError * rawOnlineWeights_[outputWeightOffset + static_cast<size_t>(i)];
+            }
+
+            // Backprop through hidden layers
+            for (int layer = hiddenLayers - 1; layer >= 0; --layer) {
+                const auto activationSpan = std::span(
+                    layerActivationBuffer_.data() + static_cast<size_t>(layer) * hiddenSize,
+                    static_cast<size_t>(hiddenSize));
+
+                for (int i = 0; i < hiddenSize; ++i) {
+                    if (activationSpan[i] <= 0.0) {
+                        currentGrad[i] *= 0.01;
+                    }
+                }
+
+                const size_t wOffset = layerWeightOffsets[layer];
+                const size_t bOffset = layerBiasOffsets[layer];
+                const int inputSize = layerInputSizes[layer];
+
+                for (int i = 0; i < hiddenSize; ++i) {
+                    onlineBiasGradients_[bOffset + static_cast<size_t>(i)] += currentGrad[i];
+                }
+
+                const std::span<const double> layerInput = (layer == 0)
+                    ? std::span<const double>(combinedInputBuffer_.data(), combinedInputBuffer_.size())
+                    : std::span<const double>(
+                        layerActivationBuffer_.data() + static_cast<size_t>(layer - 1) * hiddenSize,
+                        static_cast<size_t>(hiddenSize));
+
+                auto inputGrad = std::span(inputGradientScratchpad_.data(), inputSize);
+                auto weightGradSpan = std::span(onlineWeightGradients_.data(), onlineWeightGradients_.size())
+                    .subspan(wOffset, static_cast<size_t>(hiddenSize) * inputSize);
+
+                TensorOps::denseBackwardPass(
+                    layerInput,
+                    currentGrad,
+                    rawOnlineWeights_.subspan(wOffset, static_cast<size_t>(hiddenSize) * inputSize),
+                    weightGradSpan,
+                    inputGrad);
+
+                if (layer > 0) {
+                    for (int i = 0; i < hiddenSize; ++i) {
+                        currentGrad[i] = inputGrad[i];
+                    }
+                }
+            }
         }
 
         // Apply Adam optimizer to online network weights and biases

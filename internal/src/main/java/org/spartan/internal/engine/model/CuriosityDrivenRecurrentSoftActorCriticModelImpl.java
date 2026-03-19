@@ -47,7 +47,7 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelImpl
                         requireContextSize(context),
                         actionManager.getActions().size()
                 ),
-                SpartanConfigLayout.CURIOSITY_RSAC_CONFIG_TOTAL_SIZE,
+                SpartanConfigLayout.CURIOSITY_RSAC_CONFIG_TOTAL_SIZE_PADDED,
                 actionManager.getActions().size()
         );
 

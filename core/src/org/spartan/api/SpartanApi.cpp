@@ -107,8 +107,21 @@ extern "C" {
             double* actionOutputBuffer,
             const int32_t actionOutputCount) {
 
+        SpartanEngine::log(std::format(
+            "spartan_register_model: id={}, cfg={}, criticPtr={}, criticCount={}, modelPtr={}, modelCount={}, ctxPtr={}, ctxCount={}, actionPtr={}, actionCount={}",
+            agentIdentifier,
+            reinterpret_cast<uintptr_t>(opaqueHyperparameterConfig),
+            reinterpret_cast<uintptr_t>(criticWeightsBuffer), criticWeightsCount,
+            reinterpret_cast<uintptr_t>(modelWeightsBuffer), modelWeightsCount,
+            reinterpret_cast<uintptr_t>(contextBuffer), contextCount,
+            reinterpret_cast<uintptr_t>(actionOutputBuffer), actionOutputCount));
+
         if (opaqueHyperparameterConfig == nullptr) {
             SpartanEngine::logError("spartan_register_model: opaqueHyperparameterConfig is null.");
+            return -1;
+        }
+        if ((reinterpret_cast<uintptr_t>(opaqueHyperparameterConfig) % alignof(double)) != 0) {
+            SpartanEngine::logError("spartan_register_model: opaqueHyperparameterConfig is misaligned.");
             return -1;
         }
         if (criticWeightsBuffer == nullptr || criticWeightsCount <= 0) {
@@ -307,4 +320,144 @@ extern "C" {
         return 0;
     }
 
+    /**
+     * @brief Registers a multi-agent group with the Spartan engine.
+     *
+     * Creates a SpartanMultiAgentGroup in the engine's registry to manage
+     * N homogeneous agents that share a single context buffer.
+     *
+     * @param multiAgentId      Unique identifier for the agent group
+     * @param contextBuffer     Pointer to shared context buffer (Java-owned)
+     * @param contextSize       Total size of context buffer (stateSize * N agents)
+     * @param agentCount        Number of agents in the group
+     * @return 0 on success, -1 on invalid input
+     */
+    SPARTAN_API_EXPORT int spartan_register_multi_agent(
+            const uint64_t multiAgentId,
+            double* contextBuffer,
+            const int32_t contextSize,
+            double* actionBuffer,
+            const int32_t actionBufferSize,
+            const int32_t actionFieldSize,
+            const int32_t stateSize,
+            const int32_t maxAgents) {
+
+        if (contextBuffer == nullptr || contextSize <= 0 ||
+            actionBuffer == nullptr || actionBufferSize <= 0 ||
+            actionFieldSize <= 0 ||
+            stateSize <= 0 || maxAgents <= 0) {
+            SpartanEngine::logError("spartan_register_multi_agent: invalid parameters.");
+            return -1;
+        }
+
+        engine.registerMultiAgentGroup(
+            multiAgentId,
+            contextBuffer,
+            contextSize,
+            actionBuffer,
+            actionBufferSize,
+            stateSize,
+            actionFieldSize,
+            maxAgents
+        );
+
+        SpartanEngine::log(std::format(
+            "Registered multi-agent group {} with stateSize={}, actionFieldSize={}, maxAgents={}",
+            multiAgentId, stateSize, actionFieldSize, maxAgents));
+
+        return 0;
+    }
+
+    /**
+     * @brief Adds an agent to an existing multi-agent group.
+     *
+     * Constructs a SpartanAgent internally within the group's context, binding it
+     * to the appropriate subspans of the shared context and action buffers.
+     *
+     * @param multiAgentId       Unique identifier for the multi-agent group
+     * @param agentIdentifier    Unique identifier for the new agent
+     * @param opaqueConfig       Opaque pointer to the agent's hyperparameter config
+     * @param modelWeights       Pointer to model weights buffer
+     * @param modelWeightsCount  Size of model weights buffer
+     * @param criticWeights      Pointer to critic weights buffer
+     * @param criticWeightsCount Size of critic weights buffer
+     * @return 0 on success, -1 on failure
+     */
+    SPARTAN_API_EXPORT int spartan_multi_agent_add_agent(
+            const uint64_t multiAgentId,
+            const uint64_t agentIdentifier,
+            void* opaqueConfig,
+            double* modelWeights,
+            const int32_t modelWeightsCount,
+            double* criticWeights,
+            const int32_t criticWeightsCount) {
+
+        if (opaqueConfig == nullptr) {
+            SpartanEngine::logError("spartan_multi_agent_add_agent: opaqueConfig is null.");
+            return -1;
+        }
+
+        const bool success = engine.addAgentToMultiAgentGroup(
+            multiAgentId,
+            agentIdentifier,
+            opaqueConfig,
+            modelWeights,
+            modelWeightsCount,
+            criticWeights,
+            criticWeightsCount
+        );
+
+        if (!success) {
+            SpartanEngine::logError(std::format(
+                "spartan_multi_agent_add_agent: Failed to add agent {} to group {}",
+                agentIdentifier, multiAgentId));
+            return -1;
+        }
+
+        SpartanEngine::log(std::format(
+            "Added agent {} to multi-agent group {}", agentIdentifier, multiAgentId));
+        return 0;
+    }
+
+    /**
+     * @brief Removes an agent from a multi-agent group.
+     *
+     * The agent is unbound from the group's shared buffers and destroyed.
+     *
+     * @param multiAgentId    Unique identifier for the multi-agent group
+     * @param agentIdentifier Unique identifier for the agent to remove
+     * @return 0 on success, -1 if group or agent not found
+     */
+    SPARTAN_API_EXPORT int spartan_multi_agent_remove_agent(
+            const uint64_t multiAgentId,
+            const uint64_t agentIdentifier) {
+
+        const bool success = engine.removeAgentFromMultiAgentGroup(multiAgentId, agentIdentifier);
+        if (!success) {
+            SpartanEngine::logError(std::format(
+                "spartan_multi_agent_remove_agent: Failed to remove agent {} from group {}",
+                agentIdentifier, multiAgentId));
+            return -1;
+        }
+
+        SpartanEngine::log(std::format(
+            "Removed agent {} from multi-agent group {}", agentIdentifier, multiAgentId));
+        return 0;
+    }
+
+    /**
+     * @brief Executes a tick for all agents in a multi-agent group.
+     *
+     * Orchestrates MARL CTDE inference:
+     * 1. All agents read their context subspans in parallel and perform inference
+     * 2. Global critic evaluates joint state and joint actions
+     * 3. Returns success/failure to caller
+     *
+     * @param multiAgentId  Unique identifier for the agent group
+     * @return 0 on success, -1 if group not found
+     */
+    SPARTAN_API_EXPORT int spartan_tick_multi_agent(const uint64_t multiAgentId) {
+        engine.tickMultiAgentGroup(multiAgentId);
+        return 0;
+    }
 }

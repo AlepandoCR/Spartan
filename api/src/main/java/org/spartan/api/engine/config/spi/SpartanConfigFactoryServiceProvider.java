@@ -62,7 +62,7 @@ public interface SpartanConfigFactoryServiceProvider {
             int hiddenLayerCount
     );
 
-    @Contract("_,_,_,_,_,_,_,_,_,_,_,_ -> new")
+    @Contract("_,_,_,_,_,_,_,_ -> new")
     @NotNull AutoEncoderCompressorConfig createAutoEncoderCompressorConfig(
             double learningRate,
             double gamma,
@@ -76,5 +76,17 @@ public interface SpartanConfigFactoryServiceProvider {
             int encoderLayerCount,
             int decoderLayerCount,
             double bottleneckRegularisationWeight
+    );
+
+    @Contract("_,_,_,_,_,_,_,_ -> new")
+    @NotNull SpartanMultiAgentGroupConfig createMultiAgentGroupConfig(
+            double learningRate,
+            double gamma,
+            double epsilon,
+            double epsilonMin,
+            double epsilonDecay,
+            boolean debugLogging,
+            boolean isTraining,
+            int maxAgents
     );
 }

@@ -10,13 +10,15 @@ package org.spartan.api.engine.config;
  * C++ registration logic can determine which concrete model to construct
  * without inspecting the full struct layout.
  * <p>
- * The ordinal values MUST match the C++ enum exactly:
+ * The ordinal values must match the C++ enum exactly:
  * <pre>
  * enum SpartanModelType : int32_t {
  *     SPARTAN_MODEL_TYPE_DEFAULT                     = 0,
  *     SPARTAN_MODEL_TYPE_RECURRENT_SOFT_ACTOR_CRITIC = 1,
  *     SPARTAN_MODEL_TYPE_DOUBLE_DEEP_Q_NETWORK       = 2,
  *     SPARTAN_MODEL_TYPE_AUTO_ENCODER_COMPRESSOR     = 3,
+ *     SPARTAN_MODEL_TYPE_CURIOSITY_DRIVEN_RECURRENT_SOFT_ACTOR_CRITIC = 4,
+ *     SPARTAN_MODEL_TYPE_MULTI_AGENT_GROUP           = 5,
  * };
  * </pre>
  */
@@ -50,7 +52,12 @@ public enum SpartanModelType {
      * Extends RSAC with an Intrinsic Curiosity Module (ICM) that uses forward dynamics
      * prediction error as intrinsic reward to encourage exploration of novel states.
      */
-    CURIOSITY_DRIVEN_RECURRENT_SOFT_ACTOR_CRITIC(4);
+    CURIOSITY_DRIVEN_RECURRENT_SOFT_ACTOR_CRITIC(4),
+
+    /**
+     * Multi-Agent group container (not a per-agent model).
+     */
+    MULTI_AGENT_GROUP(5);
 
     private final int nativeValue;
 

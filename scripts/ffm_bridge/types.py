@@ -109,9 +109,32 @@ class PrimitiveTypeMapper(TypeMapper):
             return True
         # Check canonical type for typedefs like uint64_t, int32_t
         canonical = clang_type.get_canonical()
+        # WORKAROUND: libclang sometimes resolves uint64_t as UINT on some platforms
+        # Check both the type spelling and canonical spelling
+        type_spelling = clang_type.spelling.replace(" ", "")
+        canonical_spelling = canonical.spelling.replace(" ", "")
+        if ("uint64_t" in type_spelling or "uint64_t" in canonical_spelling) and clang_type.kind == TypeKind.UINT:
+            return True
         return canonical.kind in self.PRIMITIVE_MAP
 
     def map(self, clang_type) -> TypeDescriptor:
+        # WORKAROUND: libclang sometimes resolves uint64_t as UINT on some platforms
+        # If we see uint64_t (with or without const) as UINT, force it to JAVA_LONG (which is correct for uint64_t)
+        type_spelling = clang_type.spelling.replace(" ", "")
+        canonical_spelling = clang_type.get_canonical().spelling.replace(" ", "")
+
+        # DEBUG
+        if "uint64" in type_spelling or "uint64" in canonical_spelling or clang_type.kind == TypeKind.UINT:
+            print(f"  [TYPE_DEBUG] spelling='{clang_type.spelling}' canonical='{clang_type.get_canonical().spelling}' kind={clang_type.kind} uint64_check=yes")
+
+        if ("uint64_t" in type_spelling or "uint64_t" in canonical_spelling) and clang_type.kind == TypeKind.UINT:
+            print(f"  [WORKAROUND_APPLIED] {clang_type.spelling} -> JAVA_LONG")
+            return TypeDescriptor(
+                java_type="long",
+                java_wrapper="Long",
+                ffm_layout="ValueLayout.JAVA_LONG"
+            )
+
         # Try direct type first
         if clang_type.kind in self.PRIMITIVE_MAP:
             java_type, wrapper, layout = self.PRIMITIVE_MAP[clang_type.kind]

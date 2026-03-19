@@ -92,4 +92,13 @@ public final class SpartanConfigLayout {
 
     /** Total byte size of Curiosity-Driven RSAC config: 408 + 40 = 448 bytes */
     public static final long CURIOSITY_RSAC_CONFIG_TOTAL_SIZE = 448;
+    /**
+     * Total size padded to 64 bytes (allocator writes this much to satisfy AVX alignment).
+     */
+    public static final long CURIOSITY_RSAC_CONFIG_TOTAL_SIZE_PADDED = ((CURIOSITY_RSAC_CONFIG_TOTAL_SIZE + 63) / 64) * 64;
+
+    // ==================== Multi-Agent Group Config ====================
+    public static final long MULTI_AGENT_MAX_AGENTS_OFFSET      = 64; // int32_t
+    public static final long MULTI_AGENT_CONFIG_TOTAL_SIZE      = 72;
+    public static final long MULTI_AGENT_CONFIG_TOTAL_SIZE_PADDED = ((MULTI_AGENT_CONFIG_TOTAL_SIZE + 63) / 64) * 64;
 }
