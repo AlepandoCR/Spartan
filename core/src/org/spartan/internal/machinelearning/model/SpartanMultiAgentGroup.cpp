@@ -4,7 +4,9 @@
 
 #include "SpartanMultiAgentGroup.h"
 
+#if defined(_OPENMP)
 #include <omp.h>
+#endif
 
 #include "SpartanAgent.h"
 #include "SpartanCritic.h"
@@ -72,7 +74,9 @@ void SpartanMultiAgentGroup::removeAgent(const uint64_t agentId) {
 
 void SpartanMultiAgentGroup::processTick() {
     const auto denseSize = agentSlotMap_.denseSize();
+#if defined(_OPENMP)
     #pragma omp parallel for schedule(static)
+#endif
     for (int32_t i = 0; i < static_cast<int32_t>(denseSize); ++i) {
         auto* agentPtr = agentSlotMap_.getDenseIfActive(static_cast<size_t>(i));
         if (agentPtr && *agentPtr) {

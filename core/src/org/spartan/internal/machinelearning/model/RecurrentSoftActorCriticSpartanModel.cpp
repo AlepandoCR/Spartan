@@ -602,7 +602,8 @@ namespace org::spartan::internal::machinelearning {
 
         // Estimate entropy from cached log-std (Gaussian): H = sum(logStd + 0.5*log(2*pi*e))
         double entropyEstimate = 0.0;
-        const double kHalfLog2PiE = 0.5 * std::log(2.0 * M_PI * std::exp(1.0));
+        constexpr double kPi = 3.14159265358979323846;
+        const double kHalfLog2PiE = 0.5 * std::log(2.0 * kPi * std::exp(1.0));
         for (int dimensionIndex = 0; dimensionIndex < actionSize; ++dimensionIndex) {
             entropyEstimate += policyLogStdCache_[dimensionIndex] + kHalfLog2PiE;
         }
