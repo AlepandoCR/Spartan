@@ -80,6 +80,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Generate FFM Bindings (Java-Native Bridge)
+        shell: bash
         run: |
           python scripts/generate_ffm_spartan_bridge.py \
             --cpp-source core/src/org/spartan/api/SpartanApi.cpp \
