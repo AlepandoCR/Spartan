@@ -25,8 +25,19 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-tasks.test {
-    useJUnitPlatform()
+tasks{
+    test {
+        useJUnitPlatform()
+    }
+
+    withType<GenerateModuleMetadata>().configureEach {
+        dependsOn(emptyJavadocJar, emptySourcesJar)
+    }
+
+    withType<GenerateMavenPom>().configureEach {
+        dependsOn(emptyJavadocJar, emptySourcesJar)
+    }
+
 }
 
 fun loadDotEnv(rootDir: File): Properties {
@@ -66,8 +77,9 @@ mavenPublishing {
         }
         developers {
             developer {
-                id.set("AlepandoCR")
-                name.set("AlepandoCR")
+                id.set("Alepando")
+                name.set("Alepando")
+                email.set("aocamporam@gmail.com")
             }
         }
         scm {
@@ -76,8 +88,6 @@ mavenPublishing {
             url.set("https://github.com/AlepandoCR/Spartan")
         }
     }
-
-    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL, automaticRelease = true)
 }
 
 

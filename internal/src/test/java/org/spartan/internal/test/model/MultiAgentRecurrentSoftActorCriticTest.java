@@ -6,7 +6,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.spartan.api.SpartanApi;
 import org.spartan.api.engine.SpartanAgent;
-import org.spartan.api.engine.SpartanMultiAgentModel;
+import org.spartan.api.engine.model.SpartanMultiAgentModel;
 import org.spartan.api.engine.action.SpartanActionManager;
 import org.spartan.api.engine.action.type.SpartanAction;
 import org.spartan.api.engine.config.RecurrentSoftActorCriticConfig;

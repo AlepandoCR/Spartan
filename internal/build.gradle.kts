@@ -93,6 +93,14 @@ tasks {
         jvmArgs("--enable-native-access=ALL-UNNAMED")
     }
 
+    withType<GenerateModuleMetadata>().configureEach {
+        dependsOn(emptyJavadocJar, emptySourcesJar)
+    }
+
+    withType<GenerateMavenPom>().configureEach {
+        dependsOn(emptyJavadocJar, emptySourcesJar)
+    }
+
     processResources {
         val props = mapOf("version" to version)
         inputs.properties(props)
@@ -174,8 +182,9 @@ mavenPublishing {
         }
         developers {
             developer {
-                id.set("AlepandoCR")
-                name.set("AlepandoCR")
+                id.set("Alepando")
+                name.set("Alepando")
+                email.set("aocamporam@gmail.com")
             }
         }
         scm {

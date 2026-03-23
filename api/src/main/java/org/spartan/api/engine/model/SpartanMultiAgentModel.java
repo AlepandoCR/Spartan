@@ -1,6 +1,7 @@
-package org.spartan.api.engine;
+package org.spartan.api.engine.model;
 
 import org.jetbrains.annotations.NotNull;
+import org.spartan.api.engine.SpartanAgent;
 import org.spartan.api.engine.config.SpartanModelConfig;
 import org.spartan.api.engine.context.SpartanContext;
 
@@ -15,11 +16,11 @@ import java.util.Optional;
  * - All agents read subspans of the same MemorySegment
  *
  * Lifecycle:
- * 1. Create: new implementation instance
- * 2. Register: register() → Passes context to C++
- * 3. Add agents: addAgent() → Each gets REFERENCE to context
- * 4. Game loop: context.updateElement(...), multiAgent.tick()
- * 5. Close: close()
+ *  Create: new implementation instance
+ *  Register: register() → Passes context to C++
+ *  Add agents: addAgent() → Each gets REFERENCE to context
+ * Game loop: context.updateElement(...), multiAgent.tick()
+ * Close: close()
  *
  * Auto-execution:
  * - context.update() is automatic in tick()

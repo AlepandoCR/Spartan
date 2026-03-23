@@ -2,7 +2,7 @@ package org.spartan.internal.engine;
 
 import org.jetbrains.annotations.NotNull;
 import org.spartan.api.engine.SpartanAgent;
-import org.spartan.api.engine.SpartanMultiAgentModel;
+import org.spartan.api.engine.model.SpartanMultiAgentModel;
 import org.spartan.api.engine.config.SpartanModelConfig;
 import org.spartan.api.engine.config.SpartanMultiAgentGroupConfig;
 import org.spartan.api.engine.context.SpartanContext;

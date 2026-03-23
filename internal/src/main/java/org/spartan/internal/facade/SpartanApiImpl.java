@@ -3,7 +3,7 @@ package org.spartan.internal.facade;
 import org.jetbrains.annotations.NotNull;
 import org.spartan.api.SpartanApi;
 import org.spartan.api.engine.SpartanModel;
-import org.spartan.api.engine.SpartanMultiAgentModel;
+import org.spartan.api.engine.model.SpartanMultiAgentModel;
 import org.spartan.api.engine.action.SpartanActionManager;
 import org.spartan.api.engine.config.*;
 import org.spartan.api.engine.context.SpartanContext;
