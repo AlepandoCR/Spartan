@@ -98,13 +98,18 @@ tasks {
         jvmArgs("--enable-native-access=ALL-UNNAMED")
     }
 
-    // Fix para dependencias implícitas en Gradle 9+
     withType<GenerateModuleMetadata>().configureEach {
-        dependsOn(emptyJavadocJar, emptySourcesJar)
+        enabled = false
     }
 
     withType<GenerateMavenPom>().configureEach {
         dependsOn(emptyJavadocJar, emptySourcesJar)
+    }
+
+    withType<Jar>().configureEach {
+        if (name.contains("sources", ignoreCase = true)) {
+            dependsOn(generateNativeBindings)
+        }
     }
 
     processResources {
@@ -143,11 +148,7 @@ tasks {
         dependsOn(shadowJar)
     }
 
-    withType<Jar>().configureEach {
-        if (name.contains("sources", ignoreCase = true)) {
-            dependsOn(generateNativeBindings)
-        }
-    }
+
 }
 
 fun loadDotEnv(rootDir: File): Properties {

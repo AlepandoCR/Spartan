@@ -39,7 +39,7 @@ tasks {
 
 
     withType<GenerateModuleMetadata>().configureEach {
-        dependsOn(emptyJavadocJar, emptySourcesJar)
+        enabled = false
     }
 
     withType<GenerateMavenPom>().configureEach {
