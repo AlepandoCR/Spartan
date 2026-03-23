@@ -42,6 +42,11 @@ public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
     private final Arena arena;
     private final MemorySegment actionOutputBuffer; // New field
 
+    private MemorySegment sharedContextBuffer;
+    private int sharedContextSize;
+    private int stateSize;
+    private boolean aggregatedContextLayout;
+
     // Agent registry (O(1) lookup via ID)
     private final Map<Long, SpartanAgent<ConfigType>> agentById = new ConcurrentHashMap<>();
 
@@ -66,7 +71,7 @@ public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
         this.multiAgentId = System.identityHashCode(this);  // Use object identity as ID
         this.identifier = identifier;
         this.groupConfig = groupConfig;
-        this.sharedContext = sharedContext;  // REFERENCE, not copy
+        this.sharedContext = sharedContext;  // reference, not copy
         this.sharedActions = new ArrayList<>();
         sharedActions.forEach(this.sharedActions::add);
         this.arena = Arena.ofShared();
@@ -99,20 +104,68 @@ public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
             contextImpl.update();
         }
 
-        // Register the group with C++
-        // C++ will receive the same MemorySegment reference
-        SpartanNative.spartanRegisterMultiAgent(
+        int totalContextSize = contextImpl.getSize();
+        if (totalContextSize <= 0) {
+            throw new IllegalStateException("Shared context size is invalid after update");
+        }
+
+        if (totalContextSize % groupConfig.maxAgents() == 0) {
+            aggregatedContextLayout = true;
+            stateSize = totalContextSize / groupConfig.maxAgents();
+            sharedContextSize = totalContextSize;
+        } else {
+            aggregatedContextLayout = false;
+            stateSize = totalContextSize;
+            sharedContextSize = Math.multiplyExact(totalContextSize, groupConfig.maxAgents());
+        }
+
+        if (stateSize <= 0) {
+            throw new IllegalStateException("Per-agent state size is invalid after update");
+        }
+
+        sharedContextBuffer = SpartanModelAllocator.allocateContextBuffer(arena, sharedContextSize);
+        refreshSharedContextBuffer(contextImpl);
+
+        int result = SpartanNative.spartanRegisterMultiAgent(
             multiAgentId,
-            contextImpl.getData(),
-            contextImpl.getSize(),
+            sharedContextBuffer,
+            sharedContextSize,
             actionOutputBuffer,
             (int) (actionOutputBuffer.byteSize() / Double.BYTES), // actionBufferSize
             sharedActions.size(),                                 // actionFieldSize
-            contextImpl.getSize() / groupConfig.maxAgents(),      // stateSize
+            stateSize,                                            // stateSize (per agent)
             groupConfig.maxAgents()
         );
 
+        if (result != 0) {
+            throw new RuntimeException("Native failed to register multi-agent group " + multiAgentId);
+        }
+
         registered = true;
+    }
+
+    private void refreshSharedContextBuffer(@NotNull SpartanContextImpl contextImpl) {
+        int currentSize = contextImpl.getSize();
+        if (aggregatedContextLayout) {
+            if (currentSize != sharedContextSize) {
+                throw new IllegalStateException(
+                    "Shared context size changed from " + sharedContextSize + " to " + currentSize + " after registration");
+            }
+            long bytesToCopy = (long) currentSize * Double.BYTES;
+            MemorySegment.copy(contextImpl.getData(), 0, sharedContextBuffer, 0, bytesToCopy);
+            return;
+        }
+
+        if (currentSize != stateSize) {
+            throw new IllegalStateException(
+                "Shared context size changed from " + stateSize + " to " + currentSize + " after registration");
+        }
+
+        long bytesPerAgent = (long) stateSize * Double.BYTES;
+        for (int i = 0; i < groupConfig.maxAgents(); i++) {
+            long destOffset = bytesPerAgent * i;
+            MemorySegment.copy(contextImpl.getData(), 0, sharedContextBuffer, destOffset, bytesPerAgent);
+        }
     }
 
     @Override
@@ -137,11 +190,11 @@ public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
 
         long agentId = nextAgentId.getAndIncrement();
 
-        // Ensure context has a valid size for serialization, forcing update if necessary
-        int stateSize = sharedContext.getSize();
         if (stateSize <= 0) {
             sharedContext.update();
-            stateSize = sharedContext.getSize();
+            if (sharedContext.getSize() <= 0) {
+                throw new IllegalStateException("Shared context size is invalid after update");
+            }
         }
         int actionCount = sharedActions.size();
 
@@ -211,6 +264,7 @@ public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
         // 1. Update SHARED context (once for all agents)
         if (sharedContext instanceof SpartanContextImpl contextImpl) {
             contextImpl.update();
+            refreshSharedContextBuffer(contextImpl);
         }
 
         // 2. C++ executes all agents in parallel + critic evaluation

@@ -1,8 +1,9 @@
+import com.vanniktech.maven.publish.SonatypeHost
 import java.util.Properties
 
 plugins {
     id("java")
-    id("maven-publish")
+    id("com.vanniktech.maven.publish")
 }
 
 group = "org.spartan.api"
@@ -38,39 +39,65 @@ fun loadDotEnv(rootDir: File): Properties {
 }
 
 val dotEnv = loadDotEnv(rootProject.projectDir)
-val mavenUrl = System.getenv("MAVEN_URL") ?: dotEnv.getProperty("MAVEN_URL")
 val mavenUser = System.getenv("MAVEN_USERNAME") ?: dotEnv.getProperty("MAVEN_USERNAME")
 val mavenPass = System.getenv("MAVEN_PASSWORD") ?: dotEnv.getProperty("MAVEN_PASSWORD")
-val nativeClassifier = providers.gradleProperty("nativeClassifier").orNull
+
+if (mavenUser != null) extra["mavenCentralUsername"] = mavenUser
+if (mavenPass != null) extra["mavenCentralPassword"] = mavenPass
+
 val prebuiltApiJar = providers.gradleProperty("prebuiltApiJar").orNull
+val nativeClassifier = providers.gradleProperty("nativeClassifier").orNull
+
+val emptyJavadocJar by tasks.registering(Jar::class) { archiveClassifier.set("javadoc") }
+val emptySourcesJar by tasks.registering(Jar::class) { archiveClassifier.set("sources") }
+
+mavenPublishing {
+    coordinates(project.group.toString(), "spartan-api", project.version.toString())
+
+    pom {
+        name.set("Spartan API")
+        description.set("API project for Spartan")
+        url.set("https://github.com/AlepandoCR/Spartan")
+        licenses {
+            license {
+                name.set("GNU Affero General Public License v3.0")
+                url.set("https://www.gnu.org/licenses/agpl-3.0.txt")
+            }
+        }
+        developers {
+            developer {
+                id.set("AlepandoCR")
+                name.set("AlepandoCR")
+            }
+        }
+        scm {
+            connection.set("scm:git:git://github.com/AlepandoCR/Spartan.git")
+            developerConnection.set("scm:git:ssh://github.com/AlepandoCR/Spartan.git")
+            url.set("https://github.com/AlepandoCR/Spartan")
+        }
+    }
+
+    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL, automaticRelease = true)
+}
+
 
 publishing {
-    publications {
-        create<MavenPublication>("api") {
+    publications.withType<MavenPublication>().configureEach {
+        if (name == "maven") {
+            artifacts.clear()
+
             if (prebuiltApiJar.isNullOrBlank()) {
-                from(components["java"])
-                if (!nativeClassifier.isNullOrBlank()) {
-                    artifact(tasks.named("jar")) {
+                artifact(tasks.named("jar")) {
+                    if (!nativeClassifier.isNullOrBlank()) {
                         classifier = nativeClassifier
                     }
                 }
             } else {
                 artifact(file(prebuiltApiJar))
             }
-            groupId = project.group.toString()
-            artifactId = "spartan-api"
-            version = project.version.toString()
-        }
-    }
-    repositories {
-        if (!mavenUrl.isNullOrBlank()) {
-            maven {
-                url = uri(mavenUrl)
-                credentials {
-                    username = mavenUser
-                    password = mavenPass
-                }
-            }
+
+            artifact(emptyJavadocJar)
+            artifact(emptySourcesJar)
         }
     }
 }

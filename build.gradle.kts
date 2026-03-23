@@ -1,5 +1,12 @@
+import com.vanniktech.maven.publish.SonatypeHost
+
 plugins {
     id("base")
+    id("com.vanniktech.maven.publish.base") version "0.29.0"
+}
+
+mavenPublishing {
+    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL, true)
 }
 
 tasks {
@@ -18,4 +25,3 @@ tasks {
         )
     }
 }
-

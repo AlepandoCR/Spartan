@@ -5,11 +5,15 @@ import java.util.Properties
 plugins {
     id("java")
     id("com.gradleup.shadow") version "8.3.5"
-    id("maven-publish")
+    id("com.vanniktech.maven.publish")
 }
 
 group = "org.spartan.internal"
 version = "1.0.0"
+
+java {
+    withSourcesJar()
+}
 
 repositories {
     mavenCentral()
@@ -28,7 +32,6 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-
 val generateNativeBindings by tasks.registering(Exec::class) {
     description = "Generates Java FFM bindings from C++ source"
     group = "build"
@@ -43,10 +46,8 @@ val generateNativeBindings by tasks.registering(Exec::class) {
 
     workingDir = scriptDir
 
-    // Detect Python executable - prioritize python3, then py, then python
     val pythonCmd = when {
         System.getProperty("os.name").lowercase().contains("windows") -> {
-            // On Windows, try py first (Python launcher), then python
             listOf("py", "python3", "python").firstOrNull { cmd ->
                 try {
                     ProcessBuilder(cmd, "--version").redirectError(ProcessBuilder.Redirect.DISCARD).start().waitFor() == 0
@@ -56,7 +57,6 @@ val generateNativeBindings by tasks.registering(Exec::class) {
             } ?: "py"
         }
         else -> {
-            // On Unix-like systems, prefer python3
             listOf("python3", "python").firstOrNull { cmd ->
                 try {
                     ProcessBuilder(cmd, "--version").redirectError(ProcessBuilder.Redirect.DISCARD).start().waitFor() == 0
@@ -72,25 +72,19 @@ val generateNativeBindings by tasks.registering(Exec::class) {
         "--output", outputDir.absolutePath
     )
 
-    // Track inputs for incremental builds
     inputs.file(cppSourceFile)
     inputs.dir(scriptDir)
-
-    // Track output
     outputs.file(outputFile)
 
-    // Force regeneration on missing output (handles CI where cache might not exist)
     doFirst {
         if (!outputFile.exists()) {
             logger.info("SpartanNative.java not found, forcing regeneration")
-            // Ensure output directory exists
             outputDir.mkdirs()
         }
     }
 }
 
 tasks {
-
     compileJava {
         dependsOn(generateNativeBindings)
     }
@@ -105,8 +99,6 @@ tasks {
         filteringCharset = "UTF-8"
         filesMatching("plugin.yml") {
             expand(props)
-
-
         }
 
         val nativeLibDir = providers.gradleProperty("nativeLibDir").orNull
@@ -117,7 +109,6 @@ tasks {
         }
 
         val libraryDestinationPath = "native"
-        // copy library files from cmake build for FFM bindings
         from(coreLibrarySource) {
             include("*.dll", "*.so", "*.dylib")
             into(libraryDestinationPath)
@@ -134,6 +125,9 @@ tasks {
         mergeServiceFiles()
     }
 
+    named<Jar>("sourcesJar") {
+        dependsOn(generateNativeBindings)
+    }
 
     build {
         dependsOn(shadowJar)
@@ -150,42 +144,70 @@ fun loadDotEnv(rootDir: File): Properties {
 }
 
 val dotEnv = loadDotEnv(rootProject.projectDir)
-val mavenUrl = System.getenv("MAVEN_URL") ?: dotEnv.getProperty("MAVEN_URL")
 val mavenUser = System.getenv("MAVEN_USERNAME") ?: dotEnv.getProperty("MAVEN_USERNAME")
 val mavenPass = System.getenv("MAVEN_PASSWORD") ?: dotEnv.getProperty("MAVEN_PASSWORD")
+
+if (mavenUser != null) extra["mavenCentralUsername"] = mavenUser
+if (mavenPass != null) extra["mavenCentralPassword"] = mavenPass
+
+val winJar = providers.gradleProperty("winJar").orNull
+val linuxJar = providers.gradleProperty("linuxJar").orNull
+val macJar = providers.gradleProperty("macJar").orNull
 val nativeClassifier = providers.gradleProperty("nativeClassifier").orNull
 val prebuiltInternalJar = providers.gradleProperty("prebuiltInternalJar").orNull
 
-publishing {
-    publications {
-        create<MavenPublication>("internal") {
-            if (prebuiltInternalJar.isNullOrBlank()) {
-                artifact(tasks.named("shadowJar")) {
-                    if (!nativeClassifier.isNullOrBlank()) {
-                        classifier = nativeClassifier
-                    }
-                }
-            } else {
-                artifact(file(prebuiltInternalJar)) {
-                    if (!nativeClassifier.isNullOrBlank()) {
-                        classifier = nativeClassifier
-                    }
-                }
+val emptyJavadocJar by tasks.registering(Jar::class) { archiveClassifier.set("javadoc") }
+val emptySourcesJar by tasks.registering(Jar::class) { archiveClassifier.set("sources") }
+
+mavenPublishing {
+    coordinates(project.group.toString(), "spartan-internal", project.version.toString())
+
+    pom {
+        name.set("Spartan Internal")
+        description.set("Internal implementation for Spartan")
+        url.set("https://github.com/AlepandoCR/Spartan")
+        licenses {
+            license {
+                name.set("GNU Affero General Public License v3.0")
+                url.set("https://www.gnu.org/licenses/agpl-3.0.txt")
             }
-            groupId = project.group.toString()
-            artifactId = "spartan-internal"
-            version = project.version.toString()
+        }
+        developers {
+            developer {
+                id.set("AlepandoCR")
+                name.set("AlepandoCR")
+            }
+        }
+        scm {
+            connection.set("scm:git:git://github.com/AlepandoCR/Spartan.git")
+            developerConnection.set("scm:git:ssh://github.com/AlepandoCR/Spartan.git")
+            url.set("https://github.com/AlepandoCR/Spartan")
         }
     }
-    repositories {
-        if (!mavenUrl.isNullOrBlank()) {
-            maven {
-                url = uri(mavenUrl)
-                credentials {
-                    username = mavenUser
-                    password = mavenPass
+}
+
+publishing {
+    publications.withType<MavenPublication>().configureEach {
+        if (name == "maven") {
+            artifacts.clear()
+
+            if (!winJar.isNullOrBlank() || !linuxJar.isNullOrBlank() || !macJar.isNullOrBlank()) {
+                if (!winJar.isNullOrBlank()) artifact(file(winJar)) { classifier = "windows" }
+                if (!linuxJar.isNullOrBlank()) artifact(file(linuxJar)) { classifier = "linux" }
+                if (!macJar.isNullOrBlank()) artifact(file(macJar)) { classifier = "macos" }
+            }
+            else if (!prebuiltInternalJar.isNullOrBlank()) {
+                artifact(file(prebuiltInternalJar)) {
+                    if (!nativeClassifier.isNullOrBlank()) classifier = nativeClassifier
+                }
+            } else {
+                artifact(tasks.named("shadowJar")) {
+                    if (!nativeClassifier.isNullOrBlank()) classifier = nativeClassifier
                 }
             }
+
+            artifact(emptyJavadocJar)
+            artifact(emptySourcesJar)
         }
     }
 }
