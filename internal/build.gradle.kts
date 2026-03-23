@@ -11,10 +11,6 @@ plugins {
 group = "org.spartan.internal"
 version = "1.0.0"
 
-java {
-    withSourcesJar()
-}
-
 repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/") {
@@ -31,6 +27,15 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
+
+val emptyJavadocJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("javadoc")
+}
+
+val emptySourcesJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("sources")
+}
+
 
 val generateNativeBindings by tasks.registering(Exec::class) {
     description = "Generates Java FFM bindings from C++ source"
@@ -93,6 +98,7 @@ tasks {
         jvmArgs("--enable-native-access=ALL-UNNAMED")
     }
 
+    // Fix para dependencias implícitas en Gradle 9+
     withType<GenerateModuleMetadata>().configureEach {
         dependsOn(emptyJavadocJar, emptySourcesJar)
     }
@@ -133,12 +139,14 @@ tasks {
         mergeServiceFiles()
     }
 
-    named<Jar>("sourcesJar") {
-        dependsOn(generateNativeBindings)
-    }
-
     build {
         dependsOn(shadowJar)
+    }
+
+    withType<Jar>().configureEach {
+        if (name.contains("sources", ignoreCase = true)) {
+            dependsOn(generateNativeBindings)
+        }
     }
 }
 
@@ -161,11 +169,8 @@ if (mavenPass != null) extra["mavenCentralPassword"] = mavenPass
 val winJar = providers.gradleProperty("winJar").orNull
 val linuxJar = providers.gradleProperty("linuxJar").orNull
 val macJar = providers.gradleProperty("macJar").orNull
-val nativeClassifier = providers.gradleProperty("nativeClassifier").orNull
+val nativeClassifierProp = providers.gradleProperty("nativeClassifier").orNull
 val prebuiltInternalJar = providers.gradleProperty("prebuiltInternalJar").orNull
-
-val emptyJavadocJar by tasks.registering(Jar::class) { archiveClassifier.set("javadoc") }
-val emptySourcesJar by tasks.registering(Jar::class) { archiveClassifier.set("sources") }
 
 mavenPublishing {
     coordinates(project.group.toString(), "spartan-internal", project.version.toString())
@@ -193,6 +198,9 @@ mavenPublishing {
             url.set("https://github.com/AlepandoCR/Spartan")
         }
     }
+
+    publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL, true)
+    signAllPublications()
 }
 
 publishing {
@@ -207,11 +215,11 @@ publishing {
             }
             else if (!prebuiltInternalJar.isNullOrBlank()) {
                 artifact(file(prebuiltInternalJar)) {
-                    if (!nativeClassifier.isNullOrBlank()) classifier = nativeClassifier
+                    if (!nativeClassifierProp.isNullOrBlank()) classifier = nativeClassifierProp
                 }
             } else {
                 artifact(tasks.named("shadowJar")) {
-                    if (!nativeClassifier.isNullOrBlank()) classifier = nativeClassifier
+                    if (!nativeClassifierProp.isNullOrBlank()) classifier = nativeClassifierProp
                 }
             }
 

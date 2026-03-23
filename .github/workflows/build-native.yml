@@ -164,23 +164,22 @@ jobs:
 
       - name: Publish API to Sonatype Central
         env:
-          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_PASSWORD }}
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.ORG_GRADLE_PROJECT_signingInMemoryKey }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.ORG_GRADLE_PROJECT_signingInMemoryKeyPassword }}
           SKIP_NATIVE_BINDINGS: "1"
         run: |
-            echo "Publishing API to Sonatype Central"
-            ./gradlew :api:publish -PprebuiltApiJar="$API_JAR" -x test
+          echo "Publishing API to Sonatype Central"
+          ./gradlew :api:publishAndReleaseToMavenCentral -PprebuiltApiJar="$API_JAR" -x test
 
       - name: Publish ALL Internal Artifacts to Sonatype Central
         env:
-          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
-
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_PASSWORD }}
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.ORG_GRADLE_PROJECT_signingInMemoryKey }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.ORG_GRADLE_PROJECT_signingInMemoryKeyPassword }}
           SKIP_NATIVE_BINDINGS: "1"
         run: |
-            echo "Publishing Internal (Win, Linux, Mac) to Sonatype Central"
-            ./gradlew :internal:publish -PwinJar="$INTERNAL_WIN" -PlinuxJar="$INTERNAL_LINUX" -PmacJar="$INTERNAL_MAC" -x test
+          echo "Publishing Internal (Win, Linux, Mac) to Sonatype Central"
+          ./gradlew :internal:publishAndReleaseToMavenCentral -PwinJar="$INTERNAL_WIN" -PlinuxJar="$INTERNAL_LINUX" -PmacJar="$INTERNAL_MAC" -x test

@@ -1,4 +1,3 @@
-import com.vanniktech.maven.publish.SonatypeHost
 import java.util.Properties
 
 plugins {
@@ -25,10 +24,19 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-tasks{
+val emptyJavadocJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("javadoc")
+}
+
+val emptySourcesJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("sources")
+}
+
+tasks {
     test {
         useJUnitPlatform()
     }
+
 
     withType<GenerateModuleMetadata>().configureEach {
         dependsOn(emptyJavadocJar, emptySourcesJar)
@@ -37,8 +45,8 @@ tasks{
     withType<GenerateMavenPom>().configureEach {
         dependsOn(emptyJavadocJar, emptySourcesJar)
     }
-
 }
+
 
 fun loadDotEnv(rootDir: File): Properties {
     val props = Properties()
@@ -58,9 +66,6 @@ if (mavenPass != null) extra["mavenCentralPassword"] = mavenPass
 
 val prebuiltApiJar = providers.gradleProperty("prebuiltApiJar").orNull
 val nativeClassifier = providers.gradleProperty("nativeClassifier").orNull
-
-val emptyJavadocJar by tasks.registering(Jar::class) { archiveClassifier.set("javadoc") }
-val emptySourcesJar by tasks.registering(Jar::class) { archiveClassifier.set("sources") }
 
 mavenPublishing {
     coordinates(project.group.toString(), "spartan-api", project.version.toString())
@@ -88,8 +93,10 @@ mavenPublishing {
             url.set("https://github.com/AlepandoCR/Spartan")
         }
     }
-}
 
+    publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL, true)
+    signAllPublications()
+}
 
 publishing {
     publications.withType<MavenPublication>().configureEach {
