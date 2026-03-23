@@ -24,13 +24,6 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-val emptyJavadocJar by tasks.registering(Jar::class) {
-    archiveClassifier.set("javadoc")
-}
-
-val emptySourcesJar by tasks.registering(Jar::class) {
-    archiveClassifier.set("sources")
-}
 
 tasks {
     test {
@@ -40,10 +33,6 @@ tasks {
 
     withType<GenerateModuleMetadata>().configureEach {
         enabled = false
-    }
-
-    withType<GenerateMavenPom>().configureEach {
-        dependsOn(emptyJavadocJar, emptySourcesJar)
     }
 }
 
@@ -104,17 +93,10 @@ publishing {
             artifacts.clear()
 
             if (prebuiltApiJar.isNullOrBlank()) {
-                artifact(tasks.named("jar")) {
-                    if (!nativeClassifier.isNullOrBlank()) {
-                        classifier = nativeClassifier
-                    }
-                }
+                from(components["java"])
             } else {
                 artifact(file(prebuiltApiJar))
             }
-
-            artifact(emptyJavadocJar)
-            artifact(emptySourcesJar)
         }
     }
 }

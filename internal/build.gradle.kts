@@ -28,14 +28,6 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-val emptyJavadocJar by tasks.registering(Jar::class) {
-    archiveClassifier.set("javadoc")
-}
-
-val emptySourcesJar by tasks.registering(Jar::class) {
-    archiveClassifier.set("sources")
-}
-
 
 val generateNativeBindings by tasks.registering(Exec::class) {
     description = "Generates Java FFM bindings from C++ source"
@@ -102,12 +94,8 @@ tasks {
         enabled = false
     }
 
-    withType<GenerateMavenPom>().configureEach {
-        dependsOn(emptyJavadocJar, emptySourcesJar)
-    }
-
     withType<Jar>().configureEach {
-        if (name.contains("sources", ignoreCase = true)) {
+        if (name.contains("sources", ignoreCase = true) || name.contains("javadoc", ignoreCase = true)) {
             dependsOn(generateNativeBindings)
         }
     }
@@ -223,9 +211,6 @@ publishing {
                     if (!nativeClassifierProp.isNullOrBlank()) classifier = nativeClassifierProp
                 }
             }
-
-            artifact(emptyJavadocJar)
-            artifact(emptySourcesJar)
         }
     }
 }
