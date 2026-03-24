@@ -8,6 +8,11 @@ plugins {
 group = "org.spartan.api"
 version = "1.0.0"
 
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
 repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/") {
@@ -24,22 +29,17 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-
-val customJavadocJar by tasks.registering(Jar::class) {
-    archiveClassifier.set("javadoc")
-}
-
-val customSourcesJar by tasks.registering(Jar::class) {
-    archiveClassifier.set("sources")
-    from(sourceSets.main.get().allSource)
-}
-
 tasks {
     test {
         useJUnitPlatform()
     }
 
     withType<GenerateModuleMetadata>().configureEach {
+        enabled = false
+    }
+
+    // Avoid duplicate javadoc artifacts in the publication.
+    matching { it.name == "mavenPlainJavadocJar" }.configureEach {
         enabled = false
     }
 }
@@ -97,23 +97,20 @@ mavenPublishing {
 publishing {
     publications.withType<MavenPublication>().configureEach {
         if (name == "maven") {
-
             artifacts.clear()
 
             if (!prebuiltApiJar.isNullOrBlank()) {
                 artifact(file(prebuiltApiJar)) {
                     if (!nativeClassifier.isNullOrBlank()) classifier = nativeClassifier
                 }
-            }
-            else {
+            } else {
                 artifact(tasks.named("jar")) {
                     if (!nativeClassifier.isNullOrBlank()) classifier = nativeClassifier
                 }
             }
 
-
-            artifact(customJavadocJar)
-            artifact(customSourcesJar)
+            artifact(tasks.named("sourcesJar"))
+            artifact(tasks.named("javadocJar"))
         }
     }
 }
