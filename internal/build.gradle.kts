@@ -103,6 +103,11 @@ tasks {
         enabled = false
     }
 
+    // Avoid duplicate javadoc artifacts in the publication.
+    matching { it.name == "mavenPlainJavadocJar" }.configureEach {
+        enabled = false
+    }
+
     processResources {
         val props = mapOf("version" to version)
         inputs.properties(props)
