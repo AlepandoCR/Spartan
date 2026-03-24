@@ -2,6 +2,7 @@ package org.spartan.internal.engine.model;
 
 import org.jetbrains.annotations.NotNull;
 import org.spartan.api.engine.action.SpartanActionManager;
+import org.spartan.api.engine.action.type.SpartanAction;
 import org.spartan.api.engine.model.CuriosityDrivenRecurrentSoftActorCriticModel; // Add import
 import org.spartan.api.engine.config.CuriosityDrivenRecurrentSoftActorCriticConfig;
 import org.spartan.api.engine.config.RecurrentSoftActorCriticConfig;
@@ -10,6 +11,7 @@ import org.spartan.api.engine.context.SpartanContext;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.List;
 
 /**
  * Concrete implementation of Curiosity-Driven Recurrent Soft Actor-Critic model.
@@ -26,6 +28,7 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelImpl
     private final int criticWeightsCount;
 
     private final SpartanActionManager actionManager;
+    private final List<SpartanAction> actions;
     private double episodeReward = 0.0;
 
     public CuriosityDrivenRecurrentSoftActorCriticModelImpl(
@@ -52,6 +55,7 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelImpl
         );
 
         this.actionManager = actionManager;
+        this.actions = List.copyOf(actionManager.getActions());
 
 
         long criticWeightCountLong = SpartanModelAllocator.calculateCuriosityDrivenRecurrentSoftActorCriticCriticWeightCount(
@@ -122,5 +126,14 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelImpl
 
     public RecurrentSoftActorCriticConfig getEmbeddedRecurrentSoftActorCriticConfig() {
         return config.recurrentSoftActorCriticConfig();
+    }
+
+    @Override
+    protected void postTickActions() {
+        int limit = Math.min(actions.size(), actionCount);
+        for (int i = 0; i < limit; i++) {
+            double rawOutput = actionOutputBuffer.getAtIndex(ValueLayout.JAVA_DOUBLE, i);
+            actions.get(i).tick(rawOutput);
+        }
     }
 }

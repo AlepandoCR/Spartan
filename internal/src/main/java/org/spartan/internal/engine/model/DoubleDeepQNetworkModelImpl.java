@@ -2,6 +2,7 @@ package org.spartan.internal.engine.model;
 
 import org.jetbrains.annotations.NotNull;
 import org.spartan.api.engine.action.SpartanActionManager;
+import org.spartan.api.engine.action.type.SpartanAction;
 import org.spartan.api.engine.model.DoubleDeepQNetworkModel; // Add import
 import org.spartan.api.engine.config.DoubleDeepQNetworkConfig;
 import org.spartan.api.engine.context.SpartanContext;
@@ -9,6 +10,7 @@ import org.spartan.api.engine.context.SpartanContext;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.List;
 
 /**
  * Concrete implementation of Double Deep Q-Network (DDQN) model.
@@ -37,6 +39,7 @@ public class DoubleDeepQNetworkModelImpl
 
     // Action management
     private final SpartanActionManager actionManager;
+    private final List<SpartanAction> actions;
 
     // Episode state
     private double episodeReward = 0.0;
@@ -71,6 +74,7 @@ public class DoubleDeepQNetworkModelImpl
         );
 
         this.actionManager = actionManager;
+        this.actions = List.copyOf(actionManager.getActions());
 
         this.criticWeightsCount = 1;
         this.criticWeightsBuffer = arena.allocate(ValueLayout.JAVA_DOUBLE, 1 + SIMD_PADDING_DOUBLES);
@@ -194,6 +198,15 @@ public class DoubleDeepQNetworkModelImpl
         int count = Math.min(buffer.length, actionCount);
         for (int i = 0; i < count; i++) {
             buffer[i] = actionOutputBuffer.getAtIndex(ValueLayout.JAVA_DOUBLE, i);
+        }
+    }
+
+    @Override
+    protected void postTickActions() {
+        int limit = Math.min(actions.size(), actionCount);
+        for (int i = 0; i < limit; i++) {
+            double rawOutput = actionOutputBuffer.getAtIndex(ValueLayout.JAVA_DOUBLE, i);
+            actions.get(i).tick(rawOutput);
         }
     }
 }

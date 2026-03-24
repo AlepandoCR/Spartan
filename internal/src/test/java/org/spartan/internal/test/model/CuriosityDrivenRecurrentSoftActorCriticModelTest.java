@@ -38,7 +38,7 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelTest {
 
     @BeforeAll
     static void initializeNativeEngine() {
-        new SpartanConfigFactoryServiceProviderImpl();
+            new SpartanConfigFactoryServiceProviderImpl();
         try {
             SpartanNative.spartanInit();
             nativeEngineInitialized = true;

@@ -3,12 +3,14 @@ package org.spartan.internal.engine.model;
 import org.jetbrains.annotations.NotNull;
 import org.spartan.api.engine.model.RecurrentSoftActorCriticModel;
 import org.spartan.api.engine.action.SpartanActionManager;
+import org.spartan.api.engine.action.type.SpartanAction;
 import org.spartan.api.engine.config.RecurrentSoftActorCriticConfig;
 import org.spartan.api.engine.context.SpartanContext;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.List;
 
 /**
  * Concrete implementation of Recurrent Soft Actor-Critic (RSAC) model.
@@ -34,6 +36,7 @@ public class RecurrentSoftActorCriticModelImpl
 
     // Action management
     private final SpartanActionManager actionManager;
+    private final List<SpartanAction> actions;
 
     // Episode state
     private double episodeReward = 0.0;
@@ -68,6 +71,7 @@ public class RecurrentSoftActorCriticModelImpl
         );
 
         this.actionManager = actionManager;
+        this.actions = List.copyOf(actionManager.getActions());
 
         // Allocate critic weights buffer and cache count
         long criticWeightCountLong = SpartanModelAllocator.calculateRSACCriticWeightCount(config, requireContextSize(context), actionManager.getActions().size());
@@ -161,5 +165,14 @@ public class RecurrentSoftActorCriticModelImpl
             actions[i] = actionOutputBuffer.getAtIndex(ValueLayout.JAVA_DOUBLE, i);
         }
         return actions;
+    }
+
+    @Override
+    protected void postTickActions() {
+        int limit = Math.min(actions.size(), actionCount);
+        for (int i = 0; i < limit; i++) {
+            double rawOutput = actionOutputBuffer.getAtIndex(ValueLayout.JAVA_DOUBLE, i);
+            actions.get(i).tick(rawOutput);
+        }
     }
 }

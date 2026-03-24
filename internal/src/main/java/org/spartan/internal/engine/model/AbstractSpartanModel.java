@@ -11,6 +11,7 @@ import org.spartan.internal.bridge.SpartanNative;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.file.Path;
 
 /**
@@ -129,6 +130,11 @@ public abstract class AbstractSpartanModel<SpartanModelConfigType extends Sparta
         if (context instanceof SpartanContextImpl impl) impl.syncCleanSizes(agentIdentifier);
         int result = SpartanNative.spartanTickAgent(agentIdentifier, reward);
         if (result != 0) throw new SpartanNativeException("Native tick failed", result);
+        postTickActions();
+    }
+
+    protected void postTickActions() {
+        // Hook for action-based models to execute tasks after native inference.
     }
 
     @Override public void close() {
