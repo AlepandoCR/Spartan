@@ -168,7 +168,7 @@ val nativeClassifierProp = providers.gradleProperty("nativeClassifier").orNull
 val prebuiltInternalJar = providers.gradleProperty("prebuiltInternalJar").orNull
 
 mavenPublishing {
-    coordinates(project.group.toString(), "spartan-internal", project.version.toString())
+    coordinates("io.github.alepandocr", "spartan-internal", project.version.toString())
 
     pom {
         name.set("Spartan Internal")

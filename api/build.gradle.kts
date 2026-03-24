@@ -64,7 +64,7 @@ val prebuiltApiJar = providers.gradleProperty("prebuiltApiJar").orNull
 val nativeClassifier = providers.gradleProperty("nativeClassifier").orNull
 
 mavenPublishing {
-    coordinates(project.group.toString(), "spartan-api", project.version.toString())
+    coordinates("io.github.alepandocr", "spartan-api", project.version.toString())
 
     pom {
         name.set("Spartan API")
