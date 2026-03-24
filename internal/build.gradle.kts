@@ -11,6 +11,11 @@ plugins {
 group = "org.spartan.internal"
 version = "1.0.0"
 
+java{
+    withSourcesJar()
+    withJavadocJar()
+}
+
 repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/") {
@@ -86,18 +91,16 @@ tasks {
         dependsOn(generateNativeBindings)
     }
 
+    withType<Jar>().configureEach {
+        dependsOn(generateNativeBindings)
+    }
+
     withType<JavaExec> {
         jvmArgs("--enable-native-access=ALL-UNNAMED")
     }
 
     withType<GenerateModuleMetadata>().configureEach {
         enabled = false
-    }
-
-    withType<Jar>().configureEach {
-        if (name.contains("sources", ignoreCase = true) || name.contains("javadoc", ignoreCase = true)) {
-            dependsOn(generateNativeBindings)
-        }
     }
 
     processResources {
@@ -135,8 +138,6 @@ tasks {
     build {
         dependsOn(shadowJar)
     }
-
-
 }
 
 fun loadDotEnv(rootDir: File): Properties {
@@ -201,8 +202,7 @@ publishing {
                 if (!winJar.isNullOrBlank()) artifact(file(winJar)) { classifier = "windows" }
                 if (!linuxJar.isNullOrBlank()) artifact(file(linuxJar)) { classifier = "linux" }
                 if (!macJar.isNullOrBlank()) artifact(file(macJar)) { classifier = "macos" }
-            }
-            else if (!prebuiltInternalJar.isNullOrBlank()) {
+            } else if (!prebuiltInternalJar.isNullOrBlank()) {
                 artifact(file(prebuiltInternalJar)) {
                     if (!nativeClassifierProp.isNullOrBlank()) classifier = nativeClassifierProp
                 }
@@ -211,6 +211,9 @@ publishing {
                     if (!nativeClassifierProp.isNullOrBlank()) classifier = nativeClassifierProp
                 }
             }
+
+            artifact(tasks.named("sourcesJar"))
+            artifact(tasks.named("javadocJar"))
         }
     }
 }

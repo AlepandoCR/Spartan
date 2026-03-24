@@ -25,17 +25,24 @@ dependencies {
 }
 
 
+val customJavadocJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("javadoc")
+}
+
+val customSourcesJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("sources")
+    from(sourceSets.main.get().allSource)
+}
+
 tasks {
     test {
         useJUnitPlatform()
     }
 
-
     withType<GenerateModuleMetadata>().configureEach {
         enabled = false
     }
 }
-
 
 fun loadDotEnv(rootDir: File): Properties {
     val props = Properties()
@@ -90,13 +97,23 @@ mavenPublishing {
 publishing {
     publications.withType<MavenPublication>().configureEach {
         if (name == "maven") {
+
             artifacts.clear()
 
-            if (prebuiltApiJar.isNullOrBlank()) {
-                from(components["java"])
-            } else {
-                artifact(file(prebuiltApiJar))
+            if (!prebuiltApiJar.isNullOrBlank()) {
+                artifact(file(prebuiltApiJar)) {
+                    if (!nativeClassifier.isNullOrBlank()) classifier = nativeClassifier
+                }
             }
+            else {
+                artifact(tasks.named("jar")) {
+                    if (!nativeClassifier.isNullOrBlank()) classifier = nativeClassifier
+                }
+            }
+
+
+            artifact(customJavadocJar)
+            artifact(customSourcesJar)
         }
     }
 }
