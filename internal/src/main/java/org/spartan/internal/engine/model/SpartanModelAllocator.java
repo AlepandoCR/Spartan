@@ -865,11 +865,9 @@ public final class SpartanModelAllocator {
      * @throws IllegalArgumentException if the config type is unknown
      */
     public static MemorySegment serialize(Arena arena, SpartanModelConfig config, int stateSize, int actionSize) {
-        if (config instanceof RecurrentSoftActorCriticConfig rsac) {
-            // Check if it's actually a CuriosityDriven config which extends RSAC but is a distinct type in C++
-            if (config instanceof CuriosityDrivenRecurrentSoftActorCriticConfig curiosity) {
-                return writeCuriosityDrivenRecurrentSoftActorCriticConfig(arena, curiosity, stateSize, actionSize);
-            }
+        if (config instanceof CuriosityDrivenRecurrentSoftActorCriticConfig curiosity) {
+            return writeCuriosityDrivenRecurrentSoftActorCriticConfig(arena, curiosity, stateSize, actionSize);
+        } else if (config instanceof RecurrentSoftActorCriticConfig rsac) {
             return writeRSACConfig(arena, rsac, stateSize, actionSize);
         } else if (config instanceof DoubleDeepQNetworkConfig ddqn) {
             return writeDDQNConfig(arena, ddqn, stateSize, actionSize);
