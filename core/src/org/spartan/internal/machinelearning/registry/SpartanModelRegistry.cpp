@@ -21,6 +21,13 @@ namespace org::spartan::internal::machinelearning {
     void SpartanModelRegistry::registerModel(std::unique_ptr<SpartanModel> model) {
         std::lock_guard lock(registryMutex_);
         activeModels_[model->getIdentifier()] = std::move(model);
+
+        auto newSnapshot = std::make_shared<std::vector<SpartanModel*>>();
+        newSnapshot->reserve(activeModels_.size());
+        for (auto& modelEntry : activeModels_ | std::views::values) {
+            newSnapshot->push_back(modelEntry.get());
+        }
+        std::atomic_store(&tickSnapshot_, newSnapshot);
     }
 
     void SpartanModelRegistry::unregisterModel(const uint64_t agentIdentifier) {
@@ -30,28 +37,29 @@ namespace org::spartan::internal::machinelearning {
             iterator->second->unbind();
             idleModels_.push_back(std::move(iterator->second));
             activeModels_.erase(iterator);
+
+            auto newSnapshot = std::make_shared<std::vector<SpartanModel*>>();
+            newSnapshot->reserve(activeModels_.size());
+            for (auto& modelEntry : activeModels_ | std::views::values) {
+                newSnapshot->push_back(modelEntry.get());
+            }
+            std::atomic_store(&tickSnapshot_, newSnapshot);
         }
     }
 
     void SpartanModelRegistry::tickAll() {
-        std::lock_guard lock(registryMutex_);
-
-        // the map structure; each model's processTick() is thread-safe by contract
-        std::vector<SpartanModel*> modelsToTick;
-        modelsToTick.reserve(activeModels_.size());
-        for (auto& modelEntry : activeModels_ | std::views::values) {
-            modelsToTick.push_back(modelEntry.get());
-        }
+        auto snapshot = std::atomic_load(&tickSnapshot_);
+        if (!snapshot) return;
 
         // Single virtual call per model  -  Frontier A overhead is O(1) per agent.
         // Use parallel execution on supported platforms, sequential otherwise.
 #if defined(__cpp_lib_execution) && !defined(__clang__)
-        std::for_each(std::execution::par, modelsToTick.begin(), modelsToTick.end(),
+        std::for_each(std::execution::par, snapshot->begin(), snapshot->end(),
             [](SpartanModel* model) {
                 model->processTick();
             });
 #else
-        std::for_each(modelsToTick.begin(), modelsToTick.end(),
+        std::for_each(snapshot->begin(), snapshot->end(),
             [](SpartanModel* model) {
                 model->processTick();
             });

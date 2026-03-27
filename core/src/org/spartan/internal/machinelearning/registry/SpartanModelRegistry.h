@@ -143,6 +143,9 @@ namespace org::spartan::internal::machinelearning {
 
         /** @brief Pool of idle models ready for reuse to minimize allocations. */
         std::vector<std::unique_ptr<SpartanModel>> idleModels_;
+
+        /** @brief RCU snapshot of models for lock-free parallel ticking. */
+        std::shared_ptr<std::vector<SpartanModel*>> tickSnapshot_;
     };
 
 } // namespace org::spartan::core::machinelearning

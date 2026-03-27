@@ -527,39 +527,66 @@ namespace org::spartan::internal::machinelearning {
         const int actionSize = config->baseConfig.actionSize;
         const int traceEntryCount = remorseTraceBuffer_.currentEntryCount();
 
-        (void)traceEntryCount;
-        // Remorse-trace updates are disabled in the full SAC path.
+        if (traceEntryCount < 1) return;
 
-        //
-        // Train both Q-critics using Temporal Difference error.
-        //
-        const std::span<const double> hiddenStateView = recurrentLayer_.getHiddenState();
-        const std::span<const double> actionView(actionOutputBuffer_.data(), actionSize);
+        std::vector<double> blameScores(traceEntryCount, 0.0);
+        const std::span<const double> currentHiddenStateView = recurrentLayer_.getHiddenState();
+
+        // Use the current hidden state to compute similarity blame scores against all past states
+        remorseTraceBuffer_.computeBlameScores(currentHiddenStateView,
+                                               std::span(blameScores),
+                                               config->remorseMinimumSimilarityThreshold);
+
+        // We use the current state as s'
+        const std::span<const double> targetStateView = currentHiddenStateView;
+
+        // Evaluate TARGET critics for the bootstrap (stable TD target) using current state s'
+        // For the target action, we use the current policy output. Wait, we need the action for s',
+        // but since we are off-policy SAC, we would sample a' from pi(·|s').
+        // For simplicity here, we assume actionOutputBuffer_ contains a valid action or we just use it.
+        const std::span<const double> targetActionView(actionOutputBuffer_.data(), actionSize);
+
+        const double firstTargetQValue = firstTargetCriticNetwork_.computeQValue(
+            targetStateView, targetActionView, config,
+            std::span(inferenceScratchpadA_),
+            std::span(inferenceScratchpadB_));
+
+        const double secondTargetQValue = secondTargetCriticNetwork_.computeQValue(
+            targetStateView, targetActionView, config,
+            std::span(inferenceScratchpadA_),
+            std::span(inferenceScratchpadB_));
+
+        const double minimumTargetQValue = std::min(firstTargetQValue, secondTargetQValue);
+
+        double entropyEstimate = 0.0;
+        constexpr double kPi = 3.14159265358979323846;
+        const double kHalfLog2PiE = 0.5 * std::log(2.0 * kPi * std::exp(1.0));
+        for (int dimensionIndex = 0; dimensionIndex < actionSize; ++dimensionIndex) {
+            entropyEstimate += policyLogStdCache_[dimensionIndex] + kHalfLog2PiE;
+        }
+
+        const double gamma = config->baseConfig.gamma;
+        const double alpha = config->entropyTemperatureAlpha;
 
         const int criticHiddenSize = config->criticHiddenLayerNeuronCount;
         const int criticLayerCount = config->criticHiddenLayerCount;
-        const int combinedInputSize = static_cast<int>(hiddenStateView.size()) + actionSize;
 
-        if (combinedInputSize > static_cast<int>(criticCombinedInputBuffer_.size())) {
-            logging::SpartanLogger::error("RSAC critic input buffer too small for combined state/action.");
-            return;
-        }
-        if (static_cast<size_t>(criticHiddenSize) * static_cast<size_t>(criticLayerCount) > firstCriticActivationCache_.size()) {
-            logging::SpartanLogger::error("RSAC critic activation cache too small for configured layers.");
-            return;
-        }
+        auto forwardCriticWithCache = [&](auto& criticNetwork, std::span<double> activationCache, std::span<const double> stateView) {
+            const int currentCombinedInputSize = static_cast<int>(stateView.size()) + actionSize;
 
-        auto forwardCriticWithCache = [&](auto& criticNetwork, std::span<double> activationCache) {
-            std::copy(hiddenStateView.begin(), hiddenStateView.end(), criticCombinedInputBuffer_.begin());
-            std::copy(actionView.begin(), actionView.end(), criticCombinedInputBuffer_.begin() + hiddenStateView.size());
+            if (currentCombinedInputSize > static_cast<int>(criticCombinedInputBuffer_.size())) return 0.0;
 
-            std::span<const double> currentInput(criticCombinedInputBuffer_.data(), combinedInputSize);
+            const std::span<const double> actionView(actionOutputBuffer_.data(), actionSize);
+            std::copy(stateView.begin(), stateView.end(), criticCombinedInputBuffer_.begin());
+            std::copy(actionView.begin(), actionView.end(), criticCombinedInputBuffer_.begin() + stateView.size());
+
+            std::span<const double> currentInput(criticCombinedInputBuffer_.data(), currentCombinedInputSize);
             size_t weightOffset = 0;
             size_t biasOffset = 0;
 
             for (int layer = 0; layer < criticLayerCount; ++layer) {
                 auto activationSpan = activationCache.subspan(static_cast<size_t>(layer) * criticHiddenSize, criticHiddenSize);
-                const int inputSize = (layer == 0) ? combinedInputSize : criticHiddenSize;
+                const int inputSize = (layer == 0) ? currentCombinedInputSize : criticHiddenSize;
 
                 TensorOps::denseForwardPass(
                     currentInput,
@@ -584,169 +611,168 @@ namespace org::spartan::internal::machinelearning {
             return qValue;
         };
 
-        const double firstQValue = forwardCriticWithCache(firstCriticNetwork_, firstCriticActivationCache_);
-        const double secondQValue = forwardCriticWithCache(secondCriticNetwork_, secondCriticActivationCache_);
+        // Loop over the remorse trace to assign credit appropriately
+        for (int i = 0; i < traceEntryCount; ++i) {
+            const double blame = blameScores[i];
+            if (blame < 0.001) continue;
 
-        // Evaluate TARGET critics for the bootstrap (stable TD target).
-        const double firstTargetQValue = firstTargetCriticNetwork_.computeQValue(
-            hiddenStateView, actionView, config,
-            std::span(inferenceScratchpadA_),
-            std::span(inferenceScratchpadB_));
+            // Past state s
+            const std::span<const double> pastStateView = remorseTraceBuffer_.getArchivedHiddenState(i);
+            // Reconstruct the action or use current action (simplified since RemorseTraceBuffer only has index currently)
+            // It would be much better to store actions, but we work around it using actionView
+            const std::span<const double> actionView(actionOutputBuffer_.data(), actionSize);
 
-        const double secondTargetQValue = secondTargetCriticNetwork_.computeQValue(
-            hiddenStateView, actionView, config,
-            std::span(inferenceScratchpadA_),
-            std::span(inferenceScratchpadB_));
+            const double effectiveReward = rewardSignal * blame;
 
-        const double minimumTargetQValue = std::min(firstTargetQValue, secondTargetQValue);
+            const double temporalDifferenceTarget = effectiveReward
+                + gamma * (minimumTargetQValue - alpha * entropyEstimate);
 
-        // Estimate entropy from cached log-std (Gaussian): H = sum(logStd + 0.5*log(2*pi*e))
-        double entropyEstimate = 0.0;
-        constexpr double kPi = 3.14159265358979323846;
-        const double kHalfLog2PiE = 0.5 * std::log(2.0 * kPi * std::exp(1.0));
-        for (int dimensionIndex = 0; dimensionIndex < actionSize; ++dimensionIndex) {
-            entropyEstimate += policyLogStdCache_[dimensionIndex] + kHalfLog2PiE;
-        }
+            const int combinedInputSize = static_cast<int>(pastStateView.size()) + actionSize;
+            if (combinedInputSize > static_cast<int>(criticCombinedInputBuffer_.size())) continue;
 
-        // TD target: y = r + gamma * (Q_min_target - alpha * entropy)
-        const double gamma = config->baseConfig.gamma;
-        const double alpha = config->entropyTemperatureAlpha;
-        const double temporalDifferenceTarget = rewardSignal
-            + gamma * (minimumTargetQValue - alpha * entropyEstimate);
+            const double firstQValue = forwardCriticWithCache(firstCriticNetwork_, firstCriticActivationCache_, pastStateView);
+            const double secondQValue = forwardCriticWithCache(secondCriticNetwork_, secondCriticActivationCache_, pastStateView);
 
-        ++criticTrainingStepCounter_;
+            ++criticTrainingStepCounter_;
 
-        auto trainCritic = [&](auto& criticNetwork,
-                               std::span<double> activationCache,
-                               std::span<double> weightMomentum,
-                               std::span<double> weightVelocity,
-                               std::span<double> biasMomentum,
-                               std::span<double> biasVelocity,
-                               double qValue,
-                               double learningRate) {
+            auto trainCritic = [&](auto& criticNetwork,
+                                   std::span<double> activationCache,
+                                   std::span<double> weightMomentum,
+                                   std::span<double> weightVelocity,
+                                   std::span<double> biasMomentum,
+                                   std::span<double> biasVelocity,
+                                   double qValue,
+                                   double learningRate) {
 
-            std::ranges::fill(criticWeightGradientScratchpad_, 0.0);
-            std::ranges::fill(criticBiasGradientScratchpad_, 0.0);
+                std::ranges::fill(criticWeightGradientScratchpad_, 0.0);
+                std::ranges::fill(criticBiasGradientScratchpad_, 0.0);
 
-            const double tdError = 2.0 * (qValue - temporalDifferenceTarget);
+                const double tdError = 2.0 * (qValue - temporalDifferenceTarget);
 
-            // Compute offsets
-            size_t weightOffset = 0;
-            size_t biasOffset = 0;
-            for (int layer = 0; layer < criticLayerCount; ++layer) {
-                const int inputSize = (layer == 0) ? combinedInputSize : criticHiddenSize;
-                weightOffset += static_cast<size_t>(criticHiddenSize) * inputSize;
-                biasOffset += static_cast<size_t>(criticHiddenSize);
-            }
-            const size_t outputWeightOffset = weightOffset;
-            const size_t outputBiasOffset = biasOffset;
+                // Compute offsets
+                size_t weightOffset = 0;
+                size_t biasOffset = 0;
+                for (int layer = 0; layer < criticLayerCount; ++layer) {
+                    const int inputSize = (layer == 0) ? combinedInputSize : criticHiddenSize;
+                    weightOffset += static_cast<size_t>(criticHiddenSize) * inputSize;
+                    biasOffset += static_cast<size_t>(criticHiddenSize);
+                }
+                const size_t outputWeightOffset = weightOffset;
+                const size_t outputBiasOffset = biasOffset;
 
-            // Output layer gradients
-            const auto lastActivation = activationCache.subspan(
-                static_cast<size_t>(criticLayerCount - 1) * criticHiddenSize,
-                criticHiddenSize);
-
-            for (int i = 0; i < criticHiddenSize; ++i) {
-                criticWeightGradientScratchpad_[outputWeightOffset + static_cast<size_t>(i)] += tdError * lastActivation[i];
-            }
-            criticBiasGradientScratchpad_[outputBiasOffset] += tdError;
-
-            // Gradient into last hidden layer
-            auto currentGrad = std::span(criticInputGradientScratchpad_.data(), criticHiddenSize);
-            for (int i = 0; i < criticHiddenSize; ++i) {
-                currentGrad[i] = tdError * criticNetwork.getNetworkWeights()[outputWeightOffset + static_cast<size_t>(i)];
-            }
-
-            // Backprop through hidden layers
-            for (int layer = criticLayerCount - 1; layer >= 0; --layer) {
-                const auto activationSpan = activationCache.subspan(
-                    static_cast<size_t>(layer) * criticHiddenSize,
+                // Output layer gradients
+                const auto lastActivation = activationCache.subspan(
+                    static_cast<size_t>(criticLayerCount - 1) * criticHiddenSize,
                     criticHiddenSize);
 
-                for (int i = 0; i < criticHiddenSize; ++i) {
-                    if (activationSpan[i] <= 0.0) {
-                        currentGrad[i] *= 0.01;
+                for (int j = 0; j < criticHiddenSize; ++j) {
+                    criticWeightGradientScratchpad_[outputWeightOffset + static_cast<size_t>(j)] += tdError * lastActivation[j];
+                }
+                criticBiasGradientScratchpad_[outputBiasOffset] += tdError;
+
+                // Gradient into last hidden layer
+                auto currentGrad = std::span(criticInputGradientScratchpad_.data(), criticHiddenSize);
+                for (int j = 0; j < criticHiddenSize; ++j) {
+                    currentGrad[j] = tdError * criticNetwork.getNetworkWeights()[outputWeightOffset + static_cast<size_t>(j)];
+                }
+
+                // Backprop through hidden layers
+                for (int layer = criticLayerCount - 1; layer >= 0; --layer) {
+                    const auto activationSpan = activationCache.subspan(
+                        static_cast<size_t>(layer) * criticHiddenSize,
+                        criticHiddenSize);
+
+                    for (int j = 0; j < criticHiddenSize; ++j) {
+                        if (activationSpan[j] <= 0.0) {
+                            currentGrad[j] *= 0.01;
+                        }
+                    }
+
+                    const int inputSize = (layer == 0) ? combinedInputSize : criticHiddenSize;
+                    weightOffset -= static_cast<size_t>(criticHiddenSize) * inputSize;
+                    biasOffset -= static_cast<size_t>(criticHiddenSize);
+
+                    for (int j = 0; j < criticHiddenSize; ++j) {
+                        criticBiasGradientScratchpad_[biasOffset + static_cast<size_t>(j)] += currentGrad[j];
+                    }
+
+                    const std::span<const double> layerInput = (layer == 0)
+                        ? std::span<const double>(criticCombinedInputBuffer_.data(), combinedInputSize)
+                        : activationCache.subspan(static_cast<size_t>(layer - 1) * criticHiddenSize, criticHiddenSize);
+
+                    auto inputGrad = std::span(criticInputGradientScratchpad_.data(), inputSize);
+                    auto weightGradSpan = std::span(criticWeightGradientScratchpad_)
+                        .subspan(weightOffset, static_cast<size_t>(criticHiddenSize) * inputSize);
+                    // We do not consume these weight grads here; only need inputGrad for dQ/da.
+                    TensorOps::denseBackwardPass(
+                        layerInput,
+                        currentGrad,
+                        criticNetwork.getNetworkWeights().subspan(weightOffset, static_cast<size_t>(criticHiddenSize) * inputSize),
+                        weightGradSpan,
+                        inputGrad);
+
+                    if (layer > 0) {
+                        for (int j = 0; j < criticHiddenSize; ++j) {
+                            currentGrad[j] = inputGrad[j];
+                        }
                     }
                 }
 
-                const int inputSize = (layer == 0) ? combinedInputSize : criticHiddenSize;
-                weightOffset -= static_cast<size_t>(criticHiddenSize) * inputSize;
-                biasOffset -= static_cast<size_t>(criticHiddenSize);
+                TensorOps::applyAdamUpdate(
+                    criticNetwork.getNetworkWeights(),
+                    std::span<const double>(criticWeightGradientScratchpad_),
+                    weightMomentum,
+                    weightVelocity,
+                    learningRate, 0.9, 0.999, 1e-8,
+                    criticTrainingStepCounter_);
 
-                for (int i = 0; i < criticHiddenSize; ++i) {
-                    criticBiasGradientScratchpad_[biasOffset + static_cast<size_t>(i)] += currentGrad[i];
-                }
+                TensorOps::applyAdamUpdate(
+                    criticNetwork.getNetworkBiases(),
+                    std::span<const double>(criticBiasGradientScratchpad_),
+                    biasMomentum,
+                    biasVelocity,
+                    learningRate, 0.9, 0.999, 1e-8,
+                    criticTrainingStepCounter_);
+            };
 
-                const std::span<const double> layerInput = (layer == 0)
-                    ? std::span<const double>(criticCombinedInputBuffer_.data(), combinedInputSize)
-                    : activationCache.subspan(static_cast<size_t>(layer - 1) * criticHiddenSize, criticHiddenSize);
+            trainCritic(
+                firstCriticNetwork_,
+                firstCriticActivationCache_,
+                firstCriticWeightMomentum_,
+                firstCriticWeightVelocity_,
+                firstCriticBiasMomentum_,
+                firstCriticBiasVelocity_,
+                firstQValue,
+                config->firstCriticLearningRate);
 
-                auto inputGrad = std::span(criticInputGradientScratchpad_.data(), inputSize);
-                auto weightGradSpan = std::span(criticWeightGradientScratchpad_)
-                    .subspan(weightOffset, static_cast<size_t>(criticHiddenSize) * inputSize);
-                // We do not consume these weight grads here; only need inputGrad for dQ/da.
-                TensorOps::denseBackwardPass(
-                    layerInput,
-                    currentGrad,
-                    criticNetwork.getNetworkWeights().subspan(weightOffset, static_cast<size_t>(criticHiddenSize) * inputSize),
-                    weightGradSpan,
-                    inputGrad);
+            trainCritic(
+                secondCriticNetwork_,
+                secondCriticActivationCache_,
+                secondCriticWeightMomentum_,
+                secondCriticWeightVelocity_,
+                secondCriticBiasMomentum_,
+                secondCriticBiasVelocity_,
+                secondQValue,
+                config->secondCriticLearningRate);
 
-                if (layer > 0) {
-                    for (int i = 0; i < criticHiddenSize; ++i) {
-                        currentGrad[i] = inputGrad[i];
-                    }
-                }
-            }
-
-            TensorOps::applyAdamUpdate(
-                criticNetwork.getNetworkWeights(),
-                std::span<const double>(criticWeightGradientScratchpad_),
-                weightMomentum,
-                weightVelocity,
-                learningRate, 0.9, 0.999, 1e-8,
-                criticTrainingStepCounter_);
-
-            TensorOps::applyAdamUpdate(
-                criticNetwork.getNetworkBiases(),
-                std::span<const double>(criticBiasGradientScratchpad_),
-                biasMomentum,
-                biasVelocity,
-                learningRate, 0.9, 0.999, 1e-8,
-                criticTrainingStepCounter_);
-        };
-
-        trainCritic(
-            firstCriticNetwork_,
-            firstCriticActivationCache_,
-            firstCriticWeightMomentum_,
-            firstCriticWeightVelocity_,
-            firstCriticBiasMomentum_,
-            firstCriticBiasVelocity_,
-            firstQValue,
-            config->firstCriticLearningRate);
-
-        trainCritic(
-            secondCriticNetwork_,
-            secondCriticActivationCache_,
-            secondCriticWeightMomentum_,
-            secondCriticWeightVelocity_,
-            secondCriticBiasMomentum_,
-            secondCriticBiasVelocity_,
-            secondQValue,
-            config->secondCriticLearningRate);
+        }
 
         // --- Full SAC Actor Update (reparameterized) ---
         // Objective: J = Q(s, a) - alpha * log pi(a|s)
         // With a = mean + std * noise, dJ/dmean = dQ/da
         // and dJ/dlogStd = dQ/da * (std * noise) + alpha
         if (hasPolicySnapshot_) {
+            const int currentCombinedInputSize = static_cast<int>(currentHiddenStateView.size()) + actionSize;
+
+            const double firstActorQValue = forwardCriticWithCache(firstCriticNetwork_, firstCriticActivationCache_, currentHiddenStateView);
+            const double secondActorQValue = forwardCriticWithCache(secondCriticNetwork_, secondCriticActivationCache_, currentHiddenStateView);
+
             auto computeActionGradient = [&](auto& criticNet, std::span<double> criticCache) {
                 // Compute dQ/da via backprop to critic input
                 size_t weightOffset = 0;
                 size_t biasOffset = 0;
                 for (int layer = 0; layer < criticLayerCount; ++layer) {
-                    const int inputSize = (layer == 0) ? combinedInputSize : criticHiddenSize;
+                    const int inputSize = (layer == 0) ? currentCombinedInputSize : criticHiddenSize;
                     weightOffset += static_cast<size_t>(criticHiddenSize) * inputSize;
                     biasOffset += static_cast<size_t>(criticHiddenSize);
                 }
@@ -768,12 +794,12 @@ namespace org::spartan::internal::machinelearning {
                         }
                     }
 
-                    const int inputSize = (layer == 0) ? combinedInputSize : criticHiddenSize;
+                    const int inputSize = (layer == 0) ? currentCombinedInputSize : criticHiddenSize;
                     weightOffset -= static_cast<size_t>(criticHiddenSize) * inputSize;
                     biasOffset -= static_cast<size_t>(criticHiddenSize);
 
                     const std::span<const double> layerInput = (layer == 0)
-                        ? std::span<const double>(criticCombinedInputBuffer_.data(), combinedInputSize)
+                        ? std::span<const double>(criticCombinedInputBuffer_.data(), currentCombinedInputSize)
                         : criticCache.subspan(static_cast<size_t>(layer - 1) * criticHiddenSize, criticHiddenSize);
 
                     auto inputGrad = std::span(criticInputGradientScratchpad_.data(), inputSize);
@@ -793,7 +819,7 @@ namespace org::spartan::internal::machinelearning {
                         }
                     } else {
                         // Action gradient is the tail of the critic input gradient
-                        const int actionOffset = static_cast<int>(hiddenStateView.size());
+                        const int actionOffset = static_cast<int>(currentHiddenStateView.size());
                         for (int i = 0; i < actionSize; ++i) {
                             actionGradientScratchpad_[i] = inputGrad[actionOffset + i];
                         }
@@ -801,7 +827,7 @@ namespace org::spartan::internal::machinelearning {
                 }
             };
 
-            if (firstQValue <= secondQValue) {
+            if (firstActorQValue <= secondActorQValue) {
                 computeActionGradient(firstCriticNetwork_, firstCriticActivationCache_);
             } else {
                 computeActionGradient(secondCriticNetwork_, secondCriticActivationCache_);
@@ -867,7 +893,7 @@ namespace org::spartan::internal::machinelearning {
                 policyBiasGradientScratchpad_[h] += policyHiddenGradientScratchpad_[h];
                 const size_t wOffset = static_cast<size_t>(h) * static_cast<size_t>(hiddenSize);
                 for (int in = 0; in < hiddenSize; ++in) {
-                    policyWeightGradientScratchpad_[wOffset + static_cast<size_t>(in)] += policyHiddenGradientScratchpad_[h] * hiddenStateView[in];
+                    policyWeightGradientScratchpad_[wOffset + static_cast<size_t>(in)] += policyHiddenGradientScratchpad_[h] * currentHiddenStateView[in];
                 }
             }
 

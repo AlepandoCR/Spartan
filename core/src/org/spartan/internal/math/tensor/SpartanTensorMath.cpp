@@ -303,9 +303,8 @@ namespace org::spartan::internal::math::tensor {
         double* ptr = tensor.data();
         const size_t size = tensor.size();
 
-        // Use rational approximation: sigmoid(x) ≈ 0.5 + 0.125*x / (1 + |x|)
+        // Use rational approximation: sigmoid(x) ≈ 0.5 + 0.5*x / (1 + |x|)
         const SimdFloat p5 = simdBroadcast(0.5);
-        const SimdFloat p125 = simdBroadcast(0.125);
         const SimdFloat p1 = simdBroadcast(1.0);
 
         size_t i = 0;
@@ -313,14 +312,14 @@ namespace org::spartan::internal::math::tensor {
             const SimdFloat x = simdLoad(&ptr[i]);
             const SimdFloat ax = simdAbs(x);
             const SimdFloat denom = simdAdd(p1, ax);
-            const SimdFloat result = simdAdd(p5, simdDivide(simdMultiply(x, p125), denom));
+            const SimdFloat result = simdAdd(p5, simdDivide(simdMultiply(x, p5), denom));
             simdStore(&ptr[i], result);
         }
 
         // Tail loop for non-SIMD elements
         for (; i < size; ++i) {
             const double x = ptr[i];
-            ptr[i] = 0.5 + 0.125 * x / (1.0 + std::abs(x));
+            ptr[i] = 0.5 + 0.5 * x / (1.0 + std::abs(x));
         }
     }
 
