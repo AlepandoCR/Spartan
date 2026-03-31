@@ -60,7 +60,7 @@ public class AutoEncoderCompressorModelImpl
     }
 
     @Override
-    protected MemorySegment getCriticWeightsBufferInternal() { return criticWeightsBuffer; }
+    protected @NotNull MemorySegment getCriticWeightsBufferInternal() { return criticWeightsBuffer; }
 
     @Override
     protected int getCriticWeightsCount() { return criticWeightsCount; }
@@ -111,5 +111,13 @@ public class AutoEncoderCompressorModelImpl
             recon[i] = reconstructionBuffer.getAtIndex(ValueLayout.JAVA_DOUBLE, i);
         }
         return recon;
+    }
+
+    /**
+     * AutoEncoder compressor doesn't have exploration, so this is a no-op.
+     */
+    @Override
+    public void decayExploration() {
+        // AutoEncoder compressor doesn't have exploration, so this is a no-op.
     }
 }

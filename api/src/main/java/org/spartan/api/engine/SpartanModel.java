@@ -11,7 +11,7 @@ import java.nio.file.Path;
 /**
  * Represents an instance of a Machine Learning brain.
  * <p>
- * <b>Concept:</b> This is the bridge between the Java and the C++ Core .
+ * <b>Concept:</b> This is the bridge between the Java and the C++ Core
  * It holds the Neural Network weights and coordinates the learning process.
  * <p>
  * <b>Lifecycle:</b>
@@ -156,4 +156,35 @@ public interface SpartanModel<SpartanModelConfigType extends SpartanModelConfig>
      */
     @Override
     void close();
+
+    /**
+     * Creates a deep copy of this model with a new identifier.
+     * The new model will be exactly the same as the current one, but independent.
+     *
+     * @param newIdentifier The identifier for the new model
+     * @return The new cloned model
+     */
+    @NotNull
+    SpartanModel<SpartanModelConfigType> copy(@NotNull String newIdentifier);
+
+    /**
+     * Modifies the exploration rate (epsilon) live while the model is running.
+     * Note: Depending on the specific model type, this may represent epsilon for Epsilon-Greedy,
+     * or the temperature alpha for entropy-based exploration.
+     *
+     * @param newEpsilon the new exploration value.
+     */
+    void setLiveExplorationRate(double newEpsilon);
+
+    /**
+     * Retrieves the current accumulated reward for the ongoing episode.
+     *
+     * @return the total reward.
+     */
+    double getEpisodeReward();
+
+    /**
+     * Resets the accumulated reward for the new episode.
+     */
+    void resetEpisode();
 }

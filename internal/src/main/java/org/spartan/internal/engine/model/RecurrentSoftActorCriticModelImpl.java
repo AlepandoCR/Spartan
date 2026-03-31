@@ -87,7 +87,7 @@ public class RecurrentSoftActorCriticModelImpl
     }
 
     @Override
-    protected MemorySegment getCriticWeightsBufferInternal() {
+    protected @NotNull MemorySegment getCriticWeightsBufferInternal() {
         return criticWeightsBuffer;
     }
 

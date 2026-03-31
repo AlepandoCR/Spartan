@@ -7,22 +7,29 @@ import org.spartan.api.engine.config.SpartanModelConfig;
 import org.spartan.api.engine.config.SpartanMultiAgentGroupConfig;
 import org.spartan.api.engine.context.SpartanContext;
 import org.spartan.api.engine.action.type.SpartanAction;
+import org.spartan.api.exception.SpartanPersistenceException;
 import org.spartan.internal.bridge.SpartanNative;
 import org.spartan.internal.engine.context.SpartanContextImpl;
 import org.spartan.internal.engine.model.SpartanModelAllocator;
 
+import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Map;
 import java.util.Optional;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 /**
  * Implementation of SpartanMultiAgentModel.
- *
  * Key points:
  * - Receives SHARED context from user (not a copy)
  * - Each agent gets REFERENCE to this same context
@@ -56,8 +63,7 @@ public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
     private final AtomicLong nextAgentId = new AtomicLong(1);
 
     /**
-     * Constructor.
-     *
+     * Constructor
      * @param identifier      Unique identifier for this group
      * @param sharedContext   The SHARED context (not copied)
      * @param groupConfig          Configuration for all agents in this group
@@ -93,11 +99,9 @@ public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
         }
 
         // Validate context
-        if (!(sharedContext instanceof SpartanContextImpl)) {
+        if (!(sharedContext instanceof SpartanContextImpl contextImpl)) {
             throw new IllegalArgumentException("Context must be created via SpartanApi");
         }
-
-        SpartanContextImpl contextImpl = (SpartanContextImpl) sharedContext;
 
         // Ensure context is updated so we have valid sizes
         if (contextImpl.getSize() <= 0) {
@@ -261,13 +265,13 @@ public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
             throw new IllegalStateException("Multi-agent group is closed");
         }
 
-        // 1. Update SHARED context (once for all agents)
+        //  Update SHARED context (once for all agents)
         if (sharedContext instanceof SpartanContextImpl contextImpl) {
             contextImpl.update();
             refreshSharedContextBuffer(contextImpl);
         }
 
-        // 2. C++ executes all agents in parallel + critic evaluation
+        // C++ executes all agents in parallel + critic evaluation
         SpartanNative.spartanTickMultiAgent(multiAgentId);
     }
 
@@ -303,6 +307,10 @@ public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
         }
     }
 
+    /**
+     * Unregisters from C++ and releases resources.
+     * After this call, the group cannot be used.
+     */
     @Override
     public void close() {
         if (!closed) {
@@ -310,6 +318,52 @@ public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
             agentById.values().forEach(SpartanAgent::close);
             agentById.clear();
             arena.close();
+        }
+    }
+
+    @Override
+    public void save(@NotNull Path filePath) throws SpartanPersistenceException {
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(filePath))) {
+            for (SpartanAgent<ConfigType> agent : agentById.values()) {
+                ZipEntry entry = new ZipEntry(agent.getIdentifier() + ".submodel");
+                zos.putNextEntry(entry);
+
+                Path tempFile = Files.createTempFile("spartan_agent", ".tmp");
+                try {
+                    agent.saveModel(tempFile);
+                    Files.copy(tempFile, zos);
+                } finally {
+                    Files.deleteIfExists(tempFile);
+                    zos.closeEntry();
+                }
+            }
+        } catch (IOException e) {
+            throw new SpartanPersistenceException("Failed to save multi-agent model as zip", e);
+        }
+    }
+
+    @Override
+    public void load(@NotNull Path filePath) throws SpartanPersistenceException {
+        try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(filePath))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (entry.getName().endsWith(".submodel")) {
+                    String identifier = entry.getName().substring(0, entry.getName().length() - ".submodel".length());
+                    Optional<SpartanAgent<ConfigType>> agentOpt = getAgentByIdentifier(identifier);
+                    if (agentOpt.isPresent()) {
+                        Path tempFile = Files.createTempFile("spartan_agent", ".tmp");
+                        try {
+                            Files.copy(zis, tempFile, StandardCopyOption.REPLACE_EXISTING);
+                            agentOpt.get().loadModel(tempFile);
+                        } finally {
+                            Files.deleteIfExists(tempFile);
+                        }
+                    }
+                }
+                zis.closeEntry();
+            }
+        } catch (IOException e) {
+            throw new SpartanPersistenceException("Failed to load multi-agent model from zip", e);
         }
     }
 }

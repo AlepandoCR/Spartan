@@ -11,6 +11,7 @@ import org.spartan.api.engine.context.SpartanContext;
 import org.spartan.api.exception.SpartanPersistenceException;
 import org.spartan.internal.engine.context.SpartanContextImpl;
 import org.spartan.internal.bridge.SpartanNative;
+import org.spartan.internal.engine.model.SpartanConfigLayout;
 import org.spartan.internal.engine.model.SpartanModelAllocator;
 
 import java.lang.foreign.Arena;
@@ -195,6 +196,11 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
     }
 
     @Override
+    public void setLiveExplorationRate(double newEpsilon) {
+        configBuffer.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_EPSILON_OFFSET, newEpsilon);
+    }
+
+    @Override
     public void tick() {
         if (!isRegistered) throw new IllegalStateException("Model not registered");
 
@@ -226,6 +232,25 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
     @Override
     public void decayExploration() {
         SpartanNative.spartanDecayExploration(agentId);
+    }
+
+    @Override
+    public @NotNull SpartanModel<SpartanModelConfigType> copy(@NotNull String newIdentifier) {
+        long newAgentId = System.nanoTime(); // Generate unique ID
+        SpartanModelImpl<SpartanModelConfigType> newModel = new SpartanModelImpl<>(
+                newIdentifier,
+                newAgentId,
+                config,
+                context,
+                actions
+        );
+
+        // Ensure new model is ready
+        MemorySegment.copy(modelWeightsBuffer, 0, newModel.getModelWeightsBuffer(), 0, modelWeightsBuffer.byteSize());
+        MemorySegment.copy(criticWeightsBuffer, 0, newModel.getCriticWeightsBuffer(), 0, criticWeightsBuffer.byteSize());
+
+        newModel.register();
+        return newModel;
     }
 
     @Override

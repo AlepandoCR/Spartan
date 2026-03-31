@@ -34,10 +34,10 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelImpl
     public CuriosityDrivenRecurrentSoftActorCriticModelImpl(
             @NotNull String identifier,
             long agentIdentifier,
-            CuriosityDrivenRecurrentSoftActorCriticConfig config,
-            SpartanContext context,
-            Arena sharedArena,
-            SpartanActionManager actionManager
+            @NotNull CuriosityDrivenRecurrentSoftActorCriticConfig config,
+            @NotNull SpartanContext context,
+            @NotNull Arena sharedArena,
+            @NotNull SpartanActionManager actionManager
     ) {
         super(
                 identifier,
@@ -83,7 +83,7 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelImpl
     }
 
     @Override
-    protected MemorySegment getCriticWeightsBufferInternal() { return criticWeightsBuffer; }
+    protected @NotNull MemorySegment getCriticWeightsBufferInternal() { return criticWeightsBuffer; }
 
     @Override
     protected int getCriticWeightsCount() { return criticWeightsCount; }
@@ -100,6 +100,12 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelImpl
     }
 
     @Override public void applyReward(double reward) { episodeReward += reward; }
+
+    @Override
+    public void decayExploration() {
+
+    }
+
     @Override public double getEpisodeReward() { return episodeReward; }
     @Override public void resetEpisode() { episodeReward = 0.0; }
 
@@ -124,7 +130,7 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelImpl
         return actions;
     }
 
-    public RecurrentSoftActorCriticConfig getEmbeddedRecurrentSoftActorCriticConfig() {
+    public @NotNull RecurrentSoftActorCriticConfig getEmbeddedRecurrentSoftActorCriticConfig() {
         return config.recurrentSoftActorCriticConfig();
     }
 

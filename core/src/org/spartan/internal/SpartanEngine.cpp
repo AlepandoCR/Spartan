@@ -569,7 +569,70 @@ namespace org::spartan::internal {
     }
 
     bool SpartanEngine::saveModel(const uint64_t agentIdentifier, const char* filePath) {
-        return modelRegistry_.saveModelToFile(agentIdentifier, filePath);
+        if (modelRegistry_.saveModelToFile(agentIdentifier, filePath)) {
+            return true;
+        }
+
+        // Try searching in multi-agent groups if not found in regular registry
+        bool foundAndSaved = false;
+        multiAgentRegistry_.forEach([&](const std::unique_ptr<machinelearning::SpartanMultiAgentGroup>& group) {
+            if (foundAndSaved) return;
+            machinelearning::SpartanAgent* agent = group->getAgent(agentIdentifier);
+            if (agent) {
+                // Determine model type
+                const auto* baseConfig = static_cast<const BaseHyperparameterConfig*>(
+                    agent->getOpaqueHyperparameterConfig());
+                const uint32_t modelType = baseConfig
+                    ? static_cast<uint32_t>(baseConfig->modelTypeIdentifier)
+                    : machinelearning::persistence::MODEL_TYPE_RECURRENT_SOFT_ACTOR_CRITIC;
+
+                // Build topology and extract
+                const std::span<const double> modelWeightBlob = agent->getModelWeights();
+                const std::span<const double> criticWeightBlob = agent->getCriticWeights();
+
+                machinelearning::persistence::SubModelTopologyEntry modelTopologyEntry{};
+                modelTopologyEntry.subModelRole = machinelearning::persistence::SUB_MODEL_GAUSSIAN_POLICY;
+                modelTopologyEntry.subModelIndex = 0;
+                modelTopologyEntry.weightByteOffsetRelative = 0;
+                modelTopologyEntry.weightElementCount = modelWeightBlob.size();
+                modelTopologyEntry.biasesByteOffsetRelative = 0;
+                modelTopologyEntry.biasElementCount = 0;
+
+                std::vector<machinelearning::persistence::SubModelTopologyEntry> topologyEntries;
+                topologyEntries.push_back(modelTopologyEntry);
+
+                if (!criticWeightBlob.empty()) {
+                    machinelearning::persistence::SubModelTopologyEntry criticTopologyEntry{};
+                    criticTopologyEntry.subModelRole = machinelearning::persistence::SUB_MODEL_Q_CRITIC_FIRST;
+                    criticTopologyEntry.subModelIndex = 1;
+                    criticTopologyEntry.weightByteOffsetRelative = modelWeightBlob.size() * sizeof(double);
+                    criticTopologyEntry.weightElementCount = criticWeightBlob.size();
+                    criticTopologyEntry.biasesByteOffsetRelative = 0;
+                    criticTopologyEntry.biasElementCount = 0;
+                    topologyEntries.push_back(criticTopologyEntry);
+                }
+
+                std::vector<double> concatenatedWeightBlob;
+                concatenatedWeightBlob.reserve(modelWeightBlob.size() + criticWeightBlob.size());
+                concatenatedWeightBlob.insert(concatenatedWeightBlob.end(),
+                    modelWeightBlob.begin(), modelWeightBlob.end());
+                concatenatedWeightBlob.insert(concatenatedWeightBlob.end(),
+                    criticWeightBlob.begin(), criticWeightBlob.end());
+
+                foundAndSaved = machinelearning::persistence::saveModel(
+                    filePath,
+                    modelType,
+                    std::span<const machinelearning::persistence::SubModelTopologyEntry>(topologyEntries),
+                    std::span<const double>(concatenatedWeightBlob));
+            }
+        });
+
+        if (!foundAndSaved) {
+            logging::SpartanLogger::error(
+                std::format("saveModel: No active model or nested agent found for ID {}", agentIdentifier));
+        }
+
+        return foundAndSaved;
     }
 
     bool SpartanEngine::loadModel(const char* filePath,

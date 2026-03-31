@@ -165,9 +165,45 @@ public abstract class AbstractSpartanModel<SpartanModelConfigType extends Sparta
         if (result != 0) throw new SpartanPersistenceException("Load failed: " + result);
     }
 
-    @Override public void decayExploration() { SpartanNative.spartanDecayExploration(agentIdentifier); }
+    @Override
+    public @NotNull SpartanModel<SpartanModelConfigType> copy(@NotNull String newIdentifier) {
+        throw new UnsupportedOperationException("Subclasses must implement copy()");
+    }
+
+    @Override
+    public void setLiveExplorationRate(double newEpsilon) {
+        configSegment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_EPSILON_OFFSET, newEpsilon);
+    }
+
+    @Override
+    public double getEpisodeReward() {
+        return 0; // Overridden in classes tracking reward
+    }
+
+    @Override
+    public void resetEpisode() {
+        // Overridden in classes tracking reward
+    }
+
+    @Override
+    public void decayExploration() {
+        if (!registered || closed) return;
+        SpartanNative.spartanDecayExploration(agentIdentifier);
+    }
+
+    /**
+     * Unregisters from C++ and releases resources.
+     * <p>
+     * This method is called by the framework when the model is no longer needed.
+     * Subclasses should not override this method.
+     */
+    protected void release() {
+        if (closed) return;
+        close();
+        arena.close();
+    }
 
     protected abstract void writeConfigToSegment();
-    protected abstract MemorySegment getCriticWeightsBufferInternal();
+    protected abstract @NotNull MemorySegment getCriticWeightsBufferInternal();
     protected abstract int getCriticWeightsCount();
 }

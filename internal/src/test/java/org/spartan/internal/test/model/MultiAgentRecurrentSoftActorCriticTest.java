@@ -18,6 +18,7 @@ import org.spartan.internal.engine.config.spi.SpartanConfigFactoryServiceProvide
 import org.spartan.internal.spi.SpartanApiProviderImpl;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -44,7 +45,7 @@ public class MultiAgentRecurrentSoftActorCriticTest {
 
     @Test
     @DisplayName("Test 1: Multi-Agent Group Registration")
-    public void testMultiAgentGroupRegistration() {
+    public void testMultiAgentGroupRegistration() throws Exception {
         System.out.println(">>> Test 1: Multi-Agent Group Registration");
 
         final int numAgents = 3;
@@ -79,7 +80,7 @@ public class MultiAgentRecurrentSoftActorCriticTest {
 
     @Test
     @DisplayName("Test 2: Dynamic Agent Addition & Removal")
-    public void testDynamicAgentManagement() {
+    public void testDynamicAgentManagement() throws Exception {
         System.out.println(">>> Test 2: Dynamic Agent Addition & Removal");
 
         final int numAgents = 3;
@@ -124,7 +125,7 @@ public class MultiAgentRecurrentSoftActorCriticTest {
 
     @Test
     @DisplayName("Test 3: Parallel MARL Tick with Reward Distribution")
-    public void testParallelMarlTick() {
+    public void testParallelMarlTick() throws Exception {
         System.out.println(">>> Test 3: Parallel MARL Tick with Reward Distribution");
 
         final int numAgents = 3;
@@ -166,9 +167,7 @@ public class MultiAgentRecurrentSoftActorCriticTest {
             multiAgent.tick();
 
             double[] rewards = new double[numAgents];
-            for (int i = 0; i < numAgents; i++) {
-                rewards[i] = Math.cos(tick * 0.1) * 0.5;
-            }
+            Arrays.fill(rewards, Math.cos(tick * 0.1) * 0.5);
             multiAgent.applyRewards(rewards);
         }
 
