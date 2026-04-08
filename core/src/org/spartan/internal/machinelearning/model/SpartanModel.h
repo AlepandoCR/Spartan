@@ -155,6 +155,10 @@ namespace org::spartan::internal::machinelearning {
             return {};
         }
 
+        [[nodiscard]] virtual std::span<double> getCriticWeightsMutable() noexcept {
+            return {};
+        }
+
     protected:
         /**
          * @brief Protected constructor  -  only concrete subclasses can instantiate.

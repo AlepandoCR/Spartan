@@ -48,6 +48,7 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
 
     private double pendingReward = 0.0;
     private double episodeReward = 0.0;
+    private double accumulatedTickReward = 0.0;
 
     public SpartanModelImpl(@NotNull String identifier, long agentId, SpartanModelConfigType config, SpartanContext context, Iterable<SpartanAction> actions) {
         this.identifier = identifier;
@@ -175,13 +176,17 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
 
     @Override
     public void tick(double reward) {
-        applyReward(reward);
-        tick();
+        episodeReward += reward;
+        accumulatedTickReward += reward;
+        double currentReward = accumulatedTickReward;
+        accumulatedTickReward = 0.0;
+        executeNativeTick(currentReward);
     }
 
     @Override
     public void applyReward(double reward) {
-        pendingReward += reward;
+        episodeReward += reward;
+        accumulatedTickReward += reward;
     }
 
     @Override
@@ -202,15 +207,17 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
 
     @Override
     public void tick() {
+        double currentReward = accumulatedTickReward;
+        accumulatedTickReward = 0.0;
+        executeNativeTick(currentReward);
+    }
+
+    private void executeNativeTick(double currentReward) {
         if (!isRegistered) throw new IllegalStateException("Model not registered");
 
         context.update();
 
-        double totalReward = pendingReward;
-        pendingReward = 0.0;
-        episodeReward += totalReward;
-
-        SpartanNative.spartanTickAgent(agentId, totalReward);
+        SpartanNative.spartanTickAgent(agentId, currentReward);
 
         for (int i = 0; i < actions.size(); i++) {
             double rawOutput = actionOutputBuffer.getAtIndex(ValueLayout.JAVA_DOUBLE, i);
@@ -226,7 +233,7 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
 
     @Override
     public void loadModel(@NotNull Path filePath) throws SpartanPersistenceException {
-        SpartanNative.spartanLoadModel(filePath.toString(), modelWeightsBuffer, modelWeightsCount);
+        SpartanNative.spartanLoadModel(agentId, filePath.toString());
     }
 
     @Override

@@ -45,6 +45,11 @@ namespace org::spartan::internal::machinelearning {
 
         [[nodiscard]] std::span<const double> getCriticWeights() const noexcept override;
 
+        [[nodiscard]] std::span<double> getCriticWeightsMutable() noexcept override {
+            return const_cast<double*>(criticWeightsSpan_.data()) ?
+                std::span<double>(const_cast<double*>(criticWeightsSpan_.data()), criticWeightsSpan_.size()) : std::span<double>();
+        }
+
     private:
         // Store a local copy of the Curiosity config to avoid dereferencing Java memory
         CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig localConfig_{};
@@ -57,6 +62,9 @@ namespace org::spartan::internal::machinelearning {
         void trainForwardDynamicsNetwork(double predictionError);
 
         std::unique_ptr<RecurrentSoftActorCriticSpartanModel> internalRecurrentSoftActorCriticModel_;
+
+        // Non-owning span over the full critic (target) weight buffer for persistence
+        std::span<const double> criticWeightsSpan_;
 
         std::span<double> forwardDynamicsWeights_;
         std::span<double> forwardDynamicsBiases_;

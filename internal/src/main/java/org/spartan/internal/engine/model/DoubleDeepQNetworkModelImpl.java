@@ -41,11 +41,11 @@ public class DoubleDeepQNetworkModelImpl
     private final SpartanActionManager actionManager;
     private final List<SpartanAction> actions;
 
-    // Episode state
-    private double episodeReward = 0.0;
+    protected double episodeReward = 0.0;
+    protected double accumulatedTickReward = 0.0;
 
     /**
-     * Constructs a DDQN model with all necessary allocations.
+     * Constructs a Double DQN model with all necessary allocations.
      *
      * @param identifier      unique string ID
      * @param agentIdentifier unique 64-bit ID for this agent
@@ -109,6 +109,18 @@ public class DoubleDeepQNetworkModelImpl
     }
 
     /**
+     * Hot-path tick - Zero-GC.
+     * <p>
+     * Combines context update and inference in one native call.
+     */
+    @Override
+    public void tick() {
+        double currentReward = accumulatedTickReward;
+        accumulatedTickReward = 0.0;
+        executeNativeTick(currentReward);
+    }
+
+    /**
      * Hot-path tick with reward - Zero-GC.
      * <p>
      * Combines context update, reward application, and inference in one native call.
@@ -118,12 +130,16 @@ public class DoubleDeepQNetworkModelImpl
     @Override
     public void tick(double reward) {
         episodeReward += reward;
-        executeNativeTick(reward);
+        accumulatedTickReward += reward;
+        double currentReward = accumulatedTickReward;
+        accumulatedTickReward = 0.0;
+        executeNativeTick(currentReward);
     }
 
     @Override
     public void applyReward(double reward) {
         episodeReward += reward;
+        accumulatedTickReward += reward;
     }
 
     @Override

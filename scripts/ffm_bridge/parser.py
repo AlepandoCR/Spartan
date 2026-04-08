@@ -51,6 +51,11 @@ EXPLICIT_PARAM_TYPES = {
         java_wrapper="Long",
         ffm_layout="ValueLayout.JAVA_LONG"
     ),
+    ("spartan_load_model", "agentIdentifier"): TypeDescriptor(
+        java_type="long",
+        java_wrapper="Long",
+        ffm_layout="ValueLayout.JAVA_LONG"
+    ),
     ("spartan_decay_exploration", "agentIdentifier"): TypeDescriptor(
         java_type="long",
         java_wrapper="Long",
@@ -110,6 +115,11 @@ EXPLICIT_PARAM_TYPES = {
         ffm_layout="ValueLayout.JAVA_LONG"
     ),
     ("spartan_multi_agent_remove_agent", "agentIdentifier"): TypeDescriptor(
+        java_type="long",
+        java_wrapper="Long",
+        ffm_layout="ValueLayout.JAVA_LONG"
+    ),
+    ("spartan_multi_agent_apply_rewards", "multiAgentId"): TypeDescriptor(
         java_type="long",
         java_wrapper="Long",
         ffm_layout="ValueLayout.JAVA_LONG"

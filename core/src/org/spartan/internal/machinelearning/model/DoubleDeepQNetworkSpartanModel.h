@@ -229,7 +229,14 @@ namespace org::spartan::internal::machinelearning {
          * The critic weights span contains the target Q-network weights and
          * biases in a flat contiguous layout mirroring the online network.
          */
-        [[nodiscard]] std::span<const double> getCriticWeights() const noexcept override;
+        [[nodiscard]] std::span<const double> getCriticWeights() const noexcept override {
+            return criticWeightsSpan_;
+        }
+
+        [[nodiscard]] std::span<double> getCriticWeightsMutable() noexcept override {
+            return const_cast<double*>(criticWeightsSpan_.data()) ?
+                std::span<double>(const_cast<double*>(criticWeightsSpan_.data()), criticWeightsSpan_.size()) : std::span<double>();
+        }
 
     private:
         [[nodiscard]] const DoubleDeepQNetworkHyperparameterConfig* typedConfig() const noexcept {

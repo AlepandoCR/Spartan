@@ -161,7 +161,7 @@ public abstract class AbstractSpartanModel<SpartanModelConfigType extends Sparta
     @Override
     public void loadModel(@NotNull Path filePath) throws SpartanPersistenceException {
         String pathString = filePath.toAbsolutePath().toString();
-        int result = SpartanNative.spartanLoadModel(pathString, modelWeightsBuffer, modelWeightsCount);
+        int result = SpartanNative.spartanLoadModel(agentIdentifier, pathString);
         if (result != 0) throw new SpartanPersistenceException("Load failed: " + result);
     }
 

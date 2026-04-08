@@ -29,8 +29,20 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelImpl
 
     private final SpartanActionManager actionManager;
     private final List<SpartanAction> actions;
-    private double episodeReward = 0.0;
 
+    protected double episodeReward = 0.0;
+    protected double accumulatedTickReward = 0.0;
+
+    /**
+     * Constructs a Curiosity-Driven RSAC model with all necessary allocations.
+     *
+     * @param identifier       the model identifier
+     * @param agentIdentifier  the agent identifier
+     * @param config           the model configuration
+     * @param context          the spartan context
+     * @param sharedArena      the arena for shared allocations
+     * @param actionManager    the action manager
+     */
     public CuriosityDrivenRecurrentSoftActorCriticModelImpl(
             @NotNull String identifier,
             long agentIdentifier,
@@ -93,17 +105,32 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelImpl
     @Override public @NotNull MemorySegment getCriticWeightsBuffer() { return criticWeightsBuffer; }
 
     @Override
-    public void tick(double extrinsicReward) {
-        if (Double.isNaN(extrinsicReward)) extrinsicReward = 0.0;
-        episodeReward += extrinsicReward;
-        executeNativeTick(extrinsicReward);
+    public void tick() {
+        double currentReward = accumulatedTickReward;
+        accumulatedTickReward = 0.0;
+        executeNativeTick(currentReward);
     }
 
-    @Override public void applyReward(double reward) { episodeReward += reward; }
+    /**
+     * Hot-path tick with reward - Zero-GC.
+     * <p>
+     * Combines context update, reward application, and inference in one native call.
+     *
+     * @param reward the reward signal for this tick
+     */
+    @Override
+    public void tick(double reward) {
+        episodeReward += reward;
+        accumulatedTickReward += reward;
+        double currentReward = accumulatedTickReward;
+        accumulatedTickReward = 0.0;
+        executeNativeTick(currentReward);
+    }
 
     @Override
-    public void decayExploration() {
-
+    public void applyReward(double reward) {
+        episodeReward += reward;
+        accumulatedTickReward += reward;
     }
 
     @Override public double getEpisodeReward() { return episodeReward; }

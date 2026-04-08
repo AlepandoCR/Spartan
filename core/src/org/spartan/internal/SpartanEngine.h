@@ -160,7 +160,7 @@ namespace org::spartan::internal {
          * @param targetWeightCount    Number of doubles in the target buffer.
          * @return True on success and CRC-32 validation, false otherwise.
          */
-        static bool loadModel(const char* filePath, double* targetWeightBuffer, int32_t targetWeightCount);
+        bool loadModel(uint64_t agentIdentifier, const char* filePath);
 
         /**
          * @brief Triggers exploration decay for a specific agent at episode boundaries.
@@ -247,6 +247,15 @@ namespace org::spartan::internal {
           * @param groupIdentifier Unique identifier for the group.
           */
          void unregisterMultiAgentGroup(uint64_t groupIdentifier);
+
+         /**
+          * @brief Applies rewards to all agents in a multi-agent group.
+          *
+          * @param groupIdentifier Unique identifier for the group.
+          * @param rewardsBuffer   Pointer to the buffer containing sequential reward values.
+          * @param rewardCount     Number of reward values in the buffer.
+          */
+         void multiAgentApplyRewards(uint64_t groupIdentifier, const double* rewardsBuffer, int32_t rewardCount);
 
     private:
         /** @brief The model registry owned by this engine instance. */

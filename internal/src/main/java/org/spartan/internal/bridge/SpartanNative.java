@@ -83,7 +83,7 @@ public class SpartanNative {
         }
         try {
             var addr = loader.find("spartan_load_model").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_load_model"));
-            SPARTAN_LOAD_MODEL_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+            SPARTAN_LOAD_MODEL_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS));
         } catch (Exception e) {
             throw new RuntimeException("Failed to bind native function: spartan_load_model", e);
         }
@@ -122,6 +122,12 @@ public class SpartanNative {
             SPARTAN_TICK_MULTI_AGENT_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG));
         } catch (Exception e) {
             throw new RuntimeException("Failed to bind native function: spartan_tick_multi_agent", e);
+        }
+        try {
+            var addr = loader.find("spartan_multi_agent_apply_rewards").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_multi_agent_apply_rewards"));
+            SPARTAN_MULTI_AGENT_APPLY_REWARDS_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to bind native function: spartan_multi_agent_apply_rewards", e);
         }
     }
 
@@ -183,6 +189,7 @@ public class SpartanNative {
     private static final MethodHandle SPARTAN_MULTI_AGENT_ADD_AGENT_HANDLE;
     private static final MethodHandle SPARTAN_MULTI_AGENT_REMOVE_AGENT_HANDLE;
     private static final MethodHandle SPARTAN_TICK_MULTI_AGENT_HANDLE;
+    private static final MethodHandle SPARTAN_MULTI_AGENT_APPLY_REWARDS_HANDLE;
 
     // --- Native API ---
 
@@ -288,12 +295,12 @@ public class SpartanNative {
     }
 
     /**
-     * Loads model weights from a .spartan binary file into a JVM-owned buffer.
+     * Loads model weights from a .spartan binary file into the given agent.
      */
-    public static int spartanLoadModel(@NotNull String filePath, @NotNull MemorySegment targetWeightBuffer, int targetWeightCount) {
+    public static int spartanLoadModel(long agentIdentifier, @NotNull String filePath) {
         try (var arena = Arena.ofShared()) {
             var filePathSegment = arena.allocateFrom(filePath);
-            return (int) SPARTAN_LOAD_MODEL_HANDLE.invokeExact(filePathSegment, targetWeightBuffer, targetWeightCount);
+            return (int) SPARTAN_LOAD_MODEL_HANDLE.invokeExact(agentIdentifier, filePathSegment);
         } catch (Throwable t) {
             throw new RuntimeException("Native invocation failed: spartan_load_model", t);
         }
@@ -362,6 +369,17 @@ public class SpartanNative {
             return (int) SPARTAN_TICK_MULTI_AGENT_HANDLE.invokeExact(multiAgentId);
         } catch (Throwable t) {
             throw new RuntimeException("Native invocation failed: spartan_tick_multi_agent", t);
+        }
+    }
+
+    /**
+     * Applies rewards to all agents in a multi-agent group.
+     */
+    public static int spartanMultiAgentApplyRewards(long multiAgentId, @NotNull MemorySegment rewardsBuffer, int rewardCount) {
+        try {
+            return (int) SPARTAN_MULTI_AGENT_APPLY_REWARDS_HANDLE.invokeExact(multiAgentId, rewardsBuffer, rewardCount);
+        } catch (Throwable t) {
+            throw new RuntimeException("Native invocation failed: spartan_multi_agent_apply_rewards", t);
         }
     }
 }

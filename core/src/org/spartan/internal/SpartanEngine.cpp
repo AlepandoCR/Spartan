@@ -88,7 +88,7 @@ namespace org::spartan::internal {
         criticBiasCountPerNetwork += 1; // Output bias
 
         size_t criticOffset = 0;
-        auto criticSpan = std::span(criticWeightsBuffer, criticWeightsCount);
+        const auto criticSpan = std::span(criticWeightsBuffer, criticWeightsCount);
 
         auto gruGateWeights = criticSpan.subspan(criticOffset, gruGateWeightCount);
         criticOffset += gruGateWeightCount;
@@ -287,7 +287,7 @@ namespace org::spartan::internal {
                                         static_cast<size_t>(curiosityHiddenSize) * stateSize;
         const size_t curiosityBiases = static_cast<size_t>(curiosityHiddenSize) + stateSize;
 
-        // 2. Extract RSAC internal dimensions
+        // Extract RSAC internal dimensions
         const auto* rsacConfig = &config->recurrentSoftActorCriticConfig;
         const int32_t gruHiddenSize = rsacConfig->hiddenStateSize;
         const int32_t criticHiddenSize = rsacConfig->criticHiddenLayerNeuronCount;
@@ -300,7 +300,7 @@ namespace org::spartan::internal {
             "[DEBUG-CONFIG] stateSize={}, actionSize={}, criticHidden={}, criticLayers={}, actorHidden={}, actorLayers={}",
             stateSize, actionSize, criticHiddenSize, criticLayerCount, actorHiddenSize, actorLayerCount));
 
-        // 3. RSAC Component Math (Line-by-line parity with Java Allocator)
+        // RSAC Component Math (Line-by-line parity with Java Allocator)
         const int32_t gruInputSize = rsacConfig->recurrentInputFeatureCount > 0
             ? rsacConfig->recurrentInputFeatureCount : stateSize;
 
@@ -310,9 +310,9 @@ namespace org::spartan::internal {
 
         const size_t criticIn = static_cast<size_t>(gruHiddenSize) + actionSize;
         size_t criticW_Count = (criticIn * criticHiddenSize) +
-                               (criticLayerCount > 1 ? (size_t)criticHiddenSize * criticHiddenSize * (criticLayerCount - 1) : 0) +
+                               (criticLayerCount > 1 ? static_cast<size_t>(criticHiddenSize) * criticHiddenSize * (criticLayerCount - 1) : 0) +
                                criticHiddenSize;
-        size_t criticB_Count = (size_t)criticHiddenSize * criticLayerCount + 1;
+        size_t criticB_Count = static_cast<size_t>(criticHiddenSize) * criticLayerCount + 1;
 
         // --- CRITIC SLICING ---
         auto criticSpan = std::span(criticWeightsBuffer, static_cast<size_t>(criticWeightsCount));
@@ -327,7 +327,7 @@ namespace org::spartan::internal {
                 logging::SpartanLogger::error(std::format("OUT OF BOUNDS (Critic): {} needs {}, but only {} left", name, size, criticWeightsCount - cOffset));
                 return {};
             }
-            auto s = criticSpan.subspan(cOffset, size);
+            const auto s = criticSpan.subspan(cOffset, size);
             cOffset += size;
             return s;
         };
@@ -382,13 +382,13 @@ namespace org::spartan::internal {
                 logging::SpartanLogger::error(std::format("OUT OF BOUNDS (Model): {} needs {}, but only {} left", name, size, modelWeightsCount - mOffset));
                 return {};
             }
-            auto s = modelSpan.subspan(mOffset, size);
+            const auto s = modelSpan.subspan(mOffset, size);
             mOffset += size;
             return s;
         };
 
         size_t policyW_Count = (static_cast<size_t>(actorHiddenSize) * gruHiddenSize) +
-                               (actorLayerCount > 1 ? (size_t)actorHiddenSize * actorHiddenSize * (actorLayerCount - 1) : 0) +
+                               (actorLayerCount > 1 ? static_cast<size_t>(actorHiddenSize) * actorHiddenSize * (actorLayerCount - 1) : 0) +
                                (static_cast<size_t>(actionSize) * actorHiddenSize * 2); // Mean + LogStd
 
         size_t policyB_Count = (static_cast<size_t>(actorHiddenSize) * actorLayerCount) + (actionSize * 2);
@@ -635,10 +635,30 @@ namespace org::spartan::internal {
         return foundAndSaved;
     }
 
-    bool SpartanEngine::loadModel(const char* filePath,
-                                  double* targetWeightBuffer,
-                                  const int32_t targetWeightCount) {
+    bool SpartanEngine::loadModel(const uint64_t agentIdentifier, const char* filePath) {
         using namespace machinelearning::persistence;
+
+        // Try searching in multi-agent groups first
+        machinelearning::SpartanModel* targetModel = nullptr;
+
+        multiAgentRegistry_.forEach([&](const std::unique_ptr<machinelearning::SpartanMultiAgentGroup>& group) {
+            if (targetModel) return;
+            machinelearning::SpartanAgent* agent = group->getAgent(agentIdentifier);
+            if (agent) {
+                targetModel = agent;
+            }
+        });
+
+        // If not found, try regular registry
+        if (!targetModel) {
+            targetModel = modelRegistry_.getModel(agentIdentifier);
+        }
+
+        if (!targetModel) {
+            logging::SpartanLogger::error(
+                std::format("loadModel: No active model or nested agent found for ID {}", agentIdentifier));
+            return false;
+        }
 
         SpartanFileHeader header{};
         if (!loadHeader(filePath, header)) {
@@ -646,14 +666,33 @@ namespace org::spartan::internal {
             return false;
         }
 
-        auto weightSpan = std::span(targetWeightBuffer, targetWeightCount);
+        // Retrieve both weight buffers from the active model
+        const std::span<double> modelWeightBlob = targetModel->getModelWeightsMutable();
+        const std::span<double> criticWeightBlob = targetModel->getCriticWeightsMutable();
+
+        const uint64_t expectedWeightCount = modelWeightBlob.size() + criticWeightBlob.size();
+        if (header.totalWeightCount != expectedWeightCount) {
+            logging::SpartanLogger::error(
+                std::format("loadModel: Weight count mismatch. File has {}, agent expects {}.",
+                            header.totalWeightCount, expectedWeightCount));
+            return false;
+        }
+
+        std::vector<double> concatBuffer(expectedWeightCount);
+        auto weightSpan = std::span(concatBuffer);
         if (!loadWeights(filePath, header, weightSpan)) {
             logging::SpartanLogger::error("loadModel: CRC-32 mismatch or I/O error reading weights.");
             return false;
         }
 
+        // Unpack into the active model's buffers
+        std::copy(concatBuffer.begin(), concatBuffer.begin() + modelWeightBlob.size(), modelWeightBlob.begin());
+        if (!criticWeightBlob.empty()) {
+            std::copy(concatBuffer.begin() + modelWeightBlob.size(), concatBuffer.end(), criticWeightBlob.begin());
+        }
+
         logging::SpartanLogger::info(
-            std::format("Loaded {} weights from {}", header.totalWeightCount, filePath));
+            std::format("Loaded {} weights into agent {} from {}", header.totalWeightCount, agentIdentifier, filePath));
         return true;
     }
 
@@ -718,6 +757,18 @@ namespace org::spartan::internal {
         }
         logging::SpartanLogger::error(
             std::format("unregisterMultiAgentGroup: No active group found for ID {}", groupIdentifier));
+    }
+
+    void SpartanEngine::multiAgentApplyRewards(const uint64_t groupIdentifier,
+                                               const double* rewardsBuffer,
+                                               const int32_t rewardCount) {
+        auto groupPtr = multiAgentRegistry_.get(groupIdentifier);
+        if (groupPtr && *groupPtr) {
+            (*groupPtr)->applyRewardsToAll(std::span<const double>(rewardsBuffer, rewardCount));
+            return;
+        }
+        logging::SpartanLogger::error(
+            std::format("multiAgentApplyRewards: No active group found for ID {}", groupIdentifier));
     }
 
     bool SpartanEngine::addAgentToMultiAgentGroup(const uint64_t groupIdentifier,
@@ -793,7 +844,7 @@ namespace org::spartan::internal {
 
         // Transfer ownership and cast to SpartanAgent
         // We know these types inherit from SpartanAgent.
-        machinelearning::SpartanAgent* agentPtr = static_cast<machinelearning::SpartanAgent*>(model.release());
+        auto* agentPtr = dynamic_cast<machinelearning::SpartanAgent*>(model.release());
         std::unique_ptr<machinelearning::SpartanAgent> agent(agentPtr);
 
         (*groupPtr)->addAgent(agentIdentifier, std::move(agent));

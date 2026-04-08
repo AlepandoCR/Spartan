@@ -421,6 +421,8 @@ namespace org::spartan::internal::machinelearning {
          */
         [[nodiscard]] std::span<const double> getCriticWeights() const noexcept override;
 
+        [[nodiscard]] std::span<double> getCriticWeightsMutable() noexcept override;
+
     private:
         /**
          * @brief Returns the typed config, cast from the opaque base pointer.

@@ -240,43 +240,31 @@ extern "C" {
      * @param filePath        Null-terminated path to the output .spartan file.
      * @return 0 on success, -1 on invalid input or I/O failure.
      */
-    SPARTAN_API_EXPORT int spartan_save_model(const uint64_t agentIdentifier,
-                                                  const char* filePath) {
+    SPARTAN_API_EXPORT int spartan_save_model(const uint64_t agentIdentifier, const char* filePath) {
         if (filePath == nullptr) {
             SpartanEngine::logError("spartan_save_model: received null file path.");
             return -1;
         }
-
         const bool success = engine.saveModel(agentIdentifier, filePath);
         return success ? 0 : -1;
     }
 
-
     /**
-     * @brief Loads model weights from a .spartan binary file into a JVM-owned buffer.
+     * @brief Loads model weights from a .spartan binary file into the given agent.
      *
-     * Reads the file header to validate magic bytes and format version,
-     * then copies the weight blob directly into the target buffer.
      * The trailing CRC-32 checksum is verified without heap allocation.
      *
+     * @param agentIdentifier     The unique ID of the target agent.
      * @param filePath            Null-terminated path to the input .spartan file.
-     * @param targetWeightBuffer  Pointer to the JVM-owned double array to populate.
-     * @param targetWeightCount   Number of doubles available in the target buffer.
      * @return 0 on success, -1 on invalid input, CRC mismatch, or I/O failure.
      */
-    SPARTAN_API_EXPORT int spartan_load_model(const char* filePath,
-                                                  double* targetWeightBuffer,
-                                                  const int32_t targetWeightCount) {
+    SPARTAN_API_EXPORT int spartan_load_model(const uint64_t agentIdentifier, const char* filePath) {
         if (filePath == nullptr) {
             SpartanEngine::logError("spartan_load_model: received null file path.");
             return -1;
         }
-        if (targetWeightBuffer == nullptr || targetWeightCount <= 0) {
-            SpartanEngine::logError("spartan_load_model: invalid target weight buffer.");
-            return -1;
-        }
 
-        const bool success = SpartanEngine::loadModel(filePath, targetWeightBuffer, targetWeightCount);
+        const bool success = engine.loadModel(agentIdentifier, filePath);
         return success ? 0 : -1;
     }
 
@@ -458,6 +446,28 @@ extern "C" {
      */
     SPARTAN_API_EXPORT int spartan_tick_multi_agent(const uint64_t multiAgentId) {
         engine.tickMultiAgentGroup(multiAgentId);
+        return 0;
+    }
+
+    /**
+     * @brief Applies rewards to all agents in a multi-agent group.
+     *
+     * @param multiAgentId    Unique identifier for the multi-agent group
+     * @param rewardsBuffer   Pointer to reward values
+     * @param rewardCount     Number of reward values
+     * @return 0 on success, -1 on failure
+     */
+    SPARTAN_API_EXPORT int spartan_multi_agent_apply_rewards(
+            const uint64_t multiAgentId,
+            const double* rewardsBuffer,
+            const int32_t rewardCount) {
+
+        if (rewardsBuffer == nullptr || rewardCount <= 0) {
+            SpartanEngine::logError("spartan_multi_agent_apply_rewards: invalid parameters.");
+            return -1;
+        }
+
+        engine.multiAgentApplyRewards(multiAgentId, rewardsBuffer, rewardCount);
         return 0;
     }
 }

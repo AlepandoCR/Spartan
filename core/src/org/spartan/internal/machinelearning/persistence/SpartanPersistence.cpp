@@ -6,6 +6,9 @@
 
 #include <fstream>
 #include <cstring>
+#include "../../logging/SpartanLogger.h"
+
+using namespace org::spartan::internal::logging;
 
 namespace org::spartan::internal::machinelearning::persistence {
 
@@ -170,17 +173,20 @@ namespace org::spartan::internal::machinelearning::persistence {
 
         std::ifstream inputStream(filePath, std::ios::binary);
         if (!inputStream.is_open()) {
+            SpartanLogger::error("loadWeights: failed to open file");
             return false;
         }
 
         // Validate that the target buffer can hold all weights
         if (targetWeightBuffer.size() < header.totalWeightCount) {
+            SpartanLogger::error("loadWeights: target buffer too small. Got " + std::to_string(targetWeightBuffer.size()) + " needed " + std::to_string(header.totalWeightCount));
             return false;
         }
 
         // Seek to the weight blob offset
         inputStream.seekg(static_cast<std::streamoff>(header.weightBlobByteOffset));
         if (!inputStream.good()) {
+            SpartanLogger::error("loadWeights: failed seeking to weight blob offset " + std::to_string(header.weightBlobByteOffset));
             return false;
         }
 
@@ -190,6 +196,7 @@ namespace org::spartan::internal::machinelearning::persistence {
             static_cast<std::streamsize>(header.weightBlobTotalByteSize));
 
         if (!inputStream.good()) {
+            SpartanLogger::error("loadWeights: failed reading weight blob of size " + std::to_string(header.weightBlobTotalByteSize));
             return false;
         }
 
@@ -197,10 +204,16 @@ namespace org::spartan::internal::machinelearning::persistence {
         uint32_t storedChecksum = 0;
         inputStream.read(reinterpret_cast<char*>(&storedChecksum), sizeof(uint32_t));
 
+        if (!inputStream.good()) {
+            SpartanLogger::error("loadWeights: failed reading stored checksum. EOF reached prematurely?");
+            return false;
+        }
+
         // Validate by re-reading and accumulating CRC over each section sequentially.
         // This avoids allocating a full-payload-sized std::vector.
         inputStream.seekg(0);
         if (!inputStream.good()) {
+            SpartanLogger::error("loadWeights: failed seeking back to 0");
             return false;
         }
 
@@ -228,12 +241,12 @@ namespace org::spartan::internal::machinelearning::persistence {
 
         const uint32_t computedChecksum = ~runningCrc;
 
-        return computedChecksum == storedChecksum;
+        if (computedChecksum != storedChecksum) {
+            SpartanLogger::error("loadWeights: CRC mismatch. Stored: " + std::to_string(storedChecksum) + " Computed: " + std::to_string(computedChecksum));
+            return false;
+        }
+
+        return true;
     }
 
 }
-
-
-
-
-

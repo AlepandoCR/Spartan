@@ -940,5 +940,9 @@ namespace org::spartan::internal::machinelearning {
         return criticWeightsSpan_;
     }
 
-}
+    std::span<double> RecurrentSoftActorCriticSpartanModel::getCriticWeightsMutable() noexcept {
+        return const_cast<double*>(criticWeightsSpan_.data()) ?
+            std::span<double>(const_cast<double*>(criticWeightsSpan_.data()), criticWeightsSpan_.size()) : std::span<double>();
+    }
 
+}

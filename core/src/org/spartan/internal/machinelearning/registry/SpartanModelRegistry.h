@@ -61,6 +61,18 @@ namespace org::spartan::internal::machinelearning {
         void tickAll();
 
         /**
+         * @brief Processes a single agent with a reward signal in one tick.
+         *
+         * Looks up the model by identifier, applies the reward signal (if supported),
+         * and invokes processTick(). Returns false if the model was not found.
+         *
+         * @param agentIdentifier The unique ID of the agent.
+         * @param rewardSignal The reward value to apply.
+         * @return True on success, false if the agent was not found.
+         */
+        bool tickSingleAgent(uint64_t agentIdentifier, double rewardSignal);
+
+        /**
          * @brief Distributes reward signals to specific agents by identifier.
          *
          * Uses parallel arrays of agent identifiers and reward values.
@@ -123,17 +135,13 @@ namespace org::spartan::internal::machinelearning {
         void decayExplorationForAgent(uint64_t agentIdentifier);
 
         /**
-         * @brief Applies a reward and executes a single tick for one specific agent.
+         * @brief Retrieves a raw pointer to an active model by identifier.
          *
-         * Locks the registry for lookup, applies the reward if the model is a
-         * SpartanAgent, then calls processTick().  The JVM guarantees that the
-         * same agent is never ticked concurrently from multiple threads.
-         *
-         * @param agentIdentifier The unique ID of the agent to tick.
-         * @param rewardSignal    The scalar reward to apply before inference.
-         * @return True if the agent was found and ticked, false otherwise.
+         * @param agentIdentifier The unique ID of the agent.
+         * @return Pointer to the active model, or nullptr if not found.
          */
-        bool tickSingleAgent(uint64_t agentIdentifier, double rewardSignal);
+        SpartanModel* getModel(uint64_t agentIdentifier);
+
     private:
         /** @brief Guards concurrent access to the model map. */
         mutable std::mutex registryMutex_;

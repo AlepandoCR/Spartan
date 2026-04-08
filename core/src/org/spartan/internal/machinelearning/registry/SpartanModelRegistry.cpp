@@ -148,6 +148,15 @@ namespace org::spartan::internal::machinelearning {
         }
     }
 
+    SpartanModel* SpartanModelRegistry::getModel(const uint64_t agentIdentifier) {
+        std::lock_guard lock(registryMutex_);
+        const auto iterator = activeModels_.find(agentIdentifier);
+        if (iterator != activeModels_.end()) {
+            return iterator->second.get();
+        }
+        return nullptr;
+    }
+
     bool SpartanModelRegistry::tickSingleAgent(const uint64_t agentIdentifier,
                                                 const double rewardSignal) {
         std::lock_guard lock(registryMutex_);

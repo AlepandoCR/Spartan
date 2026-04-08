@@ -34,12 +34,11 @@ public class RecurrentSoftActorCriticModelImpl
     private final MemorySegment criticWeightsBuffer;
     private final int criticWeightsCount;
 
-    // Action management
     private final SpartanActionManager actionManager;
     private final List<SpartanAction> actions;
 
-    // Episode state
-    private double episodeReward = 0.0;
+    protected double episodeReward = 0.0;
+    protected double accumulatedTickReward = 0.0;
 
     /**
      * Constructs an RSAC model with all necessary allocations.
@@ -108,6 +107,19 @@ public class RecurrentSoftActorCriticModelImpl
     }
 
     /**
+     * Ticks the model without an external reward signal.
+     * <p>
+     * This can be used for internal step progression, where the reward is
+     * either not applicable or already accounted for.
+     */
+    @Override
+    public void tick() {
+        double currentReward = accumulatedTickReward;
+        accumulatedTickReward = 0.0;
+        executeNativeTick(currentReward);
+    }
+
+    /**
      * Hot-path tick with reward - Zero-GC.
      * <p>
      * Combines context update, reward application, and inference in one native call.
@@ -117,12 +129,16 @@ public class RecurrentSoftActorCriticModelImpl
     @Override
     public void tick(double reward) {
         episodeReward += reward;
-        executeNativeTick(reward);
+        accumulatedTickReward += reward;
+        double currentReward = accumulatedTickReward;
+        accumulatedTickReward = 0.0;
+        executeNativeTick(currentReward);
     }
 
     @Override
     public void applyReward(double reward) {
         episodeReward += reward;
+        accumulatedTickReward += reward;
     }
 
     @Override
@@ -133,7 +149,6 @@ public class RecurrentSoftActorCriticModelImpl
     @Override
     public void resetEpisode() {
         episodeReward = 0.0;
-        // Note: GRU hidden state reset would be handled by C++ engine
     }
 
     /**

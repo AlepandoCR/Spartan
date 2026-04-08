@@ -403,8 +403,5 @@ namespace org::spartan::internal::machinelearning {
         }
     }
 
-    std::span<const double> DoubleDeepQNetworkSpartanModel::getCriticWeights() const noexcept {
-        return criticWeightsSpan_;
-    }
 
 }
