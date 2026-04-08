@@ -5,6 +5,7 @@
 #include "SpartanPersistence.h"
 
 #include <fstream>
+#include <string>
 #include <cstring>
 #include "../../logging/SpartanLogger.h"
 
