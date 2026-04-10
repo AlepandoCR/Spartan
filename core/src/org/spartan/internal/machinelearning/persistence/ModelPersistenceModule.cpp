@@ -1,5 +1,6 @@
 #include "ModelPersistenceModule.h"
 #include "../../logging/SpartanLogger.h"
+#include <string>
 
 namespace org::spartan::internal::machinelearning::persistence {
 

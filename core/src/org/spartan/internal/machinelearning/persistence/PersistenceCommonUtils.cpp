@@ -2,6 +2,7 @@
 #include "../../logging/SpartanLogger.h"
 #include <stdexcept>
 #include <algorithm>
+#include <string>
 
 namespace org::spartan::internal::machinelearning::persistence {
 

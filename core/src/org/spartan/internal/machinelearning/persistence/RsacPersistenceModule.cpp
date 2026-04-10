@@ -1,6 +1,7 @@
 #include "RsacPersistenceModule.h"
 #include "../model/RecurrentSoftActorCriticSpartanModel.h"
 #include "../../logging/SpartanLogger.h"
+#include <string>
 
 namespace org::spartan::internal::machinelearning::persistence {
 
@@ -27,7 +28,8 @@ namespace org::spartan::internal::machinelearning::persistence {
         // 4. Actor weights + biases (from modelWeights)
         // 5. Adam moments for all networks
 
-        // For now, return all weights from both buffers
+        // Concatenate all weights: critic buffer contains all critic networks (GRU + Q1 + Q2),
+        // model buffer contains actor/policy. This deterministic order ensures correct deserialization.
         const auto criticWeights = rsacModel->getCriticWeights();
         const auto modelWeights = rsacModel->getModelWeights();
 

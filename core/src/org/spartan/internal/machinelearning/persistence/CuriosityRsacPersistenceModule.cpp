@@ -1,6 +1,7 @@
 #include "CuriosityRsacPersistenceModule.h"
 #include "../model/CuriosityDrivenRecurrentSoftActorCriticSpartanModel.h"
 #include "../../logging/SpartanLogger.h"
+#include <string>
 
 namespace org::spartan::internal::machinelearning::persistence {
 
@@ -21,11 +22,13 @@ namespace org::spartan::internal::machinelearning::persistence {
 
         std::vector<double> weights;
 
-        // Serialize: RSAC + Forward Dynamics
-        // Get all weights from curiosity model (includes internal RSAC + forward dynamics)
+        // Serialize: Embedded RSAC + Forward Dynamics Network
+        // critic buffer: GRU + Q1 + Q2 + Forward Dynamics
+        // model buffer: Actor/Policy + Intrinsic Curiosity calculations
         const auto modelWeights = curiosityModel->getModelWeights();
         const auto criticWeights = curiosityModel->getCriticWeights();
 
+        // Deterministic order: critics first, then model weights
         weights.insert(weights.end(), criticWeights.begin(), criticWeights.end());
         weights.insert(weights.end(), modelWeights.begin(), modelWeights.end());
 
