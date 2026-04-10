@@ -114,7 +114,6 @@ public non-sealed interface CuriosityDrivenRecurrentSoftActorCriticConfig extend
         private int recurrentInputFeatureCount = 64;
         private int remorseTraceBufferCapacity = 1000;
         private double remorseMinimumSimilarityThreshold = 0.7;
-        private NestedEncoderSlotDescriptor[] encoderSlots = null;
         private int forwardDynamicsHiddenLayerDimensionSize = 128;
         private double intrinsicRewardScale = 0.01;
         private double intrinsicRewardClampingMinimum = -1.0;
@@ -143,7 +142,6 @@ public non-sealed interface CuriosityDrivenRecurrentSoftActorCriticConfig extend
         public Builder recurrentInputFeatureCount(int val) { this.recurrentInputFeatureCount = val; return this; }
         public Builder remorseTraceBufferCapacity(int val) { this.remorseTraceBufferCapacity = val; return this; }
         public Builder remorseMinimumSimilarityThreshold(double val) { this.remorseMinimumSimilarityThreshold = val; return this; }
-        public Builder encoderSlots(NestedEncoderSlotDescriptor[] val) { this.encoderSlots = val; return this; }
         public Builder recurrentSoftActorCriticConfig(RecurrentSoftActorCriticConfig config) {
             this.recurrentSoftActorCriticConfig = config;
             return this;
@@ -179,7 +177,6 @@ public non-sealed interface CuriosityDrivenRecurrentSoftActorCriticConfig extend
                         .recurrentInputFeatureCount(recurrentInputFeatureCount)
                         .remorseTraceBufferCapacity(remorseTraceBufferCapacity)
                         .remorseMinimumSimilarityThreshold(remorseMinimumSimilarityThreshold)
-                        .encoderSlots(encoderSlots)
                         .build();
              }
             return SpartanConfigRegistry.get().createCuriosityDrivenRecurrentSoftActorCriticConfig(

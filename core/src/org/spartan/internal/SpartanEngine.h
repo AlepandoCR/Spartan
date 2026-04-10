@@ -257,6 +257,26 @@ namespace org::spartan::internal {
           */
          void multiAgentApplyRewards(uint64_t groupIdentifier, const double* rewardsBuffer, int32_t rewardCount);
 
+          /**
+          * @brief Saves a model to a .spartan file using its persistence module.
+          *
+          * @param agentIdentifier    The 64-bit identifier of the agent to save.
+          * @param filePath           Null-terminated path to output .spartan file.
+          * @param modelTypeId        The model type (1=RSAC, 2=DDQN, 3=AutoEncoder, 4=Curiosity).
+          * @return True on success, false on failure.
+          */
+         bool saveModel(uint64_t agentIdentifier, const char* filePath, uint32_t modelTypeId);
+
+         /**
+          * @brief Loads a model from a .spartan file using its persistence module.
+          *
+          * @param agentIdentifier    The 64-bit identifier of the agent to load into.
+          * @param filePath           Null-terminated path to input .spartan file.
+          * @param modelTypeId        Expected model type (must match file header).
+          * @return True on success, false on failure.
+          */
+         bool loadModel(uint64_t agentIdentifier, const char* filePath, uint32_t modelTypeId);
+
     private:
         /** @brief The model registry owned by this engine instance. */
         machinelearning::SpartanModelRegistry modelRegistry_;

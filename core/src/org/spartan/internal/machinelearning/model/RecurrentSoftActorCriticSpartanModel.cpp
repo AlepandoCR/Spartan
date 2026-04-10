@@ -618,9 +618,17 @@ namespace org::spartan::internal::machinelearning {
 
             // Past state s
             const std::span<const double> pastStateView = remorseTraceBuffer_.getArchivedHiddenState(i);
-            // Reconstruct the action or use current action (simplified since RemorseTraceBuffer only has index currently)
-            // It would be much better to store actions, but we work around it using actionView
-            const std::span<const double> actionView(actionOutputBuffer_.data(), actionSize);
+
+            // Get the action taken at this past timestep from the trace buffer
+            const RemorseTraceEntry& entry = remorseTraceBuffer_.getEntry(i);
+            int32_t archivedActionIndex = entry.selectedActionIndex;
+
+            // Reconstruct one-hot action vector for the archived action
+            std::fill_n(inferenceScratchpadA_.begin(), actionSize, 0.0);
+            if (archivedActionIndex >= 0 && archivedActionIndex < actionSize) {
+                inferenceScratchpadA_[archivedActionIndex] = 1.0;
+            }
+            const std::span<const double> actionView(inferenceScratchpadA_.data(), actionSize);
 
             const double effectiveReward = rewardSignal * blame;
 
@@ -647,7 +655,8 @@ namespace org::spartan::internal::machinelearning {
                 std::ranges::fill(criticWeightGradientScratchpad_, 0.0);
                 std::ranges::fill(criticBiasGradientScratchpad_, 0.0);
 
-                const double tdError = 2.0 * (qValue - temporalDifferenceTarget);
+                // MSE gradient dL/dQ = (Q - target) already has 2x from d(Q-target)²/dQ
+                const double tdError = (qValue - temporalDifferenceTarget);
 
                 // Compute offsets
                 size_t weightOffset = 0;
@@ -757,7 +766,7 @@ namespace org::spartan::internal::machinelearning {
 
         }
 
-        // --- Full SAC Actor Update (reparameterized) ---
+        // --- Full SAC Actor Update ---
         // Objective: J = Q(s, a) - alpha * log pi(a|s)
         // With a = mean + std * noise, dJ/dmean = dQ/da
         // and dJ/dlogStd = dQ/da * (std * noise) + alpha
@@ -936,6 +945,8 @@ namespace org::spartan::internal::machinelearning {
         remorseTraceBuffer_.reset();
     }
 
+
+    // Expose critic weights for persistence. These are non-owning views over the JVM-owned buffer.
     std::span<const double> RecurrentSoftActorCriticSpartanModel::getCriticWeights() const noexcept {
         return criticWeightsSpan_;
     }

@@ -77,13 +77,13 @@ public class SpartanNative {
         }
         try {
             var addr = loader.find("spartan_save_model").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_save_model"));
-            SPARTAN_SAVE_MODEL_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS));
+            SPARTAN_SAVE_MODEL_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
         } catch (Exception e) {
             throw new RuntimeException("Failed to bind native function: spartan_save_model", e);
         }
         try {
             var addr = loader.find("spartan_load_model").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_load_model"));
-            SPARTAN_LOAD_MODEL_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS));
+            SPARTAN_LOAD_MODEL_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
         } catch (Exception e) {
             throw new RuntimeException("Failed to bind native function: spartan_load_model", e);
         }
@@ -285,10 +285,10 @@ public class SpartanNative {
     /**
      * Saves a model's complete state (model weights + critic weights) to a .spartan file.
      */
-    public static int spartanSaveModel(long agentIdentifier, @NotNull String filePath) {
+    public static int spartanSaveModel(long agentIdentifier, @NotNull String filePath, int modelTypeId) {
         try (var arena = Arena.ofShared()) {
             var filePathSegment = arena.allocateFrom(filePath);
-            return (int) SPARTAN_SAVE_MODEL_HANDLE.invokeExact(agentIdentifier, filePathSegment);
+            return (int) SPARTAN_SAVE_MODEL_HANDLE.invokeExact(agentIdentifier, filePathSegment, modelTypeId);
         } catch (Throwable t) {
             throw new RuntimeException("Native invocation failed: spartan_save_model", t);
         }
@@ -297,10 +297,10 @@ public class SpartanNative {
     /**
      * Loads model weights from a .spartan binary file into the given agent.
      */
-    public static int spartanLoadModel(long agentIdentifier, @NotNull String filePath) {
+    public static int spartanLoadModel(long agentIdentifier, @NotNull String filePath, int modelTypeId) {
         try (var arena = Arena.ofShared()) {
             var filePathSegment = arena.allocateFrom(filePath);
-            return (int) SPARTAN_LOAD_MODEL_HANDLE.invokeExact(agentIdentifier, filePathSegment);
+            return (int) SPARTAN_LOAD_MODEL_HANDLE.invokeExact(agentIdentifier, filePathSegment, modelTypeId);
         } catch (Throwable t) {
             throw new RuntimeException("Native invocation failed: spartan_load_model", t);
         }

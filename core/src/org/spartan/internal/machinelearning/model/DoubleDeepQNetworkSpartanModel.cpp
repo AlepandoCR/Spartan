@@ -214,6 +214,8 @@ namespace org::spartan::internal::machinelearning {
         std::vector<int> layerInputSizes(static_cast<size_t>(hiddenLayers));
         size_t weightOffset = 0;
         size_t biasOffset = 0;
+
+        // Compute offsets for each hidden layer's weights and biases in the flat buffer
         for (int layer = 0; layer < hiddenLayers; ++layer) {
             const int inputSize = (layer == 0) ? combinedInputSize : hiddenSize;
             layerWeightOffsets[layer] = weightOffset;
@@ -222,6 +224,8 @@ namespace org::spartan::internal::machinelearning {
             weightOffset += static_cast<size_t>(hiddenSize) * static_cast<size_t>(inputSize);
             biasOffset += static_cast<size_t>(hiddenSize);
         }
+
+
         const size_t outputWeightOffset = weightOffset;
         const size_t outputBiasOffset = biasOffset;
 
@@ -245,6 +249,7 @@ namespace org::spartan::internal::machinelearning {
 
             std::span<const double> currentInput = std::span<const double>(combinedInputBuffer_.data(), combinedInputBuffer_.size());
 
+            // Forward pass through hidden layers with activation caching
             for (int layer = 0; layer < hiddenLayers; ++layer) {
                 const auto activationSpan = std::span(
                     layerActivationBuffer_.data() + static_cast<size_t>(layer) * hiddenSize,
@@ -310,8 +315,8 @@ namespace org::spartan::internal::machinelearning {
             // Bellman target
             const double bellmanTarget = transitionReward + gamma * bootstrappedValue;
 
-            // TD error gradient
-            const double temporalDifferenceError = 2.0 * (onlineQValue - bellmanTarget)
+            // TD error gradient (MSE gradient already has 2x)
+            const double temporalDifferenceError = (onlineQValue - bellmanTarget)
                 / static_cast<double>(batchSize);
 
             // Output layer gradients

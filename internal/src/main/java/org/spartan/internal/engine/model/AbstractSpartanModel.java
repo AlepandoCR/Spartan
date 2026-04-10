@@ -2,6 +2,7 @@ package org.spartan.internal.engine.model;
 
 import org.jetbrains.annotations.NotNull;
 import org.spartan.api.engine.SpartanModel;
+import org.spartan.api.engine.config.SpartanModelType;
 import org.spartan.api.engine.config.SpartanModelConfig;
 import org.spartan.api.engine.context.SpartanContext;
 import org.spartan.api.exception.SpartanNativeException;
@@ -154,14 +155,14 @@ public abstract class AbstractSpartanModel<SpartanModelConfigType extends Sparta
     @Override
     public void saveModel(@NotNull Path filePath) throws SpartanPersistenceException {
         String pathString = filePath.toAbsolutePath().toString();
-        int result = SpartanNative.spartanSaveModel(agentIdentifier, pathString);
+        int result = SpartanNative.spartanSaveModel(agentIdentifier, pathString, getModelType().getNativeValue());
         if (result != 0) throw new SpartanPersistenceException("Save failed: " + result);
     }
 
     @Override
     public void loadModel(@NotNull Path filePath) throws SpartanPersistenceException {
         String pathString = filePath.toAbsolutePath().toString();
-        int result = SpartanNative.spartanLoadModel(agentIdentifier, pathString);
+        int result = SpartanNative.spartanLoadModel(agentIdentifier, pathString, getModelType().getNativeValue());
         if (result != 0) throw new SpartanPersistenceException("Load failed: " + result);
     }
 
@@ -169,6 +170,14 @@ public abstract class AbstractSpartanModel<SpartanModelConfigType extends Sparta
     public @NotNull SpartanModel<SpartanModelConfigType> copy(@NotNull String newIdentifier) {
         throw new UnsupportedOperationException("Subclasses must implement copy()");
     }
+
+    /**
+     * Returns the model type for this instance.
+     * Each subclass must provide its own type.
+     *
+     * @return the model type
+     */
+    protected abstract SpartanModelType getModelType();
 
     @Override
     public void setLiveExplorationRate(double newEpsilon) {

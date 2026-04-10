@@ -14,6 +14,7 @@
 #include "machinelearning/model/AutoEncoderCompressorSpartanModel.h"
 #include "machinelearning/model/CuriosityDrivenRecurrentSoftActorCriticSpartanModel.h"
 #include "machinelearning/persistence/SpartanPersistence.h"
+#include "machinelearning/persistence/SpartanPersistence.h"
 
 namespace org::spartan::internal {
 
@@ -868,6 +869,58 @@ namespace org::spartan::internal {
         logging::SpartanLogger::info(
             std::format("Removed agent {} from group {}", agentIdentifier, groupIdentifier));
         return true;
+    }
+
+    bool SpartanEngine::saveModel(const uint64_t agentIdentifier,
+                                  const char* filePath,
+                                  const uint32_t modelTypeId) {
+        auto modelPtr = modelRegistry_.getModel(agentIdentifier);
+        if (!modelPtr) {
+            logging::SpartanLogger::error(
+                std::format("saveModel: Agent {} not found in registry", agentIdentifier));
+            return false;
+        }
+
+        if (filePath == nullptr) {
+            logging::SpartanLogger::error("saveModel: filePath is null");
+            return false;
+        }
+
+        bool success = machinelearning::persistence::saveModelWithModule(filePath, modelPtr, modelTypeId);
+        if (success) {
+            logging::SpartanLogger::info(
+                std::format("saveModel: Successfully saved agent {} to {}", agentIdentifier, filePath));
+        } else {
+            logging::SpartanLogger::error(
+                std::format("saveModel: Failed to save agent {} to {}", agentIdentifier, filePath));
+        }
+        return success;
+    }
+
+    bool SpartanEngine::loadModel(const uint64_t agentIdentifier,
+                                  const char* filePath,
+                                  const uint32_t modelTypeId) {
+        auto modelPtr = modelRegistry_.getModel(agentIdentifier);
+        if (!modelPtr) {
+            logging::SpartanLogger::error(
+                std::format("loadModel: Agent {} not found in registry", agentIdentifier));
+            return false;
+        }
+
+        if (filePath == nullptr) {
+            logging::SpartanLogger::error("loadModel: filePath is null");
+            return false;
+        }
+
+        bool success = machinelearning::persistence::loadModelWithModule(filePath, modelPtr, modelTypeId);
+        if (success) {
+            logging::SpartanLogger::info(
+                std::format("loadModel: Successfully loaded agent {} from {}", agentIdentifier, filePath));
+        } else {
+            logging::SpartanLogger::error(
+                std::format("loadModel: Failed to load agent {} from {}", agentIdentifier, filePath));
+        }
+        return success;
     }
 
 }

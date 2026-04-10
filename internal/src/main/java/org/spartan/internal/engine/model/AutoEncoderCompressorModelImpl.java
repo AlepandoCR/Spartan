@@ -3,6 +3,7 @@ package org.spartan.internal.engine.model;
 import org.jetbrains.annotations.NotNull;
 import org.spartan.api.engine.action.SpartanActionManager;
 import org.spartan.api.engine.config.AutoEncoderCompressorConfig;
+import org.spartan.api.engine.config.SpartanModelType;
 import org.spartan.api.engine.context.SpartanContext;
 import org.spartan.api.engine.model.AutoEncoderCompressorModel;
 
@@ -119,5 +120,10 @@ public class AutoEncoderCompressorModelImpl
     @Override
     public void decayExploration() {
         // AutoEncoder compressor doesn't have exploration, so this is a no-op.
+    }
+
+    @Override
+    protected SpartanModelType getModelType() {
+        return SpartanModelType.AUTO_ENCODER_COMPRESSOR;
     }
 }

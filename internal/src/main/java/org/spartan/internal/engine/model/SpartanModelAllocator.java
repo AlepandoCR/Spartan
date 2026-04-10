@@ -217,44 +217,25 @@ public final class SpartanModelAllocator {
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_RECURRENT_INPUT_FEATURE_COUNT_OFFSET,
                 config.recurrentInputFeatureCount());
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_NESTED_ENCODER_COUNT_OFFSET,
-                config.nestedEncoderCount());
+                0); // Nested encoders no longer supported - always 0
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_REMORSE_BUFFER_CAPACITY_OFFSET,
                 config.remorseTraceBufferCapacity());
         segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.RSAC_REMORSE_SIMILARITY_THRESHOLD_OFFSET,
                 config.remorseMinimumSimilarityThreshold());
-
-        // Write encoder slot descriptors (up to MAX_NESTED_ENCODER_SLOTS)
-        int encoderCount = config.nestedEncoderCount();
-        long slotsBase = SpartanConfigLayout.RSAC_ENCODER_SLOTS_OFFSET;
-
-        for (int i = 0; i < encoderCount && i < SpartanConfigLayout.MAX_NESTED_ENCODER_SLOTS; i++) {
-            NestedEncoderSlotDescriptor slot = config.encoderSlot(i);
-            long slotOffset = slotsBase + (i * SpartanConfigLayout.SLOT_DESCRIPTOR_SIZE);
-
-            segment.set(ValueLayout.JAVA_INT, slotOffset + SpartanConfigLayout.SLOT_START_INDEX_OFFSET,
-                    slot.contextSliceStartIndex());
-            segment.set(ValueLayout.JAVA_INT, slotOffset + SpartanConfigLayout.SLOT_ELEMENT_COUNT_OFFSET,
-                    slot.contextSliceElementCount());
-            segment.set(ValueLayout.JAVA_INT, slotOffset + SpartanConfigLayout.SLOT_LATENT_DIM_OFFSET,
-                    slot.latentDimensionSize());
-            segment.set(ValueLayout.JAVA_INT, slotOffset + SpartanConfigLayout.SLOT_HIDDEN_COUNT_OFFSET,
-                    slot.hiddenNeuronCount());
-        }
-
-        // Remaining slots (if any) are left as zero-initialized by Arena
 
         return segment;
     }
 
     /**
      * Calculates the total weight count for an RSAC model's actor network.
-     * * Includes:
+     *
+     * Includes:
      * 1. Policy Network (Actor): Multi-layer MLP with GRU input.
-     * 2. Nested AutoEncoders: Weights, biases, and scratchpads for all slots.
-     * * Each sub-module is SIMD-padded individually to ensure safe vectorized memory access.
+     *
+     * Note: Nested AutoEncoders are no longer supported.
      *
      * @param config the RSAC configuration
-     * @return total number of double weights for the model (actor + nested encoders, SIMD-padded)
+     * @return total number of double weights for the actor (SIMD-padded)
      */
     public static long calculateRSACModelWeightCount(
             @NotNull RecurrentSoftActorCriticConfig config,
@@ -283,39 +264,12 @@ public final class SpartanModelAllocator {
         long actorBiases = (actorLayerCount * actorHiddenSize) + ((long) actionSize * 2);
 
         // Individual SIMD Padding for the Actor block
-        // We pad the sum of weights and biases to ensure the next module starts aligned
         long actorTotalRaw = policyLayer1Weights + intermediateWeights +
                 policyMeanWeights + policyLogStdWeights + actorBiases;
         long actorTotalPadded = simdPadElementCount(actorTotalRaw);
 
-        // Nested AutoEncoders Calculation
-        long nestedEncoderTotal = 0L;
-        int encoderCount = config.nestedEncoderCount();
-
-        // Safety check against config inconsistencies
-        if (encoderCount < 0 || encoderCount > SpartanConfigLayout.MAX_NESTED_ENCODER_SLOTS) {
-            throw new IllegalArgumentException("Invalid encoder count: " + encoderCount);
-        }
-
-        for (int i = 0; i < encoderCount; i++) {
-            NestedEncoderSlotDescriptor slot = config.encoderSlot(i);
-
-            // Use the specialized AE calculator for each slot
-            long slotWeightCount = calculateAutoEncoderWeightCount(
-                    slot.contextSliceElementCount(),
-                    slot.hiddenNeuronCount(),
-                    slot.latentDimensionSize()
-            );
-
-            // Pad each encoder individually so they don't bleed into each other's cache lines
-            nestedEncoderTotal += simdPadElementCount(slotWeightCount);
-        }
-
-        // 4. Final Aggregation
-        // Combined size of Actor + all Encoders + Safety Margin
-        long totalModelWeights = actorTotalPadded + nestedEncoderTotal;
-
-        return totalModelWeights + SAFETY_PADDING_ELEMENTS;
+        // Final result: Actor weights only (nested encoders no longer supported)
+        return actorTotalPadded + SAFETY_PADDING_ELEMENTS;
     }
 
     /**

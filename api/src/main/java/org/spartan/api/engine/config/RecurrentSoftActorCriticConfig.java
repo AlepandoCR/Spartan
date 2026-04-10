@@ -1,8 +1,6 @@
 package org.spartan.api.engine.config;
 
 import org.jetbrains.annotations.Contract;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.jspecify.annotations.NonNull;
 import org.spartan.api.engine.config.spi.SpartanConfigRegistry;
 
@@ -168,41 +166,11 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
      */
     double remorseMinimumSimilarityThreshold();
 
-    /**
-     * Returns the configuration for optional nested AutoEncoders.
-     * <p>
-     * <b>Concept:</b> Allows embedding smaller sub-models to compress parts of the input space directly within this agent.
-     * Advanced feature for very high-dimensional observations.
-     *
-     * @return array of encoder descriptors or null
-     */
-    @Nullable NestedEncoderSlotDescriptor[] encoderSlots();
-
-    /** Maximum number of nested encoder slots. */
-    int MAX_NESTED_ENCODER_SLOTS = 16;
-
     @Override
     default SpartanModelType modelType() {
         return SpartanModelType.RECURRENT_SOFT_ACTOR_CRITIC;
     }
 
-    /**
-     * Returns the number of active nested encoder slots.
-     */
-    default int nestedEncoderCount() {
-        return encoderSlots() != null ? encoderSlots().length : 0;
-    }
-
-    /**
-     * Gets a specific encoder slot descriptor.
-     */
-    default @NotNull NestedEncoderSlotDescriptor encoderSlot(int index) {
-        NestedEncoderSlotDescriptor[] slots = encoderSlots();
-        if (slots == null || index < 0 || index >= slots.length) {
-            throw new IndexOutOfBoundsException("Invalid encoder slot index: " + index);
-        }
-        return slots[index];
-    }
 
     @Contract(value = " -> new", pure = true)
     static @NonNull Builder builder() {
@@ -235,7 +203,6 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
         private int recurrentInputFeatureCount = 64;
         private int remorseTraceBufferCapacity = 1000;
         private double remorseMinimumSimilarityThreshold = 0.7;
-        private NestedEncoderSlotDescriptor[] encoderSlots = null;
 
         private Builder() {}
 
@@ -261,10 +228,9 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
         public Builder recurrentInputFeatureCount(int val) { this.recurrentInputFeatureCount = val; return this; }
         public Builder remorseTraceBufferCapacity(int val) { this.remorseTraceBufferCapacity = val; return this; }
         public Builder remorseMinimumSimilarityThreshold(double val) { this.remorseMinimumSimilarityThreshold = val; return this; }
-        public Builder encoderSlots(NestedEncoderSlotDescriptor[] val) { this.encoderSlots = val; return this; }
 
-
-        public RecurrentSoftActorCriticConfig build() {
+        @Contract(" -> new")
+        public @NonNull RecurrentSoftActorCriticConfig build() {
              return SpartanConfigRegistry.get().createRecurrentSoftActorCriticConfig(
                  learningRate, gamma, epsilon, epsilonMin, epsilonDecay,
                  debugLogging, isTraining,
@@ -272,7 +238,7 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
                  criticHiddenLayerNeuronCount, criticHiddenLayerCount, targetSmoothingCoefficient,
                  entropyTemperatureAlpha, firstCriticLearningRate, secondCriticLearningRate,
                  policyNetworkLearningRate, recurrentInputFeatureCount, remorseTraceBufferCapacity,
-                 remorseMinimumSimilarityThreshold, encoderSlots
+                 remorseMinimumSimilarityThreshold
              );
         }
     }

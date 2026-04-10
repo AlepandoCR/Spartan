@@ -1,6 +1,7 @@
 package org.spartan.internal.engine.model;
 
 import org.jetbrains.annotations.NotNull;
+import org.spartan.api.engine.config.SpartanModelType;
 import org.spartan.api.engine.model.RecurrentSoftActorCriticModel;
 import org.spartan.api.engine.action.SpartanActionManager;
 import org.spartan.api.engine.action.type.SpartanAction;
@@ -189,5 +190,10 @@ public class RecurrentSoftActorCriticModelImpl
             double rawOutput = actionOutputBuffer.getAtIndex(ValueLayout.JAVA_DOUBLE, i);
             actions.get(i).tick(rawOutput);
         }
+    }
+
+    @Override
+    protected SpartanModelType getModelType() {
+        return SpartanModelType.RECURRENT_SOFT_ACTOR_CRITIC;
     }
 }

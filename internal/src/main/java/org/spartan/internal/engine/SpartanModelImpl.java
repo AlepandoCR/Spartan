@@ -227,13 +227,35 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
 
     @Override
     public void saveModel(@NotNull Path filePath) throws SpartanPersistenceException {
-        // Implementation calling SpartanNative.spartanSaveModel(agentId, pathString)
-        SpartanNative.spartanSaveModel(agentId, filePath.toString());
+        int modelTypeId = determineModelTypeId();
+        int result = SpartanNative.spartanSaveModel(agentId, filePath.toString(), modelTypeId);
+        if (result != 0) throw new SpartanPersistenceException("Save failed: " + result);
     }
 
     @Override
     public void loadModel(@NotNull Path filePath) throws SpartanPersistenceException {
-        SpartanNative.spartanLoadModel(agentId, filePath.toString());
+        int modelTypeId = determineModelTypeId();
+        int result = SpartanNative.spartanLoadModel(agentId, filePath.toString(), modelTypeId);
+        if (result != 0) throw new SpartanPersistenceException("Load failed: " + result);
+    }
+
+    /**
+     * Determines the model type ID based on the config type.
+     *
+     * @return the model type ID matching SpartanModelType enum values
+     */
+    private int determineModelTypeId() {
+        if (config instanceof RecurrentSoftActorCriticConfig) {
+            return SpartanModelType.RECURRENT_SOFT_ACTOR_CRITIC.getNativeValue();
+        } else if (config instanceof DoubleDeepQNetworkConfig) {
+            return SpartanModelType.DOUBLE_DEEP_Q_NETWORK.getNativeValue();
+        } else if (config instanceof AutoEncoderCompressorConfig) {
+            return SpartanModelType.AUTO_ENCODER_COMPRESSOR.getNativeValue();
+        } else if (config instanceof CuriosityDrivenRecurrentSoftActorCriticConfig) {
+            return SpartanModelType.CURIOSITY_DRIVEN_RECURRENT_SOFT_ACTOR_CRITIC.getNativeValue();
+        } else {
+            throw new IllegalArgumentException("Unknown config type: " + config.getClass());
+        }
     }
 
     @Override

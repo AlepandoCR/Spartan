@@ -1,6 +1,6 @@
 package org.spartan.internal.engine.config;
-import org.jetbrains.annotations.Nullable;
-import org.spartan.api.engine.config.NestedEncoderSlotDescriptor;
+
+
 import org.spartan.api.engine.config.RecurrentSoftActorCriticConfig;
 
 public record RecurrentSoftActorCriticConfigImpl(
@@ -24,7 +24,6 @@ public record RecurrentSoftActorCriticConfigImpl(
         double policyNetworkLearningRate,
         int recurrentInputFeatureCount,
         int remorseTraceBufferCapacity,
-        double remorseMinimumSimilarityThreshold,
-        @Nullable NestedEncoderSlotDescriptor[] encoderSlots
+        double remorseMinimumSimilarityThreshold
 ) implements RecurrentSoftActorCriticConfig {
 }

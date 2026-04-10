@@ -238,36 +238,38 @@ extern "C" {
      *
      * @param agentIdentifier The unique ID of the agent to save.
      * @param filePath        Null-terminated path to the output .spartan file.
+     * @param modelTypeId     The model type (1=RSAC, 2=DDQN, 3=AutoEncoder, 4=Curiosity).
      * @return 0 on success, -1 on invalid input or I/O failure.
      */
-    SPARTAN_API_EXPORT int spartan_save_model(const uint64_t agentIdentifier, const char* filePath) {
+    SPARTAN_API_EXPORT int spartan_save_model(const uint64_t agentIdentifier, const char* filePath, const uint32_t modelTypeId) {
         if (filePath == nullptr) {
             SpartanEngine::logError("spartan_save_model: received null file path.");
             return -1;
         }
-        const bool success = engine.saveModel(agentIdentifier, filePath);
+        const bool success = engine.saveModel(agentIdentifier, filePath, modelTypeId);
         return success ? 0 : -1;
     }
 
     /**
      * @brief Loads model weights from a .spartan binary file into the given agent.
      *
+     * Uses the model's specialized persistence module for deserialization.
      * The trailing CRC-32 checksum is verified without heap allocation.
      *
      * @param agentIdentifier     The unique ID of the target agent.
      * @param filePath            Null-terminated path to the input .spartan file.
+     * @param modelTypeId         The model type (1=RSAC, 2=DDQN, 3=AutoEncoder, 4=Curiosity).
      * @return 0 on success, -1 on invalid input, CRC mismatch, or I/O failure.
      */
-    SPARTAN_API_EXPORT int spartan_load_model(const uint64_t agentIdentifier, const char* filePath) {
+    SPARTAN_API_EXPORT int spartan_load_model(const uint64_t agentIdentifier, const char* filePath, const uint32_t modelTypeId) {
         if (filePath == nullptr) {
             SpartanEngine::logError("spartan_load_model: received null file path.");
             return -1;
         }
 
-        const bool success = engine.loadModel(agentIdentifier, filePath);
+        const bool success = engine.loadModel(agentIdentifier, filePath, modelTypeId);
         return success ? 0 : -1;
     }
-
 
     /**
      * @brief Triggers exploration rate decay for a specific agent.

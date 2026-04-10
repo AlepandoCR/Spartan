@@ -3,7 +3,6 @@ package org.spartan.internal.test;
 import org.junit.jupiter.api.*;
 import org.spartan.api.engine.action.SpartanActionManager;
 import org.spartan.api.engine.action.type.SpartanAction;
-import org.spartan.api.engine.config.NestedEncoderSlotDescriptor;
 import org.spartan.api.engine.config.RecurrentSoftActorCriticConfig;
 import org.spartan.api.engine.context.element.SpartanSingleContextElement;
 import org.spartan.api.engine.context.element.variable.SpartanVariableContextElement;
@@ -378,13 +377,9 @@ public class SpartanIntegrationTest {
                      .actorHiddenLayerCount(2)
                      .criticHiddenLayerNeuronCount(256)
                      .criticHiddenLayerCount(2)
-                     .encoderSlots(new NestedEncoderSlotDescriptor[]{
-                             new NestedEncoderSlotDescriptor(0, 32, 8, 64)
-                     })
                      .build();
 
              assertEquals(128, config.hiddenStateSize());
-             assertEquals(1, config.nestedEncoderCount());
 
              try (Arena arena = Arena.ofConfined()) {
                 MemorySegment configSegment = SpartanModelAllocator.writeRSACConfig(arena, config, stateSize, actionSize);
@@ -464,24 +459,6 @@ public class SpartanIntegrationTest {
             }
         }
 
-        @Test
-        @DisplayName("NestedEncoderSlotDescriptor Validation")
-        void testNestedEncoderSlotDescriptor() {
-            NestedEncoderSlotDescriptor slot = new NestedEncoderSlotDescriptor(0, 32, 8, 64);
-
-            assertEquals(0, slot.contextSliceStartIndex());
-            assertEquals(32, slot.contextSliceElementCount());
-            assertEquals(8, slot.latentDimensionSize());
-            assertEquals(64, slot.hiddenNeuronCount());
-            assertEquals(16, NestedEncoderSlotDescriptor.BYTE_SIZE);
-
-            assertThrows(IllegalArgumentException.class, () ->
-                    new NestedEncoderSlotDescriptor(-1, 32, 8, 64));
-            assertThrows(IllegalArgumentException.class, () ->
-                    new NestedEncoderSlotDescriptor(0, 0, 8, 64));
-
-            System.out.println("OK - NestedEncoderSlotDescriptor test passed");
-        }
 
         @Test
         @DisplayName("Config Layout Constants")

@@ -7,6 +7,11 @@
 #include <cstdint>
 #include <span>
 
+// Forward declaration
+namespace org::spartan::internal::machinelearning {
+    class SpartanModel;
+}
+
 /**
  * @file SpartanPersistence.h
  * @brief Binary persistence format for saving and loading Spartan models.
@@ -182,6 +187,36 @@ namespace org::spartan::internal::machinelearning::persistence {
     bool loadWeights(const char* filePath,
                      const SpartanFileHeader& header,
                      std::span<double> targetWeightBuffer);
+
+    /**
+     * @brief Saves a model using its specialized persistence module.
+     *
+     * This function dispatches to the appropriate ModelPersistenceModule
+     * based on the model type, serializes the model, and writes it to disk.
+     *
+     * @param filePath              Null-terminated path to output .spartan file.
+     * @param model                 Pointer to the SpartanModel to save.
+     * @param modelTypeIdentifier   The model type (MODEL_TYPE_RSAC, etc.)
+     * @return True on success, false on failure.
+     */
+    bool saveModelWithModule(const char* filePath,
+                            const org::spartan::internal::machinelearning::SpartanModel* model,
+                            uint32_t modelTypeIdentifier);
+
+    /**
+     * @brief Loads a model using its specialized persistence module.
+     *
+     * This function reads the file, dispatches to the appropriate
+     * ModelPersistenceModule, and deserializes the model.
+     *
+     * @param filePath              Null-terminated path to input .spartan file.
+     * @param model                 Pointer to the SpartanModel to restore into.
+     * @param modelTypeIdentifier   Expected model type (must match file header).
+     * @return True on success, false on failure.
+     */
+    bool loadModelWithModule(const char* filePath,
+                            org::spartan::internal::machinelearning::SpartanModel* model,
+                            uint32_t modelTypeIdentifier);
 
 }
 

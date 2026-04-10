@@ -8,6 +8,11 @@
 #include <string>
 #include <cstring>
 #include "../../logging/SpartanLogger.h"
+#include "ModelPersistenceModule.h"
+#include "RsacPersistenceModule.h"
+#include "DdqnPersistenceModule.h"
+#include "AutoEncoderPersistenceModule.h"
+#include "CuriosityRsacPersistenceModule.h"
 
 using namespace org::spartan::internal::logging;
 
@@ -51,7 +56,7 @@ namespace org::spartan::internal::machinelearning::persistence {
      * @return The finalised CRC-32 value.
      */
     static uint32_t computeCrc32(const uint8_t* dataPointer, const size_t byteLength) {
-        uint32_t crcAccumulator = 0xFFFFFFFF;
+        uint32_t crcAccumulator = 0xFFFFFFFF; // Initial value for CRC-32
         for (size_t byteIndex = 0; byteIndex < byteLength; ++byteIndex) {
             const auto lookupIndex = static_cast<uint8_t>(crcAccumulator ^ dataPointer[byteIndex]);
             crcAccumulator = (crcAccumulator >> 8) ^ CRC32_LOOKUP_TABLE.entries[lookupIndex];
@@ -250,4 +255,111 @@ namespace org::spartan::internal::machinelearning::persistence {
         return true;
     }
 
+    // ...existing CRC and file I/O code...
+
+    bool saveModelWithModule(
+            const char* filePath,
+            const SpartanModel* model,
+            uint32_t modelTypeIdentifier) {
+
+        // Get the appropriate persistence module for this model type
+        ModelPersistenceModule* module =
+            ModelPersistenceRegistry::getInstance().getModule(modelTypeIdentifier);
+
+        if (!module) {
+            SpartanLogger::error("saveModelWithModule: No persistence module registered for type " +
+                               std::to_string(modelTypeIdentifier));
+            return false;
+        }
+
+        // Serialize model weights using the module
+        std::vector<double> serializedWeights = module->serialize(model);
+        if (serializedWeights.empty()) {
+            SpartanLogger::error("saveModelWithModule: Failed to serialize model");
+            return false;
+        }
+
+        // Create TOC entry
+        SubModelTopologyEntry tocEntry{};
+        tocEntry.subModelRole = 0;
+        tocEntry.subModelIndex = 0;
+        tocEntry.inputDimensionSize = 0;
+        tocEntry.outputDimensionSize = static_cast<int32_t>(serializedWeights.size());
+        tocEntry.hiddenNeuronCount = 0;
+        tocEntry.hiddenLayerCount = 0;
+        tocEntry.activationFunctionType = 0;
+        tocEntry.reservedPadding = 0;
+        tocEntry.weightByteOffsetRelative = 0;
+        tocEntry.weightElementCount = serializedWeights.size();
+        tocEntry.biasesByteOffsetRelative = 0;
+        tocEntry.biasElementCount = 0;
+
+        // Save using standard persistence functions
+        std::vector<SubModelTopologyEntry> tocEntries{tocEntry};
+        bool success = saveModel(filePath, modelTypeIdentifier,
+                                 std::span(tocEntries),
+                                 std::span(serializedWeights));
+
+        if (success) {
+            SpartanLogger::debug("saveModelWithModule: Saved model type " +
+                               std::to_string(modelTypeIdentifier) + " with " +
+                               std::to_string(serializedWeights.size()) + " doubles");
+        }
+
+        return success;
+    }
+
+    bool loadModelWithModule(
+            const char* filePath,
+            SpartanModel* model,
+            uint32_t modelTypeIdentifier) {
+
+        // Get the appropriate persistence module for this model type
+        ModelPersistenceModule* persistenceModule =
+            ModelPersistenceRegistry::getInstance().getModule(modelTypeIdentifier);
+
+        if (!persistenceModule) {
+            SpartanLogger::error("loadModelWithModule: No persistence module registered for type " +
+                               std::to_string(modelTypeIdentifier));
+            return false;
+        }
+
+        // Load header
+        SpartanFileHeader header{};
+        if (!loadHeader(filePath, header)) {
+            SpartanLogger::error("loadModelWithModule: Failed to load file header");
+            return false;
+        }
+
+        // Validate model type
+        if (header.modelTypeIdentifier != modelTypeIdentifier) {
+            SpartanLogger::error("loadModelWithModule: Model type mismatch. Expected " +
+                               std::to_string(modelTypeIdentifier) + " got " +
+                               std::to_string(header.modelTypeIdentifier));
+            return false;
+        }
+
+        // Load weights
+        std::vector<double> weightBlob(header.totalWeightCount);
+        if (!loadWeights(filePath, header, std::span(weightBlob))) {
+            SpartanLogger::error("loadModelWithModule: Failed to load weights");
+            return false;
+        }
+
+        // Deserialize using the module
+        if (!persistenceModule->deserialize(model, weightBlob)) {
+            SpartanLogger::error("loadModelWithModule: Failed to deserialize model");
+            return false;
+        }
+
+        SpartanLogger::debug("loadModelWithModule: Loaded model type " +
+                           std::to_string(modelTypeIdentifier) + " with " +
+                           std::to_string(weightBlob.size()) + " doubles");
+
+        return true;
+    }
+
 }
+
+
+
