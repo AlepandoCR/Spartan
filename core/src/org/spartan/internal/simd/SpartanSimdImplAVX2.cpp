@@ -3,6 +3,10 @@
 //
 
 #include "SpartanSimdOps.h"
+
+// AVX2 is only available on x86/x64 architectures
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+
 #include <immintrin.h>
 #include <cmath>
 
@@ -172,6 +176,20 @@ namespace org::spartan::internal::simd::implementations {
     #pragma clang attribute pop
 
 }
+
+#else  // Non-x86/x64 architecture (ARM64, etc.)
+
+namespace org::spartan::internal::simd::implementations {
+    // Provide a no-op stub for non-x86/x64 architectures
+    // The dispatcher will never call this on ARM64
+    SimdOperations createAVX2Operations() {
+        // This should never be called on ARM64 platforms
+        // Return empty operations (will be detected as invalid in dispatcher)
+        return SimdOperations{};
+    }
+}
+
+#endif  // Architecture check
 
 
 
