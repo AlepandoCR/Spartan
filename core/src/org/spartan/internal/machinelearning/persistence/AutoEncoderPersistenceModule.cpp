@@ -6,8 +6,16 @@
 namespace org::spartan::internal::machinelearning::persistence {
 
     AutoEncoderPersistenceModule::AutoEncoderPersistenceModule() {
-        ModelPersistenceRegistry::getInstance().registerModule(
-            std::make_unique<AutoEncoderPersistenceModule>());
+        // Empty constructor - registration handled by initializeAndRegister()
+    }
+
+    void AutoEncoderPersistenceModule::initializeAndRegister() {
+        static bool initialized = false;
+        if (!initialized) {
+            initialized = true;
+            ModelPersistenceRegistry::getInstance().registerModule(
+                std::make_unique<AutoEncoderPersistenceModule>());
+        }
     }
 
     std::vector<double> AutoEncoderPersistenceModule::serialize(

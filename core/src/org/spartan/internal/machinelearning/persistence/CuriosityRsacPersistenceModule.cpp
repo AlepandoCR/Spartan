@@ -6,8 +6,16 @@
 namespace org::spartan::internal::machinelearning::persistence {
 
     CuriosityRsacPersistenceModule::CuriosityRsacPersistenceModule() {
-        ModelPersistenceRegistry::getInstance().registerModule(
-            std::make_unique<CuriosityRsacPersistenceModule>());
+        // Empty constructor - registration handled by initializeAndRegister()
+    }
+
+    void CuriosityRsacPersistenceModule::initializeAndRegister() {
+        static bool initialized = false;
+        if (!initialized) {
+            initialized = true;
+            ModelPersistenceRegistry::getInstance().registerModule(
+                std::make_unique<CuriosityRsacPersistenceModule>());
+        }
     }
 
     std::vector<double> CuriosityRsacPersistenceModule::serialize(

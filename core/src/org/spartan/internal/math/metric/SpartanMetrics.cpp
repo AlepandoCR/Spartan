@@ -3,33 +3,35 @@
 //
 
 #include "SpartanMetrics.h"
-#include "../../simd/SpartanSimd.h"
+#include "../../simd/SpartanSimdOps.h"
+#include "../../simd/SpartanSimdDispatcher.h"
 
 #include <algorithm>
 #include <cmath>
 
 namespace org::spartan::internal::math::metric {
 
-    using namespace org::spartan::internal::math::simd;
-
     double VectorMetrics::cosineSimilarity(const double* firstVector, const double* secondVector, const int arrayLength) {
-        SimdFloat simdDotProductAccumulator = simdSetZero();
-        SimdFloat simdFirstMagnitudeSquaredAccumulator = simdSetZero();
-        SimdFloat simdSecondMagnitudeSquaredAccumulator = simdSetZero();
+        auto& ops = simd::getSelectedSimdOperations();
+        int laneCount = simd::getSimdLaneCount();
+
+        simd::SimdFloat simdDotProductAccumulator = ops.setZero();
+        simd::SimdFloat simdFirstMagnitudeSquaredAccumulator = ops.setZero();
+        simd::SimdFloat simdSecondMagnitudeSquaredAccumulator = ops.setZero();
 
         int elementIndex = 0;
-        for (; elementIndex <= arrayLength - simdLaneCount; elementIndex += simdLaneCount) {
-            const SimdFloat simdFirstChunk = simdLoad(&firstVector[elementIndex]);
-            const SimdFloat simdSecondChunk = simdLoad(&secondVector[elementIndex]);
+        for (; elementIndex <= arrayLength - laneCount; elementIndex += laneCount) {
+            const simd::SimdFloat simdFirstChunk = ops.load(&firstVector[elementIndex]);
+            const simd::SimdFloat simdSecondChunk = ops.load(&secondVector[elementIndex]);
 
-            simdDotProductAccumulator = simdFusedMultiplyAdd(simdFirstChunk, simdSecondChunk, simdDotProductAccumulator);
-            simdFirstMagnitudeSquaredAccumulator = simdFusedMultiplyAdd(simdFirstChunk, simdFirstChunk, simdFirstMagnitudeSquaredAccumulator);
-            simdSecondMagnitudeSquaredAccumulator = simdFusedMultiplyAdd(simdSecondChunk, simdSecondChunk, simdSecondMagnitudeSquaredAccumulator);
+            simdDotProductAccumulator = ops.fusedMultiplyAdd(simdFirstChunk, simdSecondChunk, simdDotProductAccumulator);
+            simdFirstMagnitudeSquaredAccumulator = ops.fusedMultiplyAdd(simdFirstChunk, simdFirstChunk, simdFirstMagnitudeSquaredAccumulator);
+            simdSecondMagnitudeSquaredAccumulator = ops.fusedMultiplyAdd(simdSecondChunk, simdSecondChunk, simdSecondMagnitudeSquaredAccumulator);
         }
 
-        double dotProduct = simdHorizontalSum(simdDotProductAccumulator);
-        double firstMagnitudeSquared = simdHorizontalSum(simdFirstMagnitudeSquaredAccumulator);
-        double secondMagnitudeSquared = simdHorizontalSum(simdSecondMagnitudeSquaredAccumulator);
+        double dotProduct = ops.horizontalSum(simdDotProductAccumulator);
+        double firstMagnitudeSquared = ops.horizontalSum(simdFirstMagnitudeSquaredAccumulator);
+        double secondMagnitudeSquared = ops.horizontalSum(simdSecondMagnitudeSquaredAccumulator);
 
         for (; elementIndex < arrayLength; ++elementIndex) {
             dotProduct += firstVector[elementIndex] * secondVector[elementIndex];
@@ -43,20 +45,23 @@ namespace org::spartan::internal::math::metric {
     }
 
     double VectorMetrics::fuzzyJaccard(const double* firstVector, const double* secondVector, const int arrayLength) {
-        SimdFloat simdIntersectionAccumulator = simdSetZero();
-        SimdFloat simdUnionAccumulator = simdSetZero();
+        auto& ops = simd::getSelectedSimdOperations();
+        int laneCount = simd::getSimdLaneCount();
+
+        simd::SimdFloat simdIntersectionAccumulator = ops.setZero();
+        simd::SimdFloat simdUnionAccumulator = ops.setZero();
 
         int elementIndex = 0;
-        for (; elementIndex <= arrayLength - simdLaneCount; elementIndex += simdLaneCount) {
-            const SimdFloat simdFirstChunk = simdLoad(&firstVector[elementIndex]);
-            const SimdFloat simdSecondChunk = simdLoad(&secondVector[elementIndex]);
+        for (; elementIndex <= arrayLength - laneCount; elementIndex += laneCount) {
+            const simd::SimdFloat simdFirstChunk = ops.load(&firstVector[elementIndex]);
+            const simd::SimdFloat simdSecondChunk = ops.load(&secondVector[elementIndex]);
 
-            simdIntersectionAccumulator = simdAdd(simdIntersectionAccumulator, simdMin(simdFirstChunk, simdSecondChunk));
-            simdUnionAccumulator = simdAdd(simdUnionAccumulator, simdMax(simdFirstChunk, simdSecondChunk));
+            simdIntersectionAccumulator = ops.add(simdIntersectionAccumulator, ops.minimum(simdFirstChunk, simdSecondChunk));
+            simdUnionAccumulator = ops.add(simdUnionAccumulator, ops.maximum(simdFirstChunk, simdSecondChunk));
         }
 
-        double intersectionSum = simdHorizontalSum(simdIntersectionAccumulator);
-        double unionSum = simdHorizontalSum(simdUnionAccumulator);
+        double intersectionSum = ops.horizontalSum(simdIntersectionAccumulator);
+        double unionSum = ops.horizontalSum(simdUnionAccumulator);
 
         for (; elementIndex < arrayLength; ++elementIndex) {
             intersectionSum += std::min(firstVector[elementIndex], secondVector[elementIndex]);

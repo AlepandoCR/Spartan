@@ -79,7 +79,7 @@ set(LOGGING_PATH ${INTERNAL_PATH}/logging)
 
 set(ML_PATH ${INTERNAL_PATH}/machinelearning)
 
-
+set(SIMD_PATH ${INTERNAL_PATH}/simd)
 
 add_library(spartan_core SHARED
         # --- API ---
@@ -165,7 +165,18 @@ add_library(spartan_core SHARED
         ${ML_PATH}/registry/SpartanModelRegistry.cpp
         src/org/spartan/internal/math/tensor/SpartanTensorMath.h
         src/org/spartan/internal/math/tensor/SpartanTensorMath.cpp
-        src/org/spartan/internal/simd/SpartanSimd.h
+
+        # --- SIMD: Runtime Dispatch + Implementations ---
+        ${SIMD_PATH}/SpartanSimdDetector.h
+        ${SIMD_PATH}/SpartanSimdDetector.cpp
+        ${SIMD_PATH}/SpartanSimdDispatcher.h
+        ${SIMD_PATH}/SpartanSimdDispatcher.cpp
+        ${SIMD_PATH}/SpartanSimdOps.h
+        ${SIMD_PATH}/SpartanSimdOps.cpp
+        ${SIMD_PATH}/SpartanSimdImplScalar.cpp
+        ${SIMD_PATH}/SpartanSimdImplAVX2.cpp
+        ${SIMD_PATH}/SpartanSimdImplAVX512.cpp
+        ${SIMD_PATH}/SpartanSimdImplNEON.cpp
 )
 
 # --- target libraries ---

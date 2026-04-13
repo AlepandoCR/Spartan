@@ -124,6 +124,7 @@ public class SpartanApiImpl implements SpartanApi {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public @NotNull <SpartanModelConfigType extends SpartanModelConfig> SpartanMultiAgentModel<SpartanModelConfigType> createMultiAgentModel(
             @NotNull String identifier,
             @NotNull SpartanContext context,
@@ -145,7 +146,13 @@ public class SpartanApiImpl implements SpartanApi {
             @NotNull SpartanContext context,
             @NotNull SpartanActionManager actions
     ) {
-        return new SpartanMultiAgentModelImpl<>(identifier, config, context, actions.getActions());
+        return new SpartanMultiAgentModelImpl<>(
+                identifier,
+                config,
+                context,
+                actions.getActions(),
+                arena
+        );
     }
 
     @Override

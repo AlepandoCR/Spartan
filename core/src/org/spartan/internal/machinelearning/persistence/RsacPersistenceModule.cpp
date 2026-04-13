@@ -6,8 +6,16 @@
 namespace org::spartan::internal::machinelearning::persistence {
 
     RsacPersistenceModule::RsacPersistenceModule() {
-        ModelPersistenceRegistry::getInstance().registerModule(
-            std::make_unique<RsacPersistenceModule>());
+        // Empty constructor - registration handled by initializeAndRegister()
+    }
+
+    void RsacPersistenceModule::initializeAndRegister() {
+        static bool initialized = false;
+        if (!initialized) {
+            initialized = true;
+            ModelPersistenceRegistry::getInstance().registerModule(
+                std::make_unique<RsacPersistenceModule>());
+        }
     }
 
     std::vector<double> RsacPersistenceModule::serialize(

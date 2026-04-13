@@ -6,8 +6,16 @@
 namespace org::spartan::internal::machinelearning::persistence {
 
     DdqnPersistenceModule::DdqnPersistenceModule() {
-        ModelPersistenceRegistry::getInstance().registerModule(
-            std::make_unique<DdqnPersistenceModule>());
+        // Empty constructor - registration handled by initializeAndRegister()
+    }
+
+    void DdqnPersistenceModule::initializeAndRegister() {
+        static bool initialized = false;
+        if (!initialized) {
+            initialized = true;
+            ModelPersistenceRegistry::getInstance().registerModule(
+                std::make_unique<DdqnPersistenceModule>());
+        }
     }
 
     std::vector<double> DdqnPersistenceModule::serialize(

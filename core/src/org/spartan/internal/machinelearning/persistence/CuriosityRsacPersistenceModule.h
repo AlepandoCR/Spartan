@@ -17,6 +17,11 @@ namespace org::spartan::internal::machinelearning::persistence {
 
         bool canHandle(uint32_t modelTypeIdentifier) const override;
         uint32_t modelTypeId() const override;
+
+        /**
+         * @brief Initializes and registers the module singleton.
+         */
+        static void initializeAndRegister();
     };
 
 }

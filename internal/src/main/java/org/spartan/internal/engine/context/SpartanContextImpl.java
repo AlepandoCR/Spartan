@@ -103,6 +103,16 @@ public class SpartanContextImpl implements SpartanContext {
         return dataSegment;
     }
 
+    /**
+     * Internal: Get the Arena used by this context.
+     * This arena is shared across all models using this context,
+     *
+     * @return the Arena used for memory allocation
+     */
+    public @NotNull Arena getArena() {
+        return arena;
+    }
+
     @Override
     public int getSize() {
         return validDataSize;

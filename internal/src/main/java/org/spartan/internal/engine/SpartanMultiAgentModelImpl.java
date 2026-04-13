@@ -46,8 +46,8 @@ public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
     private final SpartanContext sharedContext;
     private final List<SpartanAction> sharedActions;
     private final SpartanMultiAgentGroupConfig groupConfig;
-    private final Arena arena;
-    private final MemorySegment actionOutputBuffer; // New field
+    private final Arena arena;  // Shared Arena from SpartanApi - NEVER closed by this model
+    private final MemorySegment actionOutputBuffer;
 
     private MemorySegment sharedContextBuffer;
     private int sharedContextSize;
@@ -66,13 +66,16 @@ public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
      * Constructor
      * @param identifier      Unique identifier for this group
      * @param sharedContext   The SHARED context (not copied)
-     * @param groupConfig          Configuration for all agents in this group
+     * @param groupConfig     Configuration for all agents in this group
+     * @param sharedActions   Actions available to all agents
+     * @param sharedArena     Shared Arena from SpartanApi (NOT owned by this model)
      */
     public SpartanMultiAgentModelImpl(
         @NotNull String identifier,
         @NotNull SpartanMultiAgentGroupConfig groupConfig,
         @NotNull SpartanContext sharedContext,
-        @NotNull Iterable<SpartanAction> sharedActions) {
+        @NotNull Iterable<SpartanAction> sharedActions,
+        @NotNull Arena sharedArena) {
 
         this.multiAgentId = System.identityHashCode(this);  // Use object identity as ID
         this.identifier = identifier;
@@ -80,7 +83,7 @@ public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
         this.sharedContext = sharedContext;  // reference, not copy
         this.sharedActions = new ArrayList<>();
         sharedActions.forEach(this.sharedActions::add);
-        this.arena = Arena.ofShared();
+        this.arena = sharedArena;  // Use API's shared arena, NOT our own
 
         // Allocate shared action buffer [actionSize * maxAgents]
         this.actionOutputBuffer = SpartanModelAllocator.allocateActionOutputBuffer(
@@ -195,9 +198,18 @@ public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
         long agentId = nextAgentId.getAndIncrement();
 
         if (stateSize <= 0) {
-            sharedContext.update();
-            if (sharedContext.getSize() <= 0) {
+            if (!(sharedContext instanceof SpartanContextImpl contextImpl)) {
+                throw new IllegalArgumentException("Context must be created via SpartanApi");
+            }
+            contextImpl.update();
+            int totalContextSize = contextImpl.getSize();
+            if (totalContextSize <= 0) {
                 throw new IllegalStateException("Shared context size is invalid after update");
+            }
+            if (totalContextSize % groupConfig.maxAgents() == 0) {
+                stateSize = totalContextSize / groupConfig.maxAgents();
+            } else {
+                stateSize = totalContextSize;
             }
         }
         int actionCount = sharedActions.size();
@@ -265,7 +277,7 @@ public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
             throw new IllegalStateException("Multi-agent group is closed");
         }
 
-        //  Update SHARED context (once for all agents)
+        //  Update shared context (once for all agents)
         if (sharedContext instanceof SpartanContextImpl contextImpl) {
             contextImpl.update();
             refreshSharedContextBuffer(contextImpl);
@@ -317,7 +329,14 @@ public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
             closed = true;
             agentById.values().forEach(SpartanAgent::close);
             agentById.clear();
-            arena.close();
+
+            // Unregister from C++ registry to prevent group ID collisions in sequential tests
+            if (registered) {
+                int result = SpartanNative.spartanUnregisterMultiAgent((int) multiAgentId);
+                if (result != 0) {
+                    System.err.println("Warning: Failed to unregister multi-agent group " + multiAgentId + " from C++ registry");
+                }
+            }
         }
     }
 

@@ -5,6 +5,7 @@
 
 #include <cstdint>
 
+
 #if defined(_WIN32)
 #define SPARTAN_API_EXPORT __declspec(dllexport)
 #else
@@ -12,6 +13,8 @@
 #endif
 
 #include "internal/SpartanEngine.h"
+#include "internal/machinelearning/persistence/PersistenceModuleRegistration.h"
+#include "internal/simd/SpartanSimdDispatcher.h"
 
 using namespace org::spartan::internal;
 
@@ -32,6 +35,7 @@ extern "C" {
     SPARTAN_API_EXPORT void spartan_init() {
         logging::SpartanLogger::setDebugEnabled(false);
         SpartanEngine::log("Detected C++ Spartan Core...");
+        simd::initializeSIMDDispatcher();
     }
 
 
@@ -470,6 +474,20 @@ extern "C" {
         }
 
         engine.multiAgentApplyRewards(multiAgentId, rewardsBuffer, rewardCount);
+        return 0;
+    }
+
+    /**
+     * @brief Unregisters a multi-agent group from the engine.
+     *
+     * Removes and destroys the multi-agent group, freeing all associated resources
+     * and agents within the group.
+     *
+     * @param multiAgentId Unique identifier for the multi-agent group to unregister
+     * @return 0 on success, -1 if group not found
+     */
+    SPARTAN_API_EXPORT int spartan_unregister_multi_agent(const uint64_t multiAgentId) {
+        engine.unregisterMultiAgentGroup(multiAgentId);
         return 0;
     }
 }

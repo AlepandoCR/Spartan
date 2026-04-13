@@ -129,6 +129,12 @@ public class SpartanNative {
         } catch (Exception e) {
             throw new RuntimeException("Failed to bind native function: spartan_multi_agent_apply_rewards", e);
         }
+        try {
+            var addr = loader.find("spartan_unregister_multi_agent").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_unregister_multi_agent"));
+            SPARTAN_UNREGISTER_MULTI_AGENT_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to bind native function: spartan_unregister_multi_agent", e);
+        }
     }
 
     /**
@@ -190,6 +196,7 @@ public class SpartanNative {
     private static final MethodHandle SPARTAN_MULTI_AGENT_REMOVE_AGENT_HANDLE;
     private static final MethodHandle SPARTAN_TICK_MULTI_AGENT_HANDLE;
     private static final MethodHandle SPARTAN_MULTI_AGENT_APPLY_REWARDS_HANDLE;
+    private static final MethodHandle SPARTAN_UNREGISTER_MULTI_AGENT_HANDLE;
 
     // --- Native API ---
 
@@ -380,6 +387,17 @@ public class SpartanNative {
             return (int) SPARTAN_MULTI_AGENT_APPLY_REWARDS_HANDLE.invokeExact(multiAgentId, rewardsBuffer, rewardCount);
         } catch (Throwable t) {
             throw new RuntimeException("Native invocation failed: spartan_multi_agent_apply_rewards", t);
+        }
+    }
+
+    /**
+     * Unregisters a multi-agent group from the engine.
+     */
+    public static int spartanUnregisterMultiAgent(int multiAgentId) {
+        try {
+            return (int) SPARTAN_UNREGISTER_MULTI_AGENT_HANDLE.invokeExact(multiAgentId);
+        } catch (Throwable t) {
+            throw new RuntimeException("Native invocation failed: spartan_unregister_multi_agent", t);
         }
     }
 }
