@@ -36,6 +36,7 @@ extern "C" {
         logging::SpartanLogger::setDebugEnabled(false);
         SpartanEngine::log("Detected C++ Spartan Core...");
         simd::initializeSIMDDispatcher();
+        machinelearning::persistence::initializePersistenceModules();
     }
 
 

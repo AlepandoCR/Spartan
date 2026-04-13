@@ -76,6 +76,20 @@ public interface SpartanAgent<SpartanModelConfigType extends SpartanModelConfig>
     double getEpisodeReward();
 
     /**
+     * Gets the episode reward and atomically resets it in one call.
+     * <p>
+     * This is useful to avoid race conditions where the reward is read
+     * and then reset, or to ensure the reward is not lost between reads.
+     *
+     * @return the accumulated reward for this episode
+     */
+    default double getAndResetEpisodeReward() {
+        double reward = getEpisodeReward();
+        resetEpisode();
+        return reward;
+    }
+
+    /**
      * Resets the episode state (reward accumulator, hidden states, etc.).
      * Called at the start of a new episode or when the agent respawns.
      */
