@@ -1,7 +1,7 @@
 package org.spartan.api.engine.config;
 
 import org.jetbrains.annotations.Contract;
-import org.jspecify.annotations.NonNull;
+import org.jetbrains.annotations.NotNull;
 import org.spartan.api.engine.config.spi.SpartanConfigRegistry;
 
 /**
@@ -87,7 +87,7 @@ public non-sealed interface CuriosityDrivenRecurrentSoftActorCriticConfig extend
     default boolean debugLogging() { return recurrentSoftActorCriticConfig().debugLogging(); }
 
     @Contract(value = " -> new", pure = true)
-    static @NonNull Builder builder() {
+    static @NotNull Builder builder() {
         return new Builder();
     }
 
@@ -152,7 +152,7 @@ public non-sealed interface CuriosityDrivenRecurrentSoftActorCriticConfig extend
         public Builder intrinsicRewardClampingMaximum(double val) { this.intrinsicRewardClampingMaximum = val; return this; }
         public Builder forwardDynamicsLearningRate(double val) { this.forwardDynamicsLearningRate = val; return this; }
 
-        public CuriosityDrivenRecurrentSoftActorCriticConfig build() {
+        public @NotNull CuriosityDrivenRecurrentSoftActorCriticConfig build() {
              RecurrentSoftActorCriticConfig rsac = this.recurrentSoftActorCriticConfig;
              if (rsac == null) {
                  rsac = RecurrentSoftActorCriticConfig.builder()

@@ -1,12 +1,11 @@
 package org.spartan.api.engine.config;
 
 import org.jetbrains.annotations.Contract;
-import org.jspecify.annotations.NonNull;
+import org.jetbrains.annotations.NotNull;
 import org.spartan.api.engine.config.spi.SpartanConfigRegistry;
 
 /**
  * Configuration for a Multi-Agent group container.
- *
  * This config applies to the group-level container (capacity, base settings),
  * not to the per-agent model configs passed to addAgent().
  */
@@ -23,7 +22,7 @@ public non-sealed interface SpartanMultiAgentGroupConfig extends SpartanModelCon
     }
 
     @Contract(value = " -> new", pure = true)
-    static @NonNull Builder builder() {
+    static @NotNull Builder builder() {
         return new Builder();
     }
 
@@ -48,7 +47,8 @@ public non-sealed interface SpartanMultiAgentGroupConfig extends SpartanModelCon
         public Builder isTraining(boolean val) { this.isTraining = val; return this; }
         public Builder maxAgents(int val) { this.maxAgents = val; return this; }
 
-        public SpartanMultiAgentGroupConfig build() {
+        @Contract(" -> new")
+        public @NotNull SpartanMultiAgentGroupConfig build() {
             return SpartanConfigRegistry.get().createMultiAgentGroupConfig(
                 learningRate,
                 gamma,

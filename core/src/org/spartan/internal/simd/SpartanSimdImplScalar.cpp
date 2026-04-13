@@ -4,6 +4,7 @@
 
 #include "SpartanSimdOps.h"
 #include <cmath>
+#include <algorithm>
 
 namespace org::spartan::internal::simd::implementations {
 

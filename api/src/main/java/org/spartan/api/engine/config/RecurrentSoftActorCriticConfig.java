@@ -1,7 +1,7 @@
 package org.spartan.api.engine.config;
 
 import org.jetbrains.annotations.Contract;
-import org.jspecify.annotations.NonNull;
+import org.jetbrains.annotations.NotNull;
 import org.spartan.api.engine.config.spi.SpartanConfigRegistry;
 
 /**
@@ -173,7 +173,7 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
 
 
     @Contract(value = " -> new", pure = true)
-    static @NonNull Builder builder() {
+    static @NotNull Builder builder() {
         return new Builder();
     }
 
@@ -230,7 +230,7 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
         public Builder remorseMinimumSimilarityThreshold(double val) { this.remorseMinimumSimilarityThreshold = val; return this; }
 
         @Contract(" -> new")
-        public @NonNull RecurrentSoftActorCriticConfig build() {
+        public @NotNull RecurrentSoftActorCriticConfig build() {
              return SpartanConfigRegistry.get().createRecurrentSoftActorCriticConfig(
                  learningRate, gamma, epsilon, epsilonMin, epsilonDecay,
                  debugLogging, isTraining,

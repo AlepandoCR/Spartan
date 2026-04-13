@@ -1,5 +1,7 @@
 package org.spartan.api.engine.config;
 
+import org.jetbrains.annotations.Contract;
+import org.jetbrains.annotations.NotNull;
 import org.spartan.api.engine.config.spi.SpartanConfigRegistry;
 
 /**
@@ -61,7 +63,8 @@ public non-sealed interface AutoEncoderCompressorConfig extends SpartanModelConf
         return SpartanModelType.AUTO_ENCODER_COMPRESSOR;
     }
 
-    static Builder builder() {
+    @Contract(value = " -> new", pure = true)
+    static @NotNull Builder builder() {
         return new Builder();
     }
 
@@ -97,8 +100,8 @@ public non-sealed interface AutoEncoderCompressorConfig extends SpartanModelConf
         public Builder decoderLayerCount(int val) { this.decoderLayerCount = val; return this; }
         public Builder bottleneckRegularisationWeight(double val) { this.bottleneckRegularisationWeight = val; return this; }
 
-
-        public AutoEncoderCompressorConfig build() {
+        @Contract("-> new")
+        public @NotNull AutoEncoderCompressorConfig build() {
             return SpartanConfigRegistry.get().createAutoEncoderCompressorConfig(
                 learningRate, gamma, epsilon, epsilonMin, epsilonDecay,
                 debugLogging, isTraining,

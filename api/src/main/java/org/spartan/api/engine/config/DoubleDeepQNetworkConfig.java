@@ -1,7 +1,7 @@
 package org.spartan.api.engine.config;
 
 import org.jetbrains.annotations.Contract;
-import org.jspecify.annotations.NonNull;
+import org.jetbrains.annotations.NotNull;
 import org.spartan.api.engine.config.spi.SpartanConfigRegistry;
 
 /**
@@ -69,7 +69,7 @@ public non-sealed interface DoubleDeepQNetworkConfig extends SpartanModelConfig 
 
 
     @Contract(value = " -> new", pure = true)
-    static @NonNull Builder builder() {
+    static @NotNull Builder builder() {
         return new Builder();
     }
 
@@ -101,8 +101,8 @@ public non-sealed interface DoubleDeepQNetworkConfig extends SpartanModelConfig 
         public Builder hiddenLayerCount(int val) { this.hiddenLayerCount = val; return this; }
 
 
-
-        public DoubleDeepQNetworkConfig build() {
+        @Contract("-> new")
+        public @NotNull  DoubleDeepQNetworkConfig build() {
             return SpartanConfigRegistry.get().createDoubleDeepQNetworkConfig(
                 learningRate, gamma, epsilon, epsilonMin, epsilonDecay,
                 debugLogging, isTraining,
