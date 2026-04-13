@@ -126,21 +126,23 @@ add_library(spartan_core SHARED
         # --- Machine Learning: Experience Replay ---
         ${ML_PATH}/replay/ExperienceReplayBuffer.h
 
-        # --- Machine Learning: Persistence ---
-        ${ML_PATH}/persistence/SpartanPersistence.h
-        ${ML_PATH}/persistence/SpartanPersistence.cpp
-        ${ML_PATH}/persistence/ModelPersistenceModule.h
-        ${ML_PATH}/persistence/ModelPersistenceModule.cpp
-        ${ML_PATH}/persistence/PersistenceCommonUtils.h
-        ${ML_PATH}/persistence/PersistenceCommonUtils.cpp
-        ${ML_PATH}/persistence/RsacPersistenceModule.h
-        ${ML_PATH}/persistence/RsacPersistenceModule.cpp
-        ${ML_PATH}/persistence/DdqnPersistenceModule.h
-        ${ML_PATH}/persistence/DdqnPersistenceModule.cpp
-        ${ML_PATH}/persistence/AutoEncoderPersistenceModule.h
-        ${ML_PATH}/persistence/AutoEncoderPersistenceModule.cpp
-        ${ML_PATH}/persistence/CuriosityRsacPersistenceModule.h
-        ${ML_PATH}/persistence/CuriosityRsacPersistenceModule.cpp
+         # --- Machine Learning: Persistence ---
+         ${ML_PATH}/persistence/SpartanPersistence.h
+         ${ML_PATH}/persistence/SpartanPersistence.cpp
+         ${ML_PATH}/persistence/ModelPersistenceModule.h
+         ${ML_PATH}/persistence/ModelPersistenceModule.cpp
+         ${ML_PATH}/persistence/PersistenceCommonUtils.h
+         ${ML_PATH}/persistence/PersistenceCommonUtils.cpp
+         ${ML_PATH}/persistence/PersistenceModuleRegistration.h
+         ${ML_PATH}/persistence/PersistenceModuleRegistration.cpp
+         ${ML_PATH}/persistence/RsacPersistenceModule.h
+         ${ML_PATH}/persistence/RsacPersistenceModule.cpp
+         ${ML_PATH}/persistence/DdqnPersistenceModule.h
+         ${ML_PATH}/persistence/DdqnPersistenceModule.cpp
+         ${ML_PATH}/persistence/AutoEncoderPersistenceModule.h
+         ${ML_PATH}/persistence/AutoEncoderPersistenceModule.cpp
+         ${ML_PATH}/persistence/CuriosityRsacPersistenceModule.h
+         ${ML_PATH}/persistence/CuriosityRsacPersistenceModule.cpp
 
         # --- Machine Learning: Model Hierarchy (Frontier A) ---
         ${ML_PATH}/model/SpartanModel.h
