@@ -4,7 +4,6 @@
 
 #include "SpartanSimdOps.h"
 
-// AVX2 is only available on x86/x64 architectures
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
 
 #include <immintrin.h>
@@ -12,11 +11,8 @@
 
 namespace org::spartan::internal::simd::implementations {
 
-    // Pragma to enable AVX2 intrinsics for this compilation unit
     #pragma GCC target("avx2")
     #pragma clang attribute push(__attribute__((target("avx2"))), apply_to=function)
-
-    // AVX2: 4 doubles per register (__m256d)
 
     SimdFloat avx2_load(const double* ptr) {
         SimdFloat result;
@@ -177,19 +173,15 @@ namespace org::spartan::internal::simd::implementations {
 
 }
 
-#else  // Non-x86/x64 architecture (ARM64, etc.)
+#else
 
 namespace org::spartan::internal::simd::implementations {
-    // Provide a no-op stub for non-x86/x64 architectures
-    // The dispatcher will never call this on ARM64
     SimdOperations createAVX2Operations() {
-        // This should never be called on ARM64 platforms
-        // Return empty operations (will be detected as invalid in dispatcher)
         return SimdOperations{};
     }
 }
 
-#endif  // Architecture check
+#endif
 
 
 

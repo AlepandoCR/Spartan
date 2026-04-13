@@ -3,14 +3,15 @@
 //
 
 #include "SpartanSimdOps.h"
+
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+
 #include <immintrin.h>
 
 namespace org::spartan::internal::simd::implementations {
 
-    // Pragma to enable AVX-512 intrinsics for this compilation unit
     #pragma GCC target("avx512f,avx512dq")
     #pragma clang attribute push(__attribute__((target("avx512f,avx512dq"))), apply_to=function)
-
     SimdFloat avx512_load(const double* ptr) {
         SimdFloat result;
         __m512d v = _mm512_loadu_pd(ptr);
@@ -154,6 +155,16 @@ namespace org::spartan::internal::simd::implementations {
     #pragma clang attribute pop
 
 }
+
+#else
+
+namespace org::spartan::internal::simd::implementations {
+    SimdOperations createAVX512Operations() {
+        return SimdOperations{};
+    }
+}
+
+#endif
 
 
 

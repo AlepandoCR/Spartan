@@ -10,13 +10,9 @@
 
 namespace org::spartan::internal::simd::implementations {
 
-    // Pragma to enable NEON intrinsics for this compilation unit
     #pragma GCC target("neon")
     #pragma clang attribute push(__attribute__((target("neon"))), apply_to=function)
 
-    // NEON: 2 doubles per register (float64x2_t)
-
-    // ...existing NEON function implementations...
     SimdFloat neon_load(const double* ptr) {
         SimdFloat result;
         float64x2_t v = vld1q_f64(ptr);
