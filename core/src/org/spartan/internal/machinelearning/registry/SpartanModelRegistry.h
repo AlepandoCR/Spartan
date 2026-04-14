@@ -144,7 +144,7 @@ namespace org::spartan::internal::machinelearning {
         SpartanModel* getModel(uint64_t agentIdentifier);
 
     private:
-        /** @brief Guards concurrent access to the model map. */
+        /** @brief Guards concurrent access to the model map and snapshot. */
         mutable std::mutex registryMutex_;
 
         /** @brief Map from agent identifier to its owned model instance. */
@@ -153,8 +153,8 @@ namespace org::spartan::internal::machinelearning {
         /** @brief Pool of idle models ready for reuse to minimize allocations. */
         std::vector<std::unique_ptr<SpartanModel>> idleModels_;
 
-        /** @brief RCU snapshot of models for lock-free parallel ticking. */
-        std::atomic<std::shared_ptr<std::vector<SpartanModel*>>> tickSnapshot_;
+        /** @brief RCU snapshot of models for parallel ticking (protected by registryMutex_). */
+        std::shared_ptr<std::vector<SpartanModel*>> tickSnapshot_;
     };
 
 } // namespace org::spartan::core::machinelearning
