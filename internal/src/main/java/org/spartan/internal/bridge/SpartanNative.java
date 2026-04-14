@@ -131,7 +131,7 @@ public class SpartanNative {
         }
         try {
             var addr = loader.find("spartan_unregister_multi_agent").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_unregister_multi_agent"));
-            SPARTAN_UNREGISTER_MULTI_AGENT_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
+            SPARTAN_UNREGISTER_MULTI_AGENT_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG));
         } catch (Exception e) {
             throw new RuntimeException("Failed to bind native function: spartan_unregister_multi_agent", e);
         }
@@ -393,7 +393,7 @@ public class SpartanNative {
     /**
      * Unregisters a multi-agent group from the engine.
      */
-    public static int spartanUnregisterMultiAgent(int multiAgentId) {
+    public static int spartanUnregisterMultiAgent(long multiAgentId) {
         try {
             return (int) SPARTAN_UNREGISTER_MULTI_AGENT_HANDLE.invokeExact(multiAgentId);
         } catch (Throwable t) {

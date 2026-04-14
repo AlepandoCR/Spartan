@@ -27,7 +27,7 @@ namespace org::spartan::internal::machinelearning {
         for (auto& modelEntry : activeModels_ | std::views::values) {
             newSnapshot->push_back(modelEntry.get());
         }
-        std::atomic_store(&tickSnapshot_, newSnapshot);
+        tickSnapshot_.store(newSnapshot, std::memory_order_release);
     }
 
     void SpartanModelRegistry::unregisterModel(const uint64_t agentIdentifier) {
@@ -43,12 +43,12 @@ namespace org::spartan::internal::machinelearning {
             for (auto& modelEntry : activeModels_ | std::views::values) {
                 newSnapshot->push_back(modelEntry.get());
             }
-            std::atomic_store(&tickSnapshot_, newSnapshot);
+            tickSnapshot_.store(newSnapshot, std::memory_order_release);
         }
     }
 
     void SpartanModelRegistry::tickAll() {
-        auto snapshot = std::atomic_load(&tickSnapshot_);
+        auto snapshot = tickSnapshot_.load(std::memory_order_acquire);
         if (!snapshot) return;
 
         // Single virtual call per model  -  Frontier A overhead is O(1) per agent.

@@ -34,7 +34,9 @@ public class SpartanConfigFactoryServiceProviderImpl implements SpartanConfigFac
             double policyNetworkLearningRate,
             int recurrentInputFeatureCount,
             int remorseTraceBufferCapacity,
-            double remorseMinimumSimilarityThreshold
+            double remorseMinimumSimilarityThreshold,
+            double targetEntropy,
+            double alphaLearningRate
     ) {
 
         return new RecurrentSoftActorCriticConfigImpl(
@@ -58,7 +60,9 @@ public class SpartanConfigFactoryServiceProviderImpl implements SpartanConfigFac
                 policyNetworkLearningRate,
                 recurrentInputFeatureCount,
                 remorseTraceBufferCapacity,
-                remorseMinimumSimilarityThreshold
+                remorseMinimumSimilarityThreshold,
+                targetEntropy,
+                alphaLearningRate
         );
     }
 

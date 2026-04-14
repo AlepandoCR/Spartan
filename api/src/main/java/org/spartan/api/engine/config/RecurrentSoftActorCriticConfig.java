@@ -110,6 +110,31 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
     double entropyTemperatureAlpha();
 
     /**
+     * Returns the target entropy for automatic alpha tuning.
+     * <p>
+     * <b>Concept:</b> SAC automatically adjusts alpha to maintain this target entropy level.
+     * Higher entropy encourages exploration; lower entropy encourages exploitation.
+     * <ul>
+     *   <li><b>Default:</b> Typically -log(actionSize) for balanced exploration.</li>
+     *   <li><b>Custom:</b> Tune based on problem requirements.</li>
+     * </ul>
+     *
+     * @return the target entropy level for the policy
+     */
+    double targetEntropy();
+
+    /**
+     * Returns the learning rate for the alpha (entropy temperature) learner.
+     * <p>
+     * <b>Concept:</b> Controls how fast alpha adapts to maintain target entropy.
+     * Smaller values = slower, more stable adjustments.
+     * Larger values = faster adaptation to entropy changes.
+     *
+     * @return learning rate for alpha updates
+     */
+    double alphaLearningRate();
+
+    /**
      * Returns the specific learning rate for the first Q-Critic (Twin Critics).
      * <p>
      * <b>Concept:</b> RSAC uses two critics to avoid overestimating how good an action is (Twin Delayed DDPG style).
@@ -203,6 +228,8 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
         private int recurrentInputFeatureCount = 64;
         private int remorseTraceBufferCapacity = 1000;
         private double remorseMinimumSimilarityThreshold = 0.7;
+        private double targetEntropy = -1.0;  // Will be computed as -log(actionSize)
+        private double alphaLearningRate = 1e-4;
 
         private Builder() {}
 
@@ -228,6 +255,8 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
         public Builder recurrentInputFeatureCount(int val) { this.recurrentInputFeatureCount = val; return this; }
         public Builder remorseTraceBufferCapacity(int val) { this.remorseTraceBufferCapacity = val; return this; }
         public Builder remorseMinimumSimilarityThreshold(double val) { this.remorseMinimumSimilarityThreshold = val; return this; }
+        public Builder targetEntropy(double val) { this.targetEntropy = val; return this; }
+        public Builder alphaLearningRate(double val) { this.alphaLearningRate = val; return this; }
 
         @Contract(" -> new")
         public @NotNull RecurrentSoftActorCriticConfig build() {
@@ -238,7 +267,7 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
                  criticHiddenLayerNeuronCount, criticHiddenLayerCount, targetSmoothingCoefficient,
                  entropyTemperatureAlpha, firstCriticLearningRate, secondCriticLearningRate,
                  policyNetworkLearningRate, recurrentInputFeatureCount, remorseTraceBufferCapacity,
-                 remorseMinimumSimilarityThreshold
+                 remorseMinimumSimilarityThreshold, targetEntropy, alphaLearningRate
              );
         }
     }

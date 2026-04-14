@@ -9,6 +9,7 @@
 #include <mutex>
 #include <cstdint>
 #include <vector>
+#include <atomic>
 
 #include "internal/machinelearning/model/SpartanModel.h"
 
@@ -153,7 +154,7 @@ namespace org::spartan::internal::machinelearning {
         std::vector<std::unique_ptr<SpartanModel>> idleModels_;
 
         /** @brief RCU snapshot of models for lock-free parallel ticking. */
-        std::shared_ptr<std::vector<SpartanModel*>> tickSnapshot_;
+        std::atomic<std::shared_ptr<std::vector<SpartanModel*>>> tickSnapshot_;
     };
 
 } // namespace org::spartan::core::machinelearning

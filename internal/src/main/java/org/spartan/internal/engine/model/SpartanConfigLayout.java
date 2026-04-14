@@ -46,14 +46,16 @@ public final class SpartanConfigLayout {
     public static final long RSAC_FIRST_CRITIC_LR_OFFSET                  = 104;
     public static final long RSAC_SECOND_CRITIC_LR_OFFSET                 = 112;
     public static final long RSAC_POLICY_LR_OFFSET                        = 120;
-    public static final long RSAC_RECURRENT_INPUT_FEATURE_COUNT_OFFSET    = 128; // int32_t
-    public static final long RSAC_NESTED_ENCODER_COUNT_OFFSET             = 132;
-    public static final long RSAC_REMORSE_BUFFER_CAPACITY_OFFSET          = 136;
+    public static final long RSAC_TARGET_ENTROPY_OFFSET                   = 128;  // double
+    public static final long RSAC_ALPHA_LEARNING_RATE_OFFSET              = 136;  // double
+    public static final long RSAC_RECURRENT_INPUT_FEATURE_COUNT_OFFSET    = 144; // int32_t
+    public static final long RSAC_NESTED_ENCODER_COUNT_OFFSET             = 148;
+    public static final long RSAC_REMORSE_BUFFER_CAPACITY_OFFSET          = 152;
     // 4 bytes padding for double alignment
-    public static final long RSAC_REMORSE_SIMILARITY_THRESHOLD_OFFSET     = 144; // double
-    public static final long RSAC_ENCODER_SLOTS_OFFSET                    = 152;
+    public static final long RSAC_REMORSE_SIMILARITY_THRESHOLD_OFFSET     = 160; // double
+    public static final long RSAC_ENCODER_SLOTS_OFFSET                    = 168;
 
-    /** Total byte size of RSAC config: 152 + (16 slots * 16 bytes) = 408 bytes */
+    /** Total byte size of RSAC config: 168 + (16 slots * 16 bytes) = 424 bytes */
     public static final long RSAC_CONFIG_TOTAL_SIZE = RSAC_ENCODER_SLOTS_OFFSET
             + (MAX_NESTED_ENCODER_SLOTS * SLOT_DESCRIPTOR_SIZE);
     /**
@@ -81,17 +83,16 @@ public final class SpartanConfigLayout {
 
     // ==================== Curiosity-Driven RSAC Config ====================
 
-
     public static final long CURIOSITY_RSAC_EMBEDDED_RSAC_OFFSET                            = 0;
 
-    public static final long CURIOSITY_RSAC_FORWARD_DYNAMICS_HIDDEN_SIZE_OFFSET             = 408; // int32_t
-    public static final long CURIOSITY_RSAC_INTRINSIC_REWARD_SCALE_OFFSET                   = 416; // double
-    public static final long CURIOSITY_RSAC_INTRINSIC_REWARD_CLAMPING_MINIMUM_OFFSET        = 424; // double
-    public static final long CURIOSITY_RSAC_INTRINSIC_REWARD_CLAMPING_MAXIMUM_OFFSET        = 432; // double
-    public static final long CURIOSITY_RSAC_FORWARD_DYNAMICS_LEARNING_RATE_OFFSET           = 440; // double
+    public static final long CURIOSITY_RSAC_FORWARD_DYNAMICS_HIDDEN_SIZE_OFFSET             = 424; // int32_t
+    public static final long CURIOSITY_RSAC_INTRINSIC_REWARD_SCALE_OFFSET                   = 432; // double
+    public static final long CURIOSITY_RSAC_INTRINSIC_REWARD_CLAMPING_MINIMUM_OFFSET        = 440; // double
+    public static final long CURIOSITY_RSAC_INTRINSIC_REWARD_CLAMPING_MAXIMUM_OFFSET        = 448; // double
+    public static final long CURIOSITY_RSAC_FORWARD_DYNAMICS_LEARNING_RATE_OFFSET           = 456; // double
 
-    /** Total byte size of Curiosity-Driven RSAC config: 408 + 40 = 448 bytes */
-    public static final long CURIOSITY_RSAC_CONFIG_TOTAL_SIZE = 448;
+    /** Total byte size of Curiosity-Driven RSAC config: 424 + 40 = 464 bytes */
+    public static final long CURIOSITY_RSAC_CONFIG_TOTAL_SIZE = 464;
     /**
      * Total size padded to 64 bytes (allocator writes this much to satisfy AVX alignment).
      */

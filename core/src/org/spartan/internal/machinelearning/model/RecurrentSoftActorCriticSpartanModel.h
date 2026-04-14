@@ -528,6 +528,19 @@ namespace org::spartan::internal::machinelearning {
         // Training step counter for Adam bias correction in the policy
         int32_t policyTrainingStepCounter_ = 0;
 
+        // Training step counter for Adam bias correction in alpha
+        int32_t alphaTrainingStepCounter_ = 0;
+
+        // Learnable log-alpha for automatic entropy temperature tuning
+        double logAlpha_ = 0.0;  // Initialized to ln(1.0) = 0, i.e., alpha = 1.0
+
+        // Adam optimizer state for log-alpha
+        std::span<double> alphaMomentum_;
+        std::span<double> alphaVelocity_;
+
+        // Flag to indicate terminal state for correct TD bootstrapping
+        bool isTerminalState_ = false;
+
         bool hasPolicySnapshot_ = false;
     };
 

@@ -24,6 +24,8 @@ public record RecurrentSoftActorCriticConfigImpl(
         double policyNetworkLearningRate,
         int recurrentInputFeatureCount,
         int remorseTraceBufferCapacity,
-        double remorseMinimumSimilarityThreshold
+        double remorseMinimumSimilarityThreshold,
+        double targetEntropy,
+        double alphaLearningRate
 ) implements RecurrentSoftActorCriticConfig {
 }

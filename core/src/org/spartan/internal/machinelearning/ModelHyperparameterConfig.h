@@ -75,6 +75,8 @@ extern "C" {
         double firstCriticLearningRate;
         double secondCriticLearningRate;
         double policyNetworkLearningRate;
+        double targetEntropy;
+        double alphaLearningRate;
 
         int32_t recurrentInputFeatureCount;
         int32_t nestedEncoderCount;

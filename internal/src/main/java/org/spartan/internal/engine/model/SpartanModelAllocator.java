@@ -214,6 +214,10 @@ public final class SpartanModelAllocator {
                 config.secondCriticLearningRate());
         segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.RSAC_POLICY_LR_OFFSET,
                 config.policyNetworkLearningRate());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.RSAC_TARGET_ENTROPY_OFFSET,
+                config.targetEntropy());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.RSAC_ALPHA_LEARNING_RATE_OFFSET,
+                config.alphaLearningRate());
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_RECURRENT_INPUT_FEATURE_COUNT_OFFSET,
                 config.recurrentInputFeatureCount());
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_NESTED_ENCODER_COUNT_OFFSET,

@@ -171,6 +171,10 @@ namespace org::spartan::internal::machinelearning {
         totalDoublesNeeded += alignSize(criticWeightCount); // secondTargetCriticWeightStorage_
         totalDoublesNeeded += alignSize(criticBiasCount);   // secondTargetCriticBiasStorage_
 
+        // Alpha-learner optimizer state (2 scalars: momentum and velocity)
+        totalDoublesNeeded += alignSize(2); // alphaMomentum_
+        totalDoublesNeeded += alignSize(2); // alphaVelocity_
+
         // Allocate
         void* rawMemory = nullptr;
 #if defined(_WIN32)
@@ -332,6 +336,10 @@ namespace org::spartan::internal::machinelearning {
         firstTargetCriticBiasStorage_ = bindSpan(criticBiasCount);
         secondTargetCriticWeightStorage_ = bindSpan(criticWeightCount);
         secondTargetCriticBiasStorage_ = bindSpan(criticBiasCount);
+
+        // Alpha-learner optimizer state
+        alphaMomentum_ = bindSpan(2);
+        alphaVelocity_ = bindSpan(2);
 
         // Pre-allocate target critic weight/bias storage as C++-owned copies.
         // Initialise from the online critic weights so target starts identical.
@@ -529,6 +537,10 @@ namespace org::spartan::internal::machinelearning {
 
         if (traceEntryCount < 1) return;
 
+        // Entropy calculation constants (used for both current and target states)
+        constexpr double kPi = 3.14159265358979323846;
+        const double kHalfLog2PiE = 0.5 * std::log(2.0 * kPi * std::exp(1.0));
+
         std::vector<double> blameScores(traceEntryCount, 0.0);
         const std::span<const double> currentHiddenStateView = recurrentLayer_.getHiddenState();
 
@@ -540,11 +552,43 @@ namespace org::spartan::internal::machinelearning {
         // We use the current state as s'
         const std::span<const double> targetStateView = currentHiddenStateView;
 
-        // Evaluate TARGET critics for the bootstrap (stable TD target) using current state s'
-        // For the target action, we use the current policy output. Wait, we need the action for s',
-        // but since we are off-policy SAC, we would sample a' from pi(·|s').
-        // For simplicity here, we assume actionOutputBuffer_ contains a valid action or we just use it.
-        const std::span<const double> targetActionView(actionOutputBuffer_.data(), actionSize);
+        // td target
+        // y = r + γ(1-done) * (min(Q_target(s', a')) - α*H(π(·|s')))
+        // where a' ~ π(·|s') is sampled from policy at s'
+
+        // Forward policy network on target state to get a' and entropy
+        std::span<double> targetActionMean = inferenceScratchpadA_.subspan(0, actionSize);
+        std::span<double> targetActionLogStd = inferenceScratchpadB_.subspan(0, actionSize);
+
+        policyNetwork_.computePolicyOutput(
+            targetStateView,
+            targetActionMean,
+            targetActionLogStd,
+            config,
+            std::span(inferenceScratchpadA_.subspan(actionSize, inferenceScratchpadA_.size() - actionSize)));
+
+        // Convert log-std to std
+        std::copy(targetActionLogStd.begin(), targetActionLogStd.end(), inferenceScratchpadB_.begin() + actionSize);
+        TensorOps::applyExpExact(inferenceScratchpadB_.subspan(actionSize, actionSize));
+
+        // Sample a' ~ N(μ, σ²) from policy at s'
+        std::span<double> targetActionSampled = inferenceScratchpadA_.subspan(2 * actionSize, actionSize);
+        TensorOps::applyGaussianNoise(
+            targetActionMean,
+            inferenceScratchpadB_.subspan(actionSize, actionSize),
+            targetActionSampled);
+
+        // Calculate target entropy H(π(·|s'))
+        double targetStateEntropy = 0.0;
+        for (int i = 0; i < actionSize; ++i) {
+            targetStateEntropy += targetActionLogStd[i] + kHalfLog2PiE;
+        }
+        if (!std::isfinite(targetStateEntropy)) {
+            targetStateEntropy = -static_cast<double>(actionSize);
+        }
+
+        // Evaluate target Q-networks with sampled a'
+        const std::span<const double> targetActionView = targetActionSampled;
 
         const double firstTargetQValue = firstTargetCriticNetwork_.computeQValue(
             targetStateView, targetActionView, config,
@@ -558,15 +602,25 @@ namespace org::spartan::internal::machinelearning {
 
         const double minimumTargetQValue = std::min(firstTargetQValue, secondTargetQValue);
 
+        // Calculate Current Policy Entropy
+        // Differential entropy of Gaussian: H(a|s) = log(std) + 0.5*log(2*pi*e)
         double entropyEstimate = 0.0;
-        constexpr double kPi = 3.14159265358979323846;
-        const double kHalfLog2PiE = 0.5 * std::log(2.0 * kPi * std::exp(1.0));
         for (int dimensionIndex = 0; dimensionIndex < actionSize; ++dimensionIndex) {
             entropyEstimate += policyLogStdCache_[dimensionIndex] + kHalfLog2PiE;
         }
 
+        // Clip entropy to avoid NaN
+        if (!std::isfinite(entropyEstimate)) {
+            entropyEstimate = -static_cast<double>(actionSize);
+        }
+
         const double gamma = config->baseConfig.gamma;
-        const double alpha = config->entropyTemperatureAlpha;
+
+        // Compute Adaptive Alpha (Temperature Parameter)
+        // alpha = exp(logAlpha); we learn logAlpha with Adam for numerical stability
+        const double alpha = std::exp(logAlpha_);
+        // Clamp alpha to [exp(-10), exp(2)] ≈ [4.5e-5, 7.39] for stability
+        const double clampedAlpha = std::clamp(alpha, std::exp(-10.0), std::exp(2.0));
 
         const int criticHiddenSize = config->criticHiddenLayerNeuronCount;
         const int criticLayerCount = config->criticHiddenLayerCount;
@@ -632,8 +686,13 @@ namespace org::spartan::internal::machinelearning {
 
             const double effectiveReward = rewardSignal * blame;
 
-            const double temporalDifferenceTarget = effectiveReward
-                + gamma * (minimumTargetQValue - alpha * entropyEstimate);
+            // SAC TD Target (with terminal state handling):
+            // y_t = r_t + gamma*(1-done) * (min(Q1_target, Q2_target) - alpha*H(π(·|s')))
+            // If isTerminalState_, the bootstrap term vanishes: y_t = r_t
+            const double bootstrapTerm = isTerminalState_
+                ? 0.0
+                : gamma * (minimumTargetQValue - clampedAlpha * targetStateEntropy);
+            const double temporalDifferenceTarget = effectiveReward + bootstrapTerm;
 
             const int combinedInputSize = static_cast<int>(pastStateView.size()) + actionSize;
             if (combinedInputSize > static_cast<int>(criticCombinedInputBuffer_.size())) continue;
@@ -766,7 +825,7 @@ namespace org::spartan::internal::machinelearning {
 
         }
 
-        // --- Full SAC Actor Update ---
+        // Full SAC Actor Update
         // Objective: J = Q(s, a) - alpha * log pi(a|s)
         // With a = mean + std * noise, dJ/dmean = dQ/da
         // and dJ/dlogStd = dQ/da * (std * noise) + alpha
@@ -846,14 +905,15 @@ namespace org::spartan::internal::machinelearning {
             std::ranges::fill(policyWeightGradientScratchpad_, 0.0);
             std::ranges::fill(policyBiasGradientScratchpad_, 0.0);
 
-            // Full SAC: dJ/dmean = dQ/da, dJ/dlogStd = dQ/da * (std * noise) + alpha
-            const double alphaTerm = config->entropyTemperatureAlpha;
+            // Full SAC Actor Loss: J(pi) = -Q(s,a) + clampedAlpha*log(pi(a|s))
+            // Gradients: dJ/dmean = -dQ/da (maximize Q, minimize negative)
+            //           dJ/dlogStd = -dQ/da * (std * noise) + clampedAlpha (entropy regularization)
             for (int i = 0; i < actionSize; ++i) {
                 const double dQda = actionGradientScratchpad_[i];
                 const double stdValue = actionStdScratchpad_[i];
                 const double noise = actionNoiseScratchpad_[i];
-                const double dMean = dQda;
-                const double dLogStd = dQda * (stdValue * noise) + alphaTerm;
+                const double dMean = -dQda;  // Negative because we MAXIMIZE Q (which is MSE loss)
+                const double dLogStd = -dQda * (stdValue * noise) + clampedAlpha;
 
                 // Mean head gradients
                 size_t meanWeightOffset = static_cast<size_t>(hiddenSize) * hiddenSize;
@@ -873,7 +933,7 @@ namespace org::spartan::internal::machinelearning {
                 policyBiasGradientScratchpad_[hiddenSize + actionSize + i] += dLogStd;
             }
 
-            // Hidden layer gradient (tanh)
+            // Hidden layer gradient (tanh backprop)
             std::ranges::fill(policyHiddenGradientScratchpad_, 0.0);
             for (int h = 0; h < hiddenSize; ++h) {
                 double grad = 0.0;
@@ -881,8 +941,8 @@ namespace org::spartan::internal::machinelearning {
                     const double dQda = actionGradientScratchpad_[i];
                     const double stdValue = actionStdScratchpad_[i];
                     const double noise = actionNoiseScratchpad_[i];
-                    const double dMean = dQda;
-                    const double dLogStd = dQda * (stdValue * noise) + alphaTerm;
+                    const double dMean = -dQda;
+                    const double dLogStd = -dQda * (stdValue * noise) + clampedAlpha;
 
                     const size_t meanWeightOffset = static_cast<size_t>(hiddenSize) * hiddenSize
                         + static_cast<size_t>(i) * hiddenSize + static_cast<size_t>(h);
@@ -923,26 +983,59 @@ namespace org::spartan::internal::machinelearning {
                 policyBiasVelocity_,
                 config->policyNetworkLearningRate, 0.9, 0.999, 1e-8,
                 policyTrainingStepCounter_);
+
+            // Automatic Entropy Temperature (Alpha) Tuning
+            // objective: L(alpha) = -alpha * (entropy - targetEntropy)
+            // gradient: dL/d(logAlpha) = -alpha * (entropy - targetEntropy)
+            //         (via chain rule: d(logAlpha)/dalpha = 1/alpha)
+            // Update logAlpha with Adam for exponential stability
+            ++alphaTrainingStepCounter_;
+
+            // Target entropy is typically -log(action_space_dim) for optimal exploration
+            const double targetEntropy = config->targetEntropy;
+            const double entropyError = entropyEstimate - targetEntropy;
+
+            // Gradient w.r.t. logAlpha: the loss drives logAlpha to maximize entropy if below target
+            const double alphaGradient = -clampedAlpha * entropyError;
+
+            // Update logAlpha via Adam (2 scalars: momentum and velocity)
+            if (alphaMomentum_.size() >= 2 && alphaVelocity_.size() >= 2) {
+                // Apply Adam update manually for scalar
+                const double beta1 = 0.9;
+                const double beta2 = 0.999;
+                const double epsilon = 1e-8;
+                const double lr = config->alphaLearningRate;
+
+                const double beta1t = std::pow(beta1, static_cast<double>(alphaTrainingStepCounter_));
+                const double beta2t = std::pow(beta2, static_cast<double>(alphaTrainingStepCounter_));
+
+                alphaMomentum_[0] = beta1 * alphaMomentum_[0] + (1.0 - beta1) * alphaGradient;
+                alphaVelocity_[0] = beta2 * alphaVelocity_[0] + (1.0 - beta2) * (alphaGradient * alphaGradient);
+
+                const double m_hat = alphaMomentum_[0] / (1.0 - beta1t);
+                const double v_hat = alphaVelocity_[0] / (1.0 - beta2t);
+
+                logAlpha_ -= lr * m_hat / (std::sqrt(v_hat) + epsilon);
+
+                // Clamp logAlpha to [-10, 2] for numerical stability
+                logAlpha_ = std::clamp(logAlpha_, -10.0, 2.0);
+            }
         }
+
+        // Reset terminal state flag after processing
+        isTerminalState_ = false;
     }
 
     void RecurrentSoftActorCriticSpartanModel::decayExploration() {
         const auto* config = typedConfig();
         if (!config) return;
 
-        // Soft Actor-Critic uses entropy temperature (alpha) rather than epsilon-greedy.
-        // The entropy temperature auto-tuning will be implemented when the full
-        // dual-gradient SAC training loop is wired.  For now, decay the base epsilon
-        // for hybrid exploration policies.
-        if (auto* mutableConfig = const_cast<BaseHyperparameterConfig*>(&config->baseConfig); mutableConfig->epsilon > mutableConfig->epsilonMin) {
-            mutableConfig->epsilon *= mutableConfig->epsilonDecay;
-            if (mutableConfig->epsilon < mutableConfig->epsilonMin) {
-                mutableConfig->epsilon = mutableConfig->epsilonMin;
-            }
-        }
+        // Soft Actor-Critic Exploration (Pure)
+        // SAC uses Gaussian stochastic policy + automatic entropy temperature tuning.
 
-        // Reset the remorse trace at episode boundaries
+
         remorseTraceBuffer_.reset();
+        isTerminalState_ = false;
     }
 
 
