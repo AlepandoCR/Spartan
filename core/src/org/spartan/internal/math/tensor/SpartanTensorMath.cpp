@@ -314,12 +314,29 @@ namespace org::spartan::internal::math::tensor {
      * Essential for Soft Actor-Critic (SAC) to allow backpropagation through sampling.
      */
     void TensorOps::applyGaussianNoise(
-            const std::span<const double> m, const std::span<const double> s,
-            const std::span<double> out, const uint64_t seed) {
+            const std::span<const double> means,
+            const std::span<const double> stdDevs,
+            const std::span<double> outActions,
+            const uint64_t seed) {
+
+        // Defensive bounds checking to prevent writes to uninitialized buffers
+        if (outActions.empty() || means.empty() || stdDevs.empty()) {
+            return;
+        }
+
+        // Extra safety check: verify pointers are not null even if span size is non-zero
+        if (outActions.data() == nullptr || means.data() == nullptr || stdDevs.data() == nullptr) {
+            return;
+        }
+
+        const size_t copySize = std::min({means.size(), stdDevs.size(), outActions.size()});
+        if (copySize == 0) {
+            return;
+        }
 
         thread_local std::mt19937_64 gen(seed == 0 ? std::random_device{}() : seed);
         std::normal_distribution dist(0.0, 1.0);
-        for (size_t i = 0; i < m.size(); ++i) out[i] = m[i] + s[i] * dist(gen);
+        for (size_t i = 0; i < copySize; ++i) outActions[i] = means[i] + stdDevs[i] * dist(gen);
     }
 
     /**

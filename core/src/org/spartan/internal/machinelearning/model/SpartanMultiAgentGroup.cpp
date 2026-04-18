@@ -10,6 +10,7 @@
 
 #include "SpartanAgent.h"
 #include "SpartanCritic.h"
+#include "../../logging/SpartanLogger.h"
 
 namespace org::spartan::internal::machinelearning {
 
@@ -25,6 +26,22 @@ SpartanMultiAgentGroup::SpartanMultiAgentGroup(
       stateSize_(stateSize),
       actionSize_(actionSize),
       groupId_(groupId) {
+
+    // Defensive validation of constructor parameters
+    if (sharedContext.empty() || sharedActions.empty()) {
+        logging::SpartanLogger::warn(
+            std::format("[MARL] Warning: Created multi-agent group {} with empty buffers. "
+            "Context size={}, Actions size={}. Buffers will be assigned via addAgent().",
+            groupId, sharedContext.size(), sharedActions.size()));
+    }
+
+    if (stateSize <= 0 || actionSize <= 0 || maxAgents <= 0) {
+        logging::SpartanLogger::error(
+            std::format("[MARL] FATAL: Invalid group parameters - stateSize={}, actionSize={}, maxAgents={}",
+            stateSize, actionSize, maxAgents));
+        // Continue anyway - don't throw in constructor
+    }
+
     contextSubspans_.reserve(maxAgents);
     actionSubspans_.reserve(maxAgents);
 }
@@ -44,23 +61,44 @@ void SpartanMultiAgentGroup::addAgent(const uint64_t agentId, std::unique_ptr<Sp
         agentIdx * actionSize_,
         actionSize_);
 
+    // Validate that subspans were created successfully
+    if (contextSubspan.empty() || actionSubspan.empty()) {
+        logging::SpartanLogger::error(
+            std::format("[MARL] Failed to create valid subspans for agent {}: contextSize={}, actionSize={}",
+            agentId, contextSubspan.size(), actionSubspan.size()));
+        return;
+    }
+
+    logging::SpartanLogger::debug(
+        std::format("[MARL] Agent {} subspans: context[{}-{}], action[{}-{}]",
+        agentId, agentIdx * stateSize_, (agentIdx + 1) * stateSize_,
+        agentIdx * actionSize_, (agentIdx + 1) * actionSize_));
+
     contextSubspans_.push_back(contextSubspan);
     actionSubspans_.push_back(actionSubspan);
 
-    // Retrieve the config pointer from the agent before rebind clears it (if we passed nullptr)
-    // Actually, we can just pass agent->getOpaqueHyperparameterConfig() back into rebind.
-    // Casting away const-ness is necessary because rebind accepts void* (generic).
-    void* configPtr = const_cast<void*>(agent->getOpaqueHyperparameterConfig());
+    const auto configPtr = const_cast<void*>(agent->getOpaqueHyperparameterConfig());
+
+    logging::SpartanLogger::debug(
+        std::format("[MARL] Agent {} calling rebind with context size={}, action size={}",
+        agentId, contextSubspan.size(), actionSubspan.size()));
 
     agent->rebind(agentId, configPtr, agent->getModelWeightsMutable(), contextSubspan, actionSubspan);
+
+    logging::SpartanLogger::debug(
+        std::format("[MARL] Agent {} rebind complete",  agentId));
 
     agentSlotMap_.insert(agentId, std::move(agent));
 
     activeAgentCount_++;
+
+    logging::SpartanLogger::debug(
+        std::format("[MARL] Agent {} successfully added to group, active count={}",
+        agentId, activeAgentCount_));
 }
 
 SpartanAgent* SpartanMultiAgentGroup::getAgent(const uint64_t agentId) {
-    auto ptr = agentSlotMap_.get(agentId);
+    const auto ptr = agentSlotMap_.get(agentId);
     return ptr ? ptr->get() : nullptr;
 }
 

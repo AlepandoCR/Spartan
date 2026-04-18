@@ -733,6 +733,12 @@ namespace org::spartan::internal {
             actionSize,
             maxAgents);
 
+        // Ensure group was created successfully
+        if (!group) {
+            logging::SpartanLogger::error("registerMultiAgentGroup: Failed to allocate SpartanMultiAgentGroup.");
+            return;
+        }
+
         multiAgentRegistry_.insert(groupIdentifier, std::move(group));
         logging::SpartanLogger::info(
             std::format("Registered multi-agent group {}", groupIdentifier));

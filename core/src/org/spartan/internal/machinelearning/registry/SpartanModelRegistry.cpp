@@ -35,7 +35,8 @@ namespace org::spartan::internal::machinelearning {
 
         if (const auto iterator = activeModels_.find(agentIdentifier); iterator != activeModels_.end()) {
             iterator->second->unbind();
-            idleModels_.push_back(std::move(iterator->second));
+
+
             activeModels_.erase(iterator);
 
             auto newSnapshot = std::make_shared<std::vector<SpartanModel*>>();
@@ -48,9 +49,11 @@ namespace org::spartan::internal::machinelearning {
     }
 
     void SpartanModelRegistry::tickAll() {
-        std::lock_guard lock(registryMutex_);
-        auto snapshot = tickSnapshot_;
-        lock.~lock_guard();  // Unlock before parallel processing
+        std::shared_ptr<std::vector<SpartanModel*>> snapshot;
+        {
+            std::lock_guard lock(registryMutex_);
+            snapshot = tickSnapshot_;
+        }
 
         if (!snapshot) return;
 
@@ -70,22 +73,13 @@ namespace org::spartan::internal::machinelearning {
     }
 
     bool SpartanModelRegistry::hasIdleModelAvailable() const noexcept {
-        std::lock_guard lock(registryMutex_);
-        return !idleModels_.empty();
+        return false;
     }
 
     std::unique_ptr<SpartanModel> SpartanModelRegistry::getIdleModelToRebind() noexcept {
-        std::lock_guard lock(registryMutex_);
-
-        if (idleModels_.empty()) {
-            return nullptr;
-        }
-
-        auto model = std::move(idleModels_.back());
-        idleModels_.pop_back();
-
-        return model;
+        return nullptr;
     }
+
 
     void SpartanModelRegistry::updateModelContext(const uint64_t agentIdentifier, const std::span<const double> newPtr) {
         std::lock_guard lock(registryMutex_);

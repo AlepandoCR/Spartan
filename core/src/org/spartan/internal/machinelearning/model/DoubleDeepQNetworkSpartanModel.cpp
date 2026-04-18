@@ -6,6 +6,8 @@
 
 #include <cstring>
 #include <random>
+#include <format>
+#include "../../logging/SpartanLogger.h"
 
 namespace org::spartan::internal::machinelearning {
 
@@ -87,14 +89,17 @@ namespace org::spartan::internal::machinelearning {
         const auto* config = typedConfig();
         if (!config) return;
 
+        // Defensive check: ensure buffers are properly bound
+        if (contextBuffer_.empty() || actionOutputBuffer_.empty()) {
+            logging::SpartanLogger::warn(
+                std::format("[DDQN] WARNING: contextBuffer size={}, actionBuffer size={} - skipping processTick",
+                contextBuffer_.size(), actionOutputBuffer_.size()));
+            return;
+        }
+
         const int actionSize = config->baseConfig.actionSize;
 
-        //
-        //  Store the previous transition in the replay buffer.
-        //          We store (s_{t-1}, a_{t-1}, r=0, s_t, terminal=false).
-        //          The reward will be retroactively applied via applyReward().
-        //          On the first tick, there is no previous state to store.
-        //
+
         if (hasPreviousState_) {
             replayBuffer_.storeTransition(
                 std::span<const double>(previousStateSnapshot_),
@@ -104,13 +109,7 @@ namespace org::spartan::internal::machinelearning {
                 false);
         }
 
-        //
-        // Phase B: Epsilon-greedy action selection.
-        //
-        // With probability epsilon, choose a random action (exploration).
-        // Otherwise, compute Q-values for all actions via the online network
-        // and select the action with the highest Q-value (exploitation).
-        //
+
         thread_local std::mt19937 randomGenerator(std::random_device{}());
         std::uniform_real_distribution uniformDistribution(0.0, 1.0);
 
@@ -123,10 +122,7 @@ namespace org::spartan::internal::machinelearning {
                 actionOutputBuffer_[actionIndex] = actionDistribution(randomGenerator);
             }
         } else {
-            // Exploitation: compute Q-values for each discrete action using
-            // the online network, then select argmax.
-            // For continuous action spaces, we evaluate the online network
-            // with the full state and write Q-values to the action buffer.
+
             for (int actionIndex = 0; actionIndex < actionSize; ++actionIndex) {
                 // Create a one-hot action vector in the scratchpad
                 std::fill_n(scratchpadA_.begin(), actionSize, 0.0);

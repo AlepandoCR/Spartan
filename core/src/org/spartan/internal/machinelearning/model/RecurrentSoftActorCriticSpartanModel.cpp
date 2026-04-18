@@ -7,8 +7,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <format>
 
 #include "internal/math/reinforcement/SpartanReinforcement.h"
+#include "../../logging/SpartanLogger.h"
 
 namespace org::spartan::internal::machinelearning {
 
@@ -61,6 +63,26 @@ namespace org::spartan::internal::machinelearning {
         const int criticLayerCount = config->criticHiddenLayerCount;
         const int criticCombinedSize = config->hiddenStateSize + actionSize;
         const int criticCombinedSizeAligned = std::max(criticCombinedSize, 1);
+
+        //Ensure all buffer sizes are valid
+        if (hiddenSize <= 0) {
+            logging::SpartanLogger::error(std::format(
+                "RSAC: invalid actorHiddenLayerNeuronCount {} (must be > 0)",
+                hiddenSize));
+            return;
+        }
+        if (actionSize <= 0) {
+            logging::SpartanLogger::error(std::format(
+                "RSAC: invalid actionSize {} (must be > 0)",
+                actionSize));
+            return;
+        }
+        if (criticHiddenSize <= 0 || criticLayerCount <= 0) {
+            logging::SpartanLogger::error(std::format(
+                "RSAC: invalid critic config - hiddenSize={}, layerCount={}",
+                criticHiddenSize, criticLayerCount));
+            return;
+        }
 
         if (encoderCount < 0 || encoderCount > SPARTAN_MAX_NESTED_ENCODER_SLOTS) {
             logging::SpartanLogger::error(std::format(
@@ -370,6 +392,14 @@ namespace org::spartan::internal::machinelearning {
         if (!config) {
              logging::SpartanLogger::error("[RSAC-INTERNAL] Config is null!");
              return;
+        }
+
+        // Defensive check: ensure buffers are properly bound
+        if (contextBuffer_.empty() || actionOutputBuffer_.empty()) {
+            logging::SpartanLogger::warn(
+                std::format("[RSAC-INTERNAL] WARNING: contextBuffer size={}, actionBuffer size={} - skipping processTick",
+                contextBuffer_.size(), actionOutputBuffer_.size()));
+            return;
         }
 
         const int actionSize = config->baseConfig.actionSize;

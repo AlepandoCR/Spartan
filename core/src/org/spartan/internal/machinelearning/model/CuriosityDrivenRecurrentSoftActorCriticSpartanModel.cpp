@@ -5,7 +5,8 @@
 #include "CuriosityDrivenRecurrentSoftActorCriticSpartanModel.h"
 
 #include <algorithm>
-#include <cstdio>
+#include <cstring>
+#include <format>
 #include <cmath>
 #include <format>
 #include <random>
@@ -62,6 +63,7 @@ namespace org::spartan::internal::machinelearning {
                        contextBuffer,
                        actionOutputBuffer),
           internalRecurrentSoftActorCriticModel_(std::move(internalRecurrentSoftActorCriticModel)),
+          criticWeightsSpan_(recurrentSoftActorCriticCriticWeights.data(), recurrentSoftActorCriticCriticWeights.size()),
           forwardDynamicsWeights_(forwardDynamicsWeights),
           forwardDynamicsBiases_(forwardDynamicsBiases),
           alignedScratchpadMemory_(nullptr, [](void* ptr) {
@@ -88,6 +90,23 @@ namespace org::spartan::internal::machinelearning {
         const auto stateSize = static_cast<size_t>(config->recurrentSoftActorCriticConfig.baseConfig.stateSize);
         const auto actionSize = static_cast<size_t>(config->recurrentSoftActorCriticConfig.baseConfig.actionSize);
         const auto hiddenSize = static_cast<size_t>(config->forwardDynamicsHiddenLayerDimensionSize);
+
+        // Ensure all buffer sizes are valid
+        if (stateSize <= 0) {
+            logging::SpartanLogger::error(std::format(
+                "[CURIOSITY-CONSTRUCT] Invalid stateSize {} (must be > 0)", stateSize));
+            throw std::invalid_argument("stateSize must be > 0");
+        }
+        if (actionSize <= 0) {
+            logging::SpartanLogger::error(std::format(
+                "[CURIOSITY-CONSTRUCT] Invalid actionSize {} (must be > 0)", actionSize));
+            throw std::invalid_argument("actionSize must be > 0");
+        }
+        if (hiddenSize <= 0) {
+            logging::SpartanLogger::error(std::format(
+                "[CURIOSITY-CONSTRUCT] Invalid forwardDynamicsHiddenLayerDimensionSize {} (must be > 0)", hiddenSize));
+            throw std::invalid_argument("hiddenSize must be > 0");
+        }
 
         // DEBUG: Log extracted dimensions
         logging::SpartanLogger::debug(std::format(
@@ -233,6 +252,14 @@ namespace org::spartan::internal::machinelearning {
     void CuriosityDrivenRecurrentSoftActorCriticSpartanModel::processTick() {
         logging::SpartanLogger::debug("[CURIOSITY-TICK] processTick() START");
 
+        // Defensive check: ensure buffers are properly bound
+        if (contextBuffer_.empty() || actionOutputBuffer_.empty()) {
+            logging::SpartanLogger::warn(
+                std::format("[CURIOSITY] WARNING: contextBuffer size={}, actionBuffer size={} - skipping processTick",
+                contextBuffer_.size(), actionOutputBuffer_.size()));
+            return;
+        }
+
         if (internalRecurrentSoftActorCriticModel_) {
              internalRecurrentSoftActorCriticModel_->processTick();
         } else {
@@ -243,8 +270,8 @@ namespace org::spartan::internal::machinelearning {
         if (!hasValidPreviousTick_) {
             hasValidPreviousTick_ = true;
             logging::SpartanLogger::debug("[CURIOSITY-TICK] First tick (seed), copying context/action buffers");
-            std::ranges::copy(contextBuffer_, previousStateBuffer_.begin());
-            std::ranges::copy(actionOutputBuffer_, previousActionBuffer_.begin());
+            std::copy_n(contextBuffer_.data(), std::min(contextBuffer_.size(), previousStateBuffer_.size()), previousStateBuffer_.data());
+            std::copy_n(actionOutputBuffer_.data(), std::min(actionOutputBuffer_.size(), previousActionBuffer_.size()), previousActionBuffer_.data());
             sanitizeFinite(previousStateBuffer_);
             sanitizeFinite(previousActionBuffer_);
             logging::SpartanLogger::debug("[CURIOSITY-TICK] processTick() END (First Tick)");
@@ -287,8 +314,8 @@ namespace org::spartan::internal::machinelearning {
         }
 
 
-        std::ranges::copy(contextBuffer_, previousStateBuffer_.begin());
-        std::ranges::copy(actionOutputBuffer_, previousActionBuffer_.begin());
+        std::copy_n(contextBuffer_.data(), std::min(contextBuffer_.size(), previousStateBuffer_.size()), previousStateBuffer_.data());
+        std::copy_n(actionOutputBuffer_.data(), std::min(actionOutputBuffer_.size(), previousActionBuffer_.size()), previousActionBuffer_.data());
         sanitizeFinite(previousStateBuffer_);
         sanitizeFinite(previousActionBuffer_);
         logging::SpartanLogger::debug("[CURIOSITY-TICK] processTick() END");

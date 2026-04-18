@@ -6,8 +6,10 @@
 
 #include <algorithm>
 #include <cstring>
+#include <format>
 
 #include "internal/math/tensor/SpartanTensorMath.h"
+#include "../../logging/SpartanLogger.h"
 
 namespace org::spartan::internal::machinelearning {
 
@@ -70,6 +72,14 @@ namespace org::spartan::internal::machinelearning {
     void AutoEncoderCompressorSpartanModel::processTick() {
         const auto* config = typedConfig();
         if (!config) return;
+
+        // Defensive check: ensure buffers are properly bound
+        if (contextBuffer_.empty() || actionOutputBuffer_.empty()) {
+            logging::SpartanLogger::warn(
+                std::format("[AUTOENCODER] WARNING: contextBuffer size={}, actionBuffer size={} - skipping processTick",
+                contextBuffer_.size(), actionOutputBuffer_.size()));
+            return;
+        }
 
         const int stateSize = config->baseConfig.stateSize;
         const int latentSize = config->latentDimensionSize;
