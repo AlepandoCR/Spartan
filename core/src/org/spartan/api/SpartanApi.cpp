@@ -351,8 +351,8 @@ extern "C" {
             contextSize,
             actionBuffer,
             actionBufferSize,
-            actionFieldSize,
             stateSize,
+            actionFieldSize,
             maxAgents
         );
 
