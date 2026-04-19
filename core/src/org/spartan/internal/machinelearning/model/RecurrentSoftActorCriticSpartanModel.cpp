@@ -496,7 +496,7 @@ namespace org::spartan::internal::machinelearning {
         } else {
             TensorOps::applyExpFast(std::span(actionLogStdScratchpad_));
         }
-        std::copy_n(actionLogStdScratchpad_.data(), actionSize, actionStdScratchpad_.data());
+        std::copy_n(actionLogStdScratchpad_.data(), actionSize, actionStdScratchpad_.begin());
 
         // Phase E: Write the final noisy action into the JVM-owned action output buffer.
         TensorOps::applyGaussianNoise(

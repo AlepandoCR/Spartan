@@ -784,9 +784,8 @@ public final class SpartanModelAllocator {
             // This generates 408 bytes
             MemorySegment rsacSegment = writeRSACConfig(temporaryArena, config.recurrentSoftActorCriticConfig(), stateSize, actionSize);
 
-            // Copy the RSAC segment (full 408 bytes) to the beginning of our shared-arena segment
-            // 408 bytes = 152 header + 256 bytes (16 slots)
-            MemorySegment.copy(rsacSegment, 0, segment, 0, 408);
+            // Copy the RSAC segment to the beginning of our shared-arena segment
+            MemorySegment.copy(rsacSegment, 0, segment, 0, SpartanConfigLayout.RSAC_CONFIG_TOTAL_SIZE);
         }
         // Confined arena is closed here; temporary rsacSegment is deallocated
 
@@ -795,7 +794,7 @@ public final class SpartanModelAllocator {
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_MODEL_TYPE_OFFSET,
                 config.modelType().getNativeValue());
 
-        // Write Curiosity-specific fields (offsets start at 408)
+        // Write Curiosity-specific fields (offsets start at RSAC_CONFIG_TOTAL_SIZE)
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.CURIOSITY_RSAC_FORWARD_DYNAMICS_HIDDEN_SIZE_OFFSET,
                 config.forwardDynamicsHiddenLayerDimensionSize());
 

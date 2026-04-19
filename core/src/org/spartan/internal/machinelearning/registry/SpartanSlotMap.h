@@ -161,6 +161,8 @@ public:
 
         // Mark as free
         sparse_[id] = INVALID_IDX;
+        dense_[denseIdx].value = T{};
+        dense_[denseIdx].generation = INVALID_GEN;
         freeList_.push_back(denseIdx);
     }
 

@@ -39,6 +39,8 @@ import java.util.zip.ZipOutputStream;
 public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
         implements SpartanMultiAgentModel<ConfigType> {
 
+    private static final AtomicLong nextMultiAgentId = new AtomicLong(1);
+
     private final long multiAgentId;
     private final String identifier;
 
@@ -77,7 +79,7 @@ public class SpartanMultiAgentModelImpl<ConfigType extends SpartanModelConfig>
         @NotNull Iterable<SpartanAction> sharedActions,
         @NotNull Arena sharedArena) {
 
-        this.multiAgentId = System.identityHashCode(this);  // Use object identity as ID
+        this.multiAgentId = nextMultiAgentId.getAndIncrement();
         this.identifier = identifier;
         this.groupConfig = groupConfig;
         this.sharedContext = sharedContext;  // reference, not copy
