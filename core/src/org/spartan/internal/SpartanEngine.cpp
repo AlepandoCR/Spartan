@@ -318,17 +318,19 @@ namespace org::spartan::internal {
 
         // Guard against corrupted config fields (observed on Linux when layout is mismatched)
         auto* mutableRsacConfig = const_cast<RecurrentSoftActorCriticHyperparameterConfig*>(rsacConfig);
-        if (mutableRsacConfig->recurrentInputFeatureCount <= 0
-                || mutableRsacConfig->recurrentInputFeatureCount > stateSize * 1024) {
+        const int32_t rawRecurrentInputFeatureCount = mutableRsacConfig->recurrentInputFeatureCount;
+        if (rawRecurrentInputFeatureCount <= 0
+                || rawRecurrentInputFeatureCount > stateSize * 1024) {
             logging::SpartanLogger::warn(std::format(
                 "RSAC recurrentInputFeatureCount looks corrupt ({}); falling back to stateSize={}.",
-                mutableRsacConfig->recurrentInputFeatureCount, stateSize));
+                rawRecurrentInputFeatureCount, stateSize));
             mutableRsacConfig->recurrentInputFeatureCount = stateSize;
         }
-        if (mutableRsacConfig->remorseTraceBufferCapacity <= 0) {
+        const int32_t rawRemorseTraceBufferCapacity = mutableRsacConfig->remorseTraceBufferCapacity;
+        if (rawRemorseTraceBufferCapacity <= 0) {
             logging::SpartanLogger::warn(std::format(
                 "RSAC remorseTraceBufferCapacity looks invalid ({}); falling back to 256.",
-                mutableRsacConfig->remorseTraceBufferCapacity));
+                rawRemorseTraceBufferCapacity));
             mutableRsacConfig->remorseTraceBufferCapacity = 256;
         }
 
