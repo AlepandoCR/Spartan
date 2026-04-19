@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 
 /**
  * @file ModelHyperparameterConfig.h
@@ -102,7 +103,7 @@ extern "C" {
         double alphaLearningRate;
         double remorseMinimumSimilarityThreshold;
 
-        // GROUP 3: Array at end
+        //  Array at end
         NestedEncoderSlotDescriptor encoderSlots[SPARTAN_MAX_NESTED_ENCODER_SLOTS];
     } PACKED;
     PACK_END
@@ -161,6 +162,10 @@ extern "C" {
     static_assert(sizeof(BaseHyperparameterConfig) == 64, "BaseHyperparameterConfig must be 64 bytes");
     static_assert(sizeof(RecurrentSoftActorCriticHyperparameterConfig) == 424, "RecurrentSoftActorCriticHyperparameterConfig must be 424 bytes");
     static_assert(sizeof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig) == 464, "CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig must be 464 bytes");
+    static_assert(offsetof(RecurrentSoftActorCriticHyperparameterConfig, hiddenStateSize) == 64, "RSAC.hiddenStateSize offset must be 64 bytes");
+    static_assert(offsetof(RecurrentSoftActorCriticHyperparameterConfig, recurrentInputFeatureCount) == 88, "RSAC.recurrentInputFeatureCount offset must be 88 bytes");
+    static_assert(offsetof(RecurrentSoftActorCriticHyperparameterConfig, encoderSlots) == 168, "RSAC.encoderSlots offset must be 168 bytes");
+    static_assert(offsetof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig, forwardDynamicsHiddenLayerDimensionSize) == 424, "CuriosityRSAC.forwardDynamicsHiddenLayerDimensionSize offset must be 424 bytes");
 
     //
     //  Multi-Agent Group Configuration

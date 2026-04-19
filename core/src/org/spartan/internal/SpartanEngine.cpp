@@ -293,6 +293,13 @@ namespace org::spartan::internal {
         const int32_t actorHiddenSize = rsacConfig->actorHiddenLayerNeuronCount;
         const int32_t actorLayerCount = rsacConfig->actorHiddenLayerCount;
 
+        logging::SpartanLogger::info(std::format(
+            "[DEBUG-RSAC] hiddenStateSize={}, recurrentLayerDepth={}, recurrentInputFeatureCount={}, remorseTraceBufferCapacity={}",
+            rsacConfig->hiddenStateSize,
+            rsacConfig->recurrentLayerDepth,
+            rsacConfig->recurrentInputFeatureCount,
+            rsacConfig->remorseTraceBufferCapacity));
+
         // 1. Extract Curiosity (Forward Dynamics) dimensions
         const int32_t stateSize = config->recurrentSoftActorCriticConfig.baseConfig.stateSize;
         const int32_t actionSize = config->recurrentSoftActorCriticConfig.baseConfig.actionSize;

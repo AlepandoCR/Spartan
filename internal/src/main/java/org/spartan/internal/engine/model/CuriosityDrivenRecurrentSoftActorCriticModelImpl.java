@@ -92,6 +92,12 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelImpl
                 stateSize,
                 actionManager.getActions().size()
         );
+        if (config.debugLogging()) {
+            int rawInputFeatureCount = tempConfigSegment.get(
+                    ValueLayout.JAVA_INT,
+                    SpartanConfigLayout.RSAC_RECURRENT_INPUT_FEATURE_COUNT_OFFSET);
+            System.out.println("[Spartan-Java] RSAC recurrentInputFeatureCount(raw)=" + rawInputFeatureCount);
+        }
         this.configSegment.copyFrom(tempConfigSegment);
     }
 
@@ -176,3 +182,4 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelImpl
         return SpartanModelType.CURIOSITY_DRIVEN_RECURRENT_SOFT_ACTOR_CRITIC;
     }
 }
+
