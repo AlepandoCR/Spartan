@@ -154,7 +154,16 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
     public void register() {
        if (isRegistered) return;
 
-       SpartanNative.spartanRegisterModel(
+       int layoutSignature = SpartanModelAllocator.getLayoutSignature();
+       configBuffer.set(ValueLayout.JAVA_INT,
+               SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET,
+               layoutSignature);
+       SpartanNative.spartanLog("[Spartan-Java] layout signature=" + layoutSignature);
+       int confirmSignature = configBuffer.get(ValueLayout.JAVA_INT,
+               SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET);
+       SpartanNative.spartanLog("[Spartan-Java] layout signature (segment)=" + confirmSignature);
+
+       int result = SpartanNative.spartanRegisterModel(
            agentId,
            configBuffer,
            criticWeightsBuffer,
@@ -166,6 +175,9 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
            actionOutputBuffer,
            actionCount
        );
+       if (result != 0) {
+           throw new RuntimeException("Native model registration failed: " + result);
+       }
        isRegistered = true;
     }
 
