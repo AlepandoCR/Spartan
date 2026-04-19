@@ -34,7 +34,9 @@ public final class SpartanModelAllocator {
 
     private static int fnv1a(int hash, int value) {
         hash ^= value;
-        return hash * 0x01000193;
+        // Use long to prevent overflow in signed arithmetic
+        long result = ((long) hash & 0xFFFFFFFFL) * 0x01000193L;
+        return (int) result;  // Cast back to int (same bits as uint32)
     }
 
     private static int layoutSignature() {

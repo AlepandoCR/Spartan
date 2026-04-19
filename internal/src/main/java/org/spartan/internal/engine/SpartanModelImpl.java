@@ -73,6 +73,17 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
         // Serialize Config
         this.configBuffer = SpartanModelAllocator.serialize(this.arena, config, stateSize, actionCount);
 
+        // CRITICAL VALIDATION: Verify serialize() actually filled the buffer
+        int storedSignature = configBuffer.get(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET);
+        int expectedSignature = SpartanModelAllocator.getLayoutSignature();
+        if (storedSignature == 0) {
+            throw new IllegalStateException(
+                "[CONSTRUCTOR VALIDATION FAILED] SpartanModelAllocator.serialize() did not write the signature field! " +
+                "Expected signature=" + expectedSignature + " but got 0. " +
+                "This indicates the config buffer was never initialized properly.");
+        }
+        SpartanNative.spartanLog("[Spartan-Java] [CONSTRUCTOR] Config buffer validated: signature=" + storedSignature + " (expected=" + expectedSignature + ")");
+
         // Allocate Buffers
 
         long mWeights;
@@ -154,14 +165,24 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
     public void register() {
        if (isRegistered) return;
 
-       int layoutSignature = SpartanModelAllocator.getLayoutSignature();
-       configBuffer.set(ValueLayout.JAVA_INT,
-               SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET,
-               layoutSignature);
-       SpartanNative.spartanLog("[Spartan-Java] layout signature=" + layoutSignature);
-       int confirmSignature = configBuffer.get(ValueLayout.JAVA_INT,
+
+
+       int storedSignature = configBuffer.get(ValueLayout.JAVA_INT,
                SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET);
-       SpartanNative.spartanLog("[Spartan-Java] layout signature (segment)=" + confirmSignature);
+       int expectedSignature = SpartanModelAllocator.getLayoutSignature();
+
+       if (storedSignature == 0) {
+           throw new IllegalStateException(
+               "[CRITICAL] Config buffer was never properly initialized! " +
+               "Constructor should have called SpartanModelAllocator.serialize() to fill the entire buffer. " +
+               "Got signature=0, expected=" + expectedSignature);
+       }
+
+       if (storedSignature != expectedSignature) {
+           SpartanNative.spartanLog("[Spartan-Java] layout signature mismatch: stored=" + storedSignature + ", expected=" + expectedSignature);
+       }
+
+       SpartanNative.spartanLog("[Spartan-Java] Config buffer initialized with signature=" + storedSignature);
 
        int result = SpartanNative.spartanRegisterModel(
            agentId,
