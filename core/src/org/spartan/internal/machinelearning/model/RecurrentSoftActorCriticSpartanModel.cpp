@@ -58,8 +58,6 @@ namespace org::spartan::internal::machinelearning {
         const int hiddenSize = config->actorHiddenLayerNeuronCount;
         const int actionSize = config->baseConfig.actionSize;
         const int contextSize = static_cast<int>(contextBuffer.size());
-        // Nested encoders are no longer supported - always disabled
-        const int encoderCount = 0;
         const int criticHiddenSize = config->criticHiddenLayerNeuronCount;
         const int criticLayerCount = config->criticHiddenLayerCount;
         const int criticCombinedSize = config->hiddenStateSize + actionSize;
@@ -85,12 +83,6 @@ namespace org::spartan::internal::machinelearning {
             return;
         }
 
-        if (encoderCount < 0 || encoderCount > SPARTAN_MAX_NESTED_ENCODER_SLOTS) {
-            logging::SpartanLogger::error(std::format(
-                "RSAC: invalid nestedEncoderCount {} (max {}) - disabling encoders",
-                encoderCount, SPARTAN_MAX_NESTED_ENCODER_SLOTS));
-            encoderCount = 0;
-        }
 
         // Pre-allocate the Remorse Trace Buffer
         const int traceCapacity = config->remorseTraceBufferCapacity > 0
@@ -102,33 +94,15 @@ namespace org::spartan::internal::machinelearning {
             return (size + 7) & ~static_cast<size_t>(7);
         };
 
-        // Calculate total latent output size from all nested encoders
-        int totalLatentDimensions = 0;
-        for (int encoderIndex = 0; encoderIndex < encoderCount; ++encoderIndex) {
-            totalLatentDimensions += config->encoderSlots[encoderIndex].latentDimensionSize;
-        }
 
+        const int totalLatentDimensions = 0;
         const int compressedObservationSize = contextSize + totalLatentDimensions;
 
-        int totalEncoderScratchpadSize = 0;
-        size_t encoderWeightOffset = 0;
-
-        for (int encoderIndex = 0; encoderIndex < encoderCount; ++encoderIndex) {
-            const auto& slot = config->encoderSlots[encoderIndex];
-            const int inputDim = slot.contextSliceElementCount;
-            const int latentDim = slot.latentDimensionSize;
-            const int hiddenNeurons = slot.hiddenNeuronCount;
-
-            // Track the max scratchpad needed per encoder: max(hiddenNeurons, inputDim)
-            const int encoderScratchSize = hiddenNeurons + latentDim + inputDim;
-            totalEncoderScratchpadSize += encoderScratchSize;
-        }
-
-        // --- ALLOCATION STRATEGY: Single Flat Aligned Block for all Vectors ---
 
         size_t totalDoublesNeeded = 0;
         totalDoublesNeeded += alignSize(compressedObservationSize);
-        totalDoublesNeeded += alignSize(totalEncoderScratchpadSize);
+
+
 
         // Pre-allocate inference scratchpads (large enough for the biggest layer)
         const int maxScratchSize = std::max({
@@ -224,89 +198,8 @@ namespace org::spartan::internal::machinelearning {
 
         // Core buffers
         compressedObservationBuffer_ = bindSpan(compressedObservationSize);
-        encoderScratchpadPool_ = bindSpan(totalEncoderScratchpadSize);
-
-        if (encoderCount > 0 && encoderWeightPool.empty()) {
-            logging::SpartanLogger::error("RSAC: encoderWeightPool is empty while encoderCount > 0; disabling encoders");
-            encoderCount = 0;
-            nestedEncoderBank_.clear();
-        }
-
-        // Build nested encoders
-        size_t scratchpadOffset = 0;
-        for (int encoderIndex = 0; encoderIndex < encoderCount; ++encoderIndex) {
-            const auto& slot = config->encoderSlots[encoderIndex];
-            const int inputDim = slot.contextSliceElementCount;
-            const int latentDim = slot.latentDimensionSize;
-            const int hiddenNeurons = slot.hiddenNeuronCount;
-
-            const size_t encHiddenWeightCount = static_cast<size_t>(hiddenNeurons) * inputDim;
-            const size_t encLatentWeightCount = static_cast<size_t>(latentDim) * hiddenNeurons;
-            const size_t decHiddenWeightCount = static_cast<size_t>(hiddenNeurons) * latentDim;
-            const size_t decOutputWeightCount = static_cast<size_t>(inputDim) * hiddenNeurons;
-
-            const size_t requiredWeightCount = encHiddenWeightCount + hiddenNeurons + encLatentWeightCount + latentDim
-                    + decHiddenWeightCount + hiddenNeurons + decOutputWeightCount + inputDim;
-            const size_t requiredScratch = static_cast<size_t>(hiddenNeurons + latentDim + inputDim);
-
-            if (encoderWeightOffset + requiredWeightCount > encoderWeightPool.size()) {
-                logging::SpartanLogger::error("RSAC: encoder weight pool too small; aborting encoder construction");
-                break;
-            }
-            if (scratchpadOffset + requiredScratch > encoderScratchpadPool_.size()) {
-                logging::SpartanLogger::error("RSAC: encoder scratchpad pool too small; aborting encoder construction");
-                break;
-            }
-
-            auto encoderHiddenWeights = encoderWeightPool.subspan(encoderWeightOffset, encHiddenWeightCount);
-            encoderWeightOffset += encHiddenWeightCount;
-
-            auto encoderHiddenBiases = encoderWeightPool.subspan(encoderWeightOffset, hiddenNeurons);
-            encoderWeightOffset += hiddenNeurons;
-
-            auto encoderLatentWeights = encoderWeightPool.subspan(encoderWeightOffset, encLatentWeightCount);
-            encoderWeightOffset += encLatentWeightCount;
-
-            auto encoderLatentBiases = encoderWeightPool.subspan(encoderWeightOffset, latentDim);
-            encoderWeightOffset += latentDim;
-
-            auto decoderHiddenWeights = encoderWeightPool.subspan(encoderWeightOffset, decHiddenWeightCount);
-            encoderWeightOffset += decHiddenWeightCount;
-
-            auto decoderHiddenBiases = encoderWeightPool.subspan(encoderWeightOffset, hiddenNeurons);
-            encoderWeightOffset += hiddenNeurons;
-
-            auto decoderOutputWeights = encoderWeightPool.subspan(encoderWeightOffset, decOutputWeightCount);
-            encoderWeightOffset += decOutputWeightCount;
-
-            auto decoderOutputBiases = encoderWeightPool.subspan(encoderWeightOffset, inputDim);
-            encoderWeightOffset += inputDim;
-
-            auto hiddenScratch = encoderScratchpadPool_.subspan(scratchpadOffset, hiddenNeurons);
-            scratchpadOffset += hiddenNeurons;
-
-            auto latentScratch = encoderScratchpadPool_.subspan(scratchpadOffset, latentDim);
-            scratchpadOffset += latentDim;
-
-            auto reconstructionScratch = encoderScratchpadPool_.subspan(scratchpadOffset, inputDim);
-            scratchpadOffset += inputDim;
-
-            nestedEncoderBank_.emplace_back(
-                encoderHiddenWeights,
-                encoderHiddenBiases,
-                encoderLatentWeights,
-                encoderLatentBiases,
-                decoderHiddenWeights,
-                decoderHiddenBiases,
-                decoderOutputWeights,
-                decoderOutputBiases,
-                latentScratch,
-                hiddenScratch,
-                reconstructionScratch,
-                inputDim,
-                latentDim,
-                hiddenNeurons);
-        }
+        // Nested encoders disabled - skip encoder scratchpad
+        nestedEncoderBank_.clear();
 
         // Scratchpads and caches
         inferenceScratchpadA_ = bindSpan(maxScratchSize);
@@ -406,66 +299,19 @@ namespace org::spartan::internal::machinelearning {
         const int actionSize = config->baseConfig.actionSize;
         const int hiddenSize = config->actorHiddenLayerNeuronCount;
         const int contextSize = static_cast<int>(contextBuffer_.size());
-        const int encoderCount = config->nestedEncoderCount;
 
         logging::SpartanLogger::debug("[RSAC-INTERNAL] Phase A: Observation Build");
 
         //
         // Phase A: Build the observation vector for the GRU.
+        // Nested encoders are disabled - always use direct contextBuffer (zero-copy fast path)
         //
-        // If no encoders exist, the raw contextBuffer_ is passed directly to the GRU
-        // without any copy. When encoders exist, the fixed context is memcpy'd once
-        // into the compressed buffer and latent outputs are appended after it.
-        //
-        std::span<const double> gruInputObservation;
-
-        if (encoderCount == 0) {
-            // Zero-copy fast path: pass the JVM-owned context directly to the GRU.
-            gruInputObservation = contextBuffer_;
-        } else {
-            // Copy the fixed context block via memcpy (single burst write to L1 cache)
-            std::memcpy(
-                compressedObservationBuffer_.data(),
-                contextBuffer_.data(),
-                static_cast<size_t>(contextSize) * sizeof(double));
-
-            const bool hasCleanSizes = !cleanSizesBuffer_.empty()
-                && static_cast<int>(cleanSizesBuffer_.size()) >= encoderCount;
-
-            int latentWriteOffset = contextSize;
-            for (int encoderIndex = 0; encoderIndex < encoderCount; ++encoderIndex) {
-                const auto& slot = config->encoderSlots[encoderIndex];
-
-                // Determine the actual valid element count for this encoder's input slice.
-                // If clean sizes are available, use the minimum of (cleanSize, slotCapacity)
-                // to guard against Java sending a count larger than the pre-allocated slot.
-                const int slotCapacity = slot.contextSliceElementCount;
-                const int validElementCount = hasCleanSizes
-                    ? std::min(static_cast<int>(cleanSizesBuffer_[encoderIndex]), slotCapacity)
-                    : slotCapacity;
-
-                // Create a clean view spanning only the valid elements.
-                // Any padding beyond validElementCount is ignored by the encoder.
-                const auto cleanContextSlice = contextBuffer_.subspan(
-                    slot.contextSliceStartIndex, validElementCount);
-
-                nestedEncoderBank_[encoderIndex].encode(cleanContextSlice);
-
-                const auto latentOutput = nestedEncoderBank_[encoderIndex].getLatentOutput();
-                std::memcpy(
-                    compressedObservationBuffer_.data() + latentWriteOffset,
-                    latentOutput.data(),
-                    static_cast<size_t>(slot.latentDimensionSize) * sizeof(double));
-                latentWriteOffset += slot.latentDimensionSize;
-            }
-
-            gruInputObservation = std::span<const double>(compressedObservationBuffer_);
-        }
+        std::span<const double> gruInputObservation = contextBuffer_;
 
         logging::SpartanLogger::debug("[RSAC-INTERNAL] Phase B: GRU Forward");
 
         //
-        // Phase B Pass the observation through the Gated Recurrent Unit
+        // Phase B: Pass the observation through the Gated Recurrent Unit
         //          to update the temporal hidden state.
         //
         recurrentLayer_.forwardPass(
