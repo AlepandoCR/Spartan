@@ -303,13 +303,9 @@ namespace org::spartan::internal {
             stateSize, actionSize, criticHiddenSize, criticLayerCount, actorHiddenSize, actorLayerCount));
 
         // RSAC Component Math (Line-by-line parity with Java Allocator)
-        // Read recurrentInputFeatureCount directly from memory offset to bypass alignment issues
-        const uint8_t* rsacBytePtr = reinterpret_cast<const uint8_t*>(rsacConfig);
-        const int32_t* recurrentInputPtr = reinterpret_cast<const int32_t*>(rsacBytePtr + 88);
-        const int32_t gruInputSize = *recurrentInputPtr > 0 ? *recurrentInputPtr : stateSize;
-
-        logging::SpartanLogger::info(std::format(
-            "[CURIOSITY-CONSTRUCT] Reading gruInputSize from offset 88: value={}", gruInputSize));
+        // Read recurrentInputFeatureCount directly from the struct member (with __attribute__((packed)) alignment is correct)
+        const int32_t gruInputSize = rsacConfig->recurrentInputFeatureCount > 0
+            ? rsacConfig->recurrentInputFeatureCount : stateSize;
 
         const size_t gruW_Count = static_cast<size_t>(3) * static_cast<size_t>(gruHiddenSize) * (static_cast<size_t>(gruHiddenSize) + static_cast<size_t>(gruInputSize));
         const size_t gruB_Count = static_cast<size_t>(3) * static_cast<size_t>(gruHiddenSize);

@@ -15,15 +15,8 @@
  * Explicit padding fields (_paddingX) are included to ensure Python FFM generators
  * perfectly mirror the C++ ABI layout without guessing.
  *
- * #pragma pack(1) forces BYTE-ALIGNMENT to ensure identical memory layouts
- * across all platforms (Linux, Windows, macOS). This prevents compiler-specific
- * padding that would cause Java FFM offsets to mismatch on different OSes.
  */
 
-//
-// Force byte-packing (no padding) to ensure Linux and Windows use identical layouts.
-// Without this, struct sizes and offsets differ between platforms.
-#pragma pack(push, 1)
 
 extern "C" {
 
@@ -34,7 +27,7 @@ extern "C" {
         int32_t contextSliceElementCount;
         int32_t latentDimensionSize;
         int32_t hiddenNeuronCount;
-    };
+    } __attribute__((packed));
 
     enum SpartanModelType : int32_t {
         SPARTAN_MODEL_TYPE_DEFAULT                                      = 0,
@@ -51,7 +44,7 @@ extern "C" {
 
     struct BaseHyperparameterConfig {
         int32_t modelTypeIdentifier;
-        int32_t _padding0; // Forces 8-byte alignment for the next double
+        int32_t _padding0; // EXPLICIT: Forces 8-byte alignment for the next double
 
         double learningRate;
         double gamma;
@@ -62,8 +55,8 @@ extern "C" {
         int32_t actionSize;
         bool isTraining;
         bool debugLogging;
-        uint8_t _padding1[6]; // Pads struct to exactly 64 bytes
-    };
+        uint8_t _padding1[6]; // EXPLICIT: Pads struct to exactly 64 bytes
+    } __attribute__((packed));
 
     //
     //  Recurrent Soft Actor-Critic (RSAC) Configuration
@@ -94,9 +87,9 @@ extern "C" {
         double alphaLearningRate;
         double remorseMinimumSimilarityThreshold;
 
-        // Array at end
+        // GROUP 3: Array at end
         NestedEncoderSlotDescriptor encoderSlots[SPARTAN_MAX_NESTED_ENCODER_SLOTS];
-    };
+    } __attribute__((packed));
 
     //
     //  Double Deep Q-Network (DDQN) Configuration
@@ -109,8 +102,8 @@ extern "C" {
         int32_t replayBatchSize;
         int32_t hiddenLayerNeuronCount;
         int32_t hiddenLayerCount;
-        int32_t _padding3; // Pads struct to multiple of 8
-    };
+        int32_t _padding3; // EXPLICIT: Pads struct to multiple of 8
+    } __attribute__((packed));
 
     //
     //  AutoEncoder Compressor Configuration
@@ -123,7 +116,7 @@ extern "C" {
         int32_t encoderLayerCount;
         int32_t decoderLayerCount;
         double bottleneckRegularisationWeight;
-    };
+    } __attribute__((packed));
 
     //
     //  Curiosity-Driven Recurrent Soft Actor-Critic Configuration
@@ -139,7 +132,7 @@ extern "C" {
         double intrinsicRewardClampingMinimum;
         double intrinsicRewardClampingMaximum;
         double forwardDynamicsLearningRate;
-    };
+    } __attribute__((packed));
 
     //  Compile-Time Layout Validation
     // These static_asserts ensure C++ struct layouts match Java FFM offsets exactly.
@@ -154,10 +147,7 @@ extern "C" {
     struct SpartanMultiAgentGroupHyperparameterConfig {
         BaseHyperparameterConfig baseConfig;
         int32_t maxAgents;
-        int32_t _padding5; //Pads struct to 8-byte alignment
-    };
+        int32_t _padding5; // EXPLICIT: Pads struct to 8-byte alignment
+    } __attribute__((packed));
 
 } // extern "C"
-
-#pragma pack(pop)
-
