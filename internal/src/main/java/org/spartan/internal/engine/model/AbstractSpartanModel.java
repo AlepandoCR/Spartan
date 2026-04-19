@@ -96,10 +96,14 @@ public abstract class AbstractSpartanModel<SpartanModelConfigType extends Sparta
         int contextSize = requireContextSize(context);
         lastContextSize = contextSize;
         writeConfigToSegment();
+        int layoutSignature = SpartanModelAllocator.getLayoutSignature();
         configSegment.set(ValueLayout.JAVA_INT,
                 SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET,
-                SpartanModelAllocator.getLayoutSignature()
-        );
+                layoutSignature);
+        SpartanNative.spartanLog("[Spartan-Java] layout signature=" + layoutSignature);
+        int confirmSignature = configSegment.get(ValueLayout.JAVA_INT,
+                SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET);
+        SpartanNative.spartanLog("[Spartan-Java] layout signature (segment)=" + confirmSignature);
 
         int result = SpartanNative.spartanRegisterModel(
                 agentIdentifier,

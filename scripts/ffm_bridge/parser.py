@@ -254,6 +254,8 @@ class ASTParser:
     def _parse_function(self, cursor: Cursor) -> Optional[NativeFunction]:
         """Parse a function cursor into a NativeFunction descriptor."""
         func_name = cursor.spelling
+        if not (func_name.startswith("spartan_") or func_name == "updateContextPointer"):
+            return None
 
         # Extract return type
         return_type = self.type_registry.resolve(cursor.result_type)

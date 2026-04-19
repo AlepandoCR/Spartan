@@ -208,6 +208,8 @@ public class SpartanIntegrationTest {
                 configBuffer.set(ValueLayout.JAVA_INT, 48, STATE_SIZE); // stateSize
                 configBuffer.set(ValueLayout.JAVA_INT, 52, ACTION_SIZE);// actionSize
                 configBuffer.set(ValueLayout.JAVA_BYTE, 56, (byte) 1);  // isTraining = true
+                configBuffer.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET,
+                        SpartanModelAllocator.getLayoutSignature());
 
                 // Critic weights (for DefaultSpartanAgent, minimal)
                 // SIMD padding ensures C++ AVX2 operations don't fault when reading near buffer end
