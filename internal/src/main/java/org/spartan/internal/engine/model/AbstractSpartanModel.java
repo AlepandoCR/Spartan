@@ -96,6 +96,10 @@ public abstract class AbstractSpartanModel<SpartanModelConfigType extends Sparta
         int contextSize = requireContextSize(context);
         lastContextSize = contextSize;
         writeConfigToSegment();
+        configSegment.set(ValueLayout.JAVA_INT,
+                SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET,
+                SpartanModelAllocator.getLayoutSignature()
+        );
 
         int result = SpartanNative.spartanRegisterModel(
                 agentIdentifier,

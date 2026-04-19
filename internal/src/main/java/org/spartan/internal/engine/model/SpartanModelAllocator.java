@@ -48,6 +48,10 @@ public final class SpartanModelAllocator {
         return hash;
     }
 
+    public static int getLayoutSignature() {
+        return layoutSignature();
+    }
+
     private SpartanModelAllocator() {}
 
     /**
@@ -862,6 +866,8 @@ public final class SpartanModelAllocator {
         throw new IllegalArgumentException("Unknown config type: " + config.getClass().getName());
     }
 }
+
+
 
 
 
