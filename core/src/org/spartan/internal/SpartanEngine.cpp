@@ -260,7 +260,7 @@ namespace org::spartan::internal {
             latentBuffer);
     }
 
-        /**
+    /**
      * Constructs a Curiosity-Driven RSAC model by surgically slicing flat buffers.
      * This function ensures total memory parity between Java's FFM allocations and C++ spans.
      */
@@ -293,6 +293,17 @@ namespace org::spartan::internal {
         const int32_t actorHiddenSize = rsacConfig->actorHiddenLayerNeuronCount;
         const int32_t actorLayerCount = rsacConfig->actorHiddenLayerCount;
 
+        {
+            const auto* raw = reinterpret_cast<const uint8_t*>(opaqueHyperparameterConfig);
+            std::string dump;
+            for (size_t i = 80; i < 96; ++i) {
+                dump += std::format("{:02X} ", raw[i]);
+            }
+            logging::SpartanLogger::info(std::format(
+                "[DEBUG-RSAC-BYTES] offset 80-95: {}",
+                dump));
+        }
+
         logging::SpartanLogger::info(std::format(
             "[DEBUG-RSAC] hiddenStateSize={}, recurrentLayerDepth={}, recurrentInputFeatureCount={}, remorseTraceBufferCapacity={}",
             rsacConfig->hiddenStateSize,
@@ -304,6 +315,22 @@ namespace org::spartan::internal {
         const int32_t stateSize = config->recurrentSoftActorCriticConfig.baseConfig.stateSize;
         const int32_t actionSize = config->recurrentSoftActorCriticConfig.baseConfig.actionSize;
         const int32_t curiosityHiddenSize = config->forwardDynamicsHiddenLayerDimensionSize;
+
+        // Guard against corrupted config fields (observed on Linux when layout is mismatched)
+        auto* mutableRsacConfig = const_cast<RecurrentSoftActorCriticHyperparameterConfig*>(rsacConfig);
+        if (mutableRsacConfig->recurrentInputFeatureCount <= 0
+                || mutableRsacConfig->recurrentInputFeatureCount > stateSize * 1024) {
+            logging::SpartanLogger::warn(std::format(
+                "RSAC recurrentInputFeatureCount looks corrupt ({}); falling back to stateSize={}.",
+                mutableRsacConfig->recurrentInputFeatureCount, stateSize));
+            mutableRsacConfig->recurrentInputFeatureCount = stateSize;
+        }
+        if (mutableRsacConfig->remorseTraceBufferCapacity <= 0) {
+            logging::SpartanLogger::warn(std::format(
+                "RSAC remorseTraceBufferCapacity looks invalid ({}); falling back to 256.",
+                mutableRsacConfig->remorseTraceBufferCapacity));
+            mutableRsacConfig->remorseTraceBufferCapacity = 256;
+        }
 
         logging::SpartanLogger::info(std::format(
             "[DEBUG-CONFIG] stateSize={}, actionSize={}, criticHidden={}, criticLayers={}, actorHidden={}, actorLayers={}",

@@ -8,6 +8,7 @@ import org.spartan.api.engine.model.CuriosityDrivenRecurrentSoftActorCriticModel
 import org.spartan.api.engine.config.CuriosityDrivenRecurrentSoftActorCriticConfig;
 import org.spartan.api.engine.config.RecurrentSoftActorCriticConfig;
 import org.spartan.api.engine.context.SpartanContext;
+import org.spartan.internal.bridge.SpartanNative;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -96,7 +97,13 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelImpl
             int rawInputFeatureCount = tempConfigSegment.get(
                     ValueLayout.JAVA_INT,
                     SpartanConfigLayout.RSAC_RECURRENT_INPUT_FEATURE_COUNT_OFFSET);
-            System.out.println("[Spartan-Java] RSAC recurrentInputFeatureCount(raw)=" + rawInputFeatureCount);
+            StringBuilder byteDump = new StringBuilder();
+            for (long i = 80; i < 96; i++) {
+                int b = tempConfigSegment.get(ValueLayout.JAVA_BYTE, i) & 0xFF;
+                byteDump.append(String.format("%02X ", b));
+            }
+            SpartanNative.spartanLog("[Spartan-Java] RSAC recurrentInputFeatureCount(raw)=" + rawInputFeatureCount);
+            SpartanNative.spartanLog("[Spartan-Java] RSAC bytes 80-95: " + byteDump);
         }
         this.configSegment.copyFrom(tempConfigSegment);
     }
@@ -182,4 +189,3 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelImpl
         return SpartanModelType.CURIOSITY_DRIVEN_RECURRENT_SOFT_ACTOR_CRITIC;
     }
 }
-
