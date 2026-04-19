@@ -707,40 +707,42 @@ public final class SpartanModelAllocator {
                 config.recurrentSoftActorCriticConfig(),
                 stateSize,
                 actionSize);
-        long baseRsacWeightsRaw = baseRsacCriticWeightsPadded - SAFETY_PADDING_ELEMENTS;
+        // Don't remove safety padding - it's already included in the total
+        long baseRsacWeightsRaw = baseRsacCriticWeightsPadded;
 
         if (baseRsacWeightsRaw < 0L) {
             throw new IllegalArgumentException("Base RSAC critic weights calculation returned invalid value");
         }
 
         // forward dynamics network parameters
-        // long stateSize = config.stateSize(); // REMOVED
-        // long actionSize = config.actionSize(); // REMOVED
+        long stateSizeLong = (long) stateSize;
+        long actionSizeLong = (long) actionSize;
         long hiddenSize = config.forwardDynamicsHiddenLayerDimensionSize();
 
-        if (stateSize <= 0L || actionSize < 0L || hiddenSize <= 0L) {
+        if (stateSizeLong <= 0L || actionSizeLong < 0L || hiddenSize <= 0L) {
             throw new IllegalArgumentException(
-                    "Invalid Forward Dynamics dimensions: state=" + stateSize
-                            + ", action=" + actionSize + ", hidden=" + hiddenSize);
+                    "Invalid Forward Dynamics dimensions: state=" + stateSizeLong
+                            + ", action=" + actionSizeLong + ", hidden=" + hiddenSize);
         }
 
         // structure of forward dynamics weights and biases (before padding):
-        long forwardDynamicsTotalRaw = ((long) (stateSize + actionSize) * hiddenSize)
-                + (hiddenSize * stateSize)
-                + (hiddenSize + stateSize);
+        // Forward Dynamics: input (state + action) -> hidden -> output (state)
+        long inputHiddenWeights = (stateSizeLong + actionSizeLong) * hiddenSize;
+        long hiddenOutputWeights = hiddenSize * stateSizeLong;
+        long biases = hiddenSize + stateSizeLong;
+        long forwardDynamicsTotalRaw = inputHiddenWeights + hiddenOutputWeights + biases;
 
         // apply SIMD padding to the forward dynamics block
         long forwardDynamicsTotalPadded = simdPadElementCount(forwardDynamicsTotalRaw);
 
-        // sum weights: críticos base (sin padding) + forward dynamics (con padding)
+        // sum weights: base critics  + forward dynamics (con padding)
         long totalWeights = baseRsacWeightsRaw + forwardDynamicsTotalPadded;
 
-        if (totalWeights > Long.MAX_VALUE - SAFETY_PADDING_ELEMENTS) {
-            throw new IllegalArgumentException("Total critic weight count would overflow");
+        if (totalWeights < 0L) {
+            throw new IllegalArgumentException("Total critic weight count would overflow: " + totalWeights);
         }
 
-        // Add safety padding for unaligned access at the end
-        return totalWeights + SAFETY_PADDING_ELEMENTS;
+        return totalWeights;
     }
 
     // ==================== Curiosity-Driven RSAC Config Serialization ====================
