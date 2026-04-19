@@ -23,6 +23,24 @@ using namespace org::spartan::internal;
 /** @brief Single engine instance for the lifetime of the shared library. */
 static SpartanEngine engine;
 
+namespace {
+    uint32_t fnv1a(uint32_t hash, uint32_t value) {
+        hash ^= value;
+        return hash * 0x01000193u;
+    }
+
+    uint32_t compute_layout_signature() {
+        uint32_t hash = 0x811C9DC5u;
+        hash = fnv1a(hash, static_cast<uint32_t>(sizeof(BaseHyperparameterConfig)));
+        hash = fnv1a(hash, static_cast<uint32_t>(sizeof(RecurrentSoftActorCriticHyperparameterConfig)));
+        hash = fnv1a(hash, static_cast<uint32_t>(sizeof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig)));
+        hash = fnv1a(hash, static_cast<uint32_t>(offsetof(RecurrentSoftActorCriticHyperparameterConfig, recurrentInputFeatureCount)));
+        hash = fnv1a(hash, static_cast<uint32_t>(offsetof(RecurrentSoftActorCriticHyperparameterConfig, targetSmoothingCoefficient)));
+        hash = fnv1a(hash, static_cast<uint32_t>(offsetof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig, forwardDynamicsHiddenLayerDimensionSize)));
+        return hash;
+    }
+}
+
 extern "C" {
 
     // TODO: Add contracts once C++26 is supported by all major compilers.
