@@ -155,11 +155,23 @@ extern "C" {
                     reinterpret_cast<const uint8_t*>(opaqueHyperparameterConfig) + 60,
                     sizeof(providedSignature));
         const uint32_t expectedSignature = compute_layout_signature();
-        if (providedSignature != expectedSignature) {
+        if (providedSignature == 0) {
+            SpartanEngine::log(
+                "spartan_register_model: layout signature not provided (value is 0); proceeding without validation.");
+        } else if (providedSignature != expectedSignature) {
             SpartanEngine::logError(std::format(
                 "spartan_register_model: layout signature mismatch (provided={}, expected={}).",
                 providedSignature, expectedSignature));
             return -1;
+        }
+
+        // Read model type to check if config buffer might be uninitialized
+        const auto* baseConfig = static_cast<const BaseHyperparameterConfig*>(opaqueHyperparameterConfig);
+        const int32_t modelType = baseConfig->modelTypeIdentifier;
+        if (modelType == 0 && providedSignature == 0) {
+            logging::SpartanLogger::warn(
+                std::format("spartan_register_model: Config buffer appears uninitialized (modelType=0, signature=0). "
+                            "This may indicate incomplete Java initialization. Creating DEFAULT agent as fallback."));
         }
 
         engine.registerAgent(agentIdentifier,

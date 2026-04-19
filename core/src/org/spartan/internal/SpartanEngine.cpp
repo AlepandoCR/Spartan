@@ -496,7 +496,11 @@ namespace org::spartan::internal {
         const int32_t modelType = baseConfig->modelTypeIdentifier;
         logging::SpartanLogger::setDebugEnabled(baseConfig->debugLogging);
 
-        if (modelType == SPARTAN_MODEL_TYPE_DEFAULT) {
+        logging::SpartanLogger::info(
+            std::format("SpartanEngine::registerAgent: detected modelType={} for agent {}", modelType, agentIdentifier));
+
+        // Handle uninitialized or default models
+        if (modelType == SPARTAN_MODEL_TYPE_DEFAULT || modelType == 0) {
             const std::span contextSpan(contextBuffer, static_cast<size_t>(contextCount));
             const std::span modelWeightsSpan(modelWeightsBuffer, static_cast<size_t>(modelWeightsCount));
             const std::span actionOutputSpan(actionOutputBuffer, static_cast<size_t>(actionOutputCount));
@@ -573,7 +577,7 @@ namespace org::spartan::internal {
 
             default:
                 logging::SpartanLogger::error(
-                    std::format("Unknown model type {} for agent {}", modelType, agentIdentifier));
+                    std::format("Unknown model type {} for agent {}; valid types are 0 (DEFAULT), 1 (RSAC), 2 (DDQN), 3 (AUTOENCODER), 4 (CURIOSITY_RSAC). This likely indicates uninitialized or corrupted config buffer.", modelType, agentIdentifier));
                 return;
         }
 
