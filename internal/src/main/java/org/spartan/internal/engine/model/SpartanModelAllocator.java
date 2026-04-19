@@ -32,6 +32,22 @@ public final class SpartanModelAllocator {
      */
     private static final long SAFETY_PADDING_ELEMENTS = 1024L;
 
+    private static int fnv1a(int hash, int value) {
+        hash ^= value;
+        return hash * 0x01000193;
+    }
+
+    private static int layoutSignature() {
+        int hash = 0x811C9DC5;
+        hash = fnv1a(hash, (int) SpartanConfigLayout.BASE_CONFIG_SIZE);
+        hash = fnv1a(hash, (int) SpartanConfigLayout.RSAC_CONFIG_TOTAL_SIZE);
+        hash = fnv1a(hash, (int) SpartanConfigLayout.CURIOSITY_RSAC_CONFIG_TOTAL_SIZE);
+        hash = fnv1a(hash, (int) SpartanConfigLayout.RSAC_RECURRENT_INPUT_FEATURE_COUNT_OFFSET);
+        hash = fnv1a(hash, (int) SpartanConfigLayout.RSAC_TARGET_SMOOTHING_OFFSET);
+        hash = fnv1a(hash, (int) SpartanConfigLayout.CURIOSITY_RSAC_FORWARD_DYNAMICS_HIDDEN_SIZE_OFFSET);
+        return hash;
+    }
+
     private SpartanModelAllocator() {}
 
     /**
@@ -190,6 +206,8 @@ public final class SpartanModelAllocator {
                 (byte) (config.isTraining() ? 1 : 0));
         segment.set(ValueLayout.JAVA_BYTE, SpartanConfigLayout.BASE_DEBUG_LOGGING_OFFSET,
                 (byte) (config.debugLogging() ? 1 : 0));
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET,
+                layoutSignature());
 
         // Write RSAC-specific fields IN THE CORRECT ORDER
         // int32_t fields (64-99)
@@ -482,6 +500,8 @@ public final class SpartanModelAllocator {
                 (byte) (config.isTraining() ? 1 : 0));
         segment.set(ValueLayout.JAVA_BYTE, SpartanConfigLayout.BASE_DEBUG_LOGGING_OFFSET,
                 (byte) (config.debugLogging() ? 1 : 0));
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET,
+                layoutSignature());
 
         // Write DDQN-specific fields
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.DDQN_TARGET_SYNC_INTERVAL_OFFSET,
@@ -595,6 +615,8 @@ public final class SpartanModelAllocator {
                 (byte) (config.isTraining() ? 1 : 0));
         segment.set(ValueLayout.JAVA_BYTE, SpartanConfigLayout.BASE_DEBUG_LOGGING_OFFSET,
                 (byte) (config.debugLogging() ? 1 : 0));
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET,
+                layoutSignature());
 
         // Write AutoEncoder-specific fields
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.AE_LATENT_DIM_SIZE_OFFSET,
@@ -644,6 +666,8 @@ public final class SpartanModelAllocator {
                 (byte) (config.isTraining() ? 1 : 0));
         segment.set(ValueLayout.JAVA_BYTE, SpartanConfigLayout.BASE_DEBUG_LOGGING_OFFSET,
                 (byte) (config.debugLogging() ? 1 : 0));
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET,
+                layoutSignature());
 
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.MULTI_AGENT_MAX_AGENTS_OFFSET,
                 config.maxAgents());
@@ -793,6 +817,8 @@ public final class SpartanModelAllocator {
         // The RSAC serializer wrote ID 3 (RSAC), but we need 4.
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_MODEL_TYPE_OFFSET,
                 config.modelType().getNativeValue());
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET,
+                layoutSignature());
 
         // Write Curiosity-specific fields (starting at offset 424)
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.CURIOSITY_RSAC_FORWARD_DYNAMICS_HIDDEN_SIZE_OFFSET,
@@ -836,6 +862,8 @@ public final class SpartanModelAllocator {
         throw new IllegalArgumentException("Unknown config type: " + config.getClass().getName());
     }
 }
+
+
 
 
 

@@ -23,6 +23,7 @@ public final class SpartanConfigLayout {
     public static final long BASE_ACTION_SIZE_OFFSET      = 52;  // int32_t
     public static final long BASE_IS_TRAINING_OFFSET      = 56;  // bool
     public static final long BASE_DEBUG_LOGGING_OFFSET    = 57;  // bool
+    public static final long BASE_LAYOUT_SIGNATURE_OFFSET = 60;  // uint32_t (padding bytes)
     public static final long BASE_CONFIG_SIZE             = 64;
 
     // 16 bytes (no padding - all int32_t)

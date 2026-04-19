@@ -4,6 +4,7 @@
 
 
 #include <cstdint>
+#include <cstring>
 
 
 #if defined(_WIN32)
@@ -13,6 +14,7 @@
 #endif
 
 #include "internal/SpartanEngine.h"
+#include "internal/machinelearning/ModelHyperparameterConfig.h"
 #include "internal/machinelearning/persistence/PersistenceModuleRegistration.h"
 #include "internal/simd/SpartanSimdDispatcher.h"
 
@@ -129,20 +131,16 @@ extern "C" {
             SpartanEngine::logError("spartan_register_model: opaqueHyperparameterConfig is misaligned.");
             return -1;
         }
-        if (criticWeightsBuffer == nullptr || criticWeightsCount <= 0) {
-            SpartanEngine::logError("spartan_register_model: invalid critic weights buffer.");
-            return -1;
-        }
-        if (modelWeightsBuffer == nullptr || modelWeightsCount <= 0) {
-            SpartanEngine::logError("spartan_register_model: invalid model weights buffer.");
-            return -1;
-        }
-        if (actionOutputBuffer == nullptr || actionOutputCount <= 0) {
-            SpartanEngine::logError("spartan_register_model: invalid action output buffer.");
-            return -1;
-        }
-        if (contextBuffer == nullptr || contextCount <= 0) {
-            SpartanEngine::logError("spartan_register_model: invalid context buffer.");
+
+        uint32_t providedSignature = 0;
+        std::memcpy(&providedSignature,
+                    reinterpret_cast<const uint8_t*>(opaqueHyperparameterConfig) + 60,
+                    sizeof(providedSignature));
+        const uint32_t expectedSignature = compute_layout_signature();
+        if (providedSignature != expectedSignature) {
+            SpartanEngine::logError(std::format(
+                "spartan_register_model: layout signature mismatch (provided={}, expected={}).",
+                providedSignature, expectedSignature));
             return -1;
         }
 

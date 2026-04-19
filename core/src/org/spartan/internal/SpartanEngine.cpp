@@ -5,6 +5,7 @@
 #include <memory>
 #include <span>
 #include <format>
+#include <cstring>
 
 #include "math/fuzzy/SpartanFuzzyMath.h"
 #include "memory/ArrayCleaners.h"
@@ -314,24 +315,71 @@ namespace org::spartan::internal {
         // 1. Extract Curiosity (Forward Dynamics) dimensions
         const int32_t stateSize = config->recurrentSoftActorCriticConfig.baseConfig.stateSize;
         const int32_t actionSize = config->recurrentSoftActorCriticConfig.baseConfig.actionSize;
-        const int32_t curiosityHiddenSize = config->forwardDynamicsHiddenLayerDimensionSize;
 
         // Guard against corrupted config fields (observed on Linux when layout is mismatched)
         auto* mutableRsacConfig = const_cast<RecurrentSoftActorCriticHyperparameterConfig*>(rsacConfig);
         const int32_t rawRecurrentInputFeatureCount = mutableRsacConfig->recurrentInputFeatureCount;
         if (rawRecurrentInputFeatureCount <= 0
                 || rawRecurrentInputFeatureCount > stateSize * 1024) {
-            logging::SpartanLogger::warn(std::format(
-                "RSAC recurrentInputFeatureCount looks corrupt ({}); falling back to stateSize={}.",
-                rawRecurrentInputFeatureCount, stateSize));
-            mutableRsacConfig->recurrentInputFeatureCount = stateSize;
+            double legacyTargetSmoothing = 0.0;
+            std::memcpy(&legacyTargetSmoothing,
+                        reinterpret_cast<const uint8_t*>(opaqueHyperparameterConfig) + 88,
+                        sizeof(double));
+            if (legacyTargetSmoothing > 0.0 && legacyTargetSmoothing < 1.0) {
+                double legacyDoubles[8]{};
+                std::memcpy(legacyDoubles,
+                            reinterpret_cast<const uint8_t*>(opaqueHyperparameterConfig) + 88,
+                            sizeof(legacyDoubles));
+                std::memcpy(reinterpret_cast<uint8_t*>(opaqueHyperparameterConfig) + 104,
+                            legacyDoubles,
+                            sizeof(legacyDoubles));
+
+                int32_t legacyCuriosityHiddenSize = 0;
+                std::memcpy(&legacyCuriosityHiddenSize,
+                            reinterpret_cast<const uint8_t*>(opaqueHyperparameterConfig) + 408,
+                            sizeof(int32_t));
+                double legacyCuriosityDoubles[4]{};
+                std::memcpy(legacyCuriosityDoubles,
+                            reinterpret_cast<const uint8_t*>(opaqueHyperparameterConfig) + 416,
+                            sizeof(legacyCuriosityDoubles));
+                std::memcpy(reinterpret_cast<uint8_t*>(opaqueHyperparameterConfig) + 424,
+                            &legacyCuriosityHiddenSize,
+                            sizeof(int32_t));
+                std::memcpy(reinterpret_cast<uint8_t*>(opaqueHyperparameterConfig) + 432,
+                            legacyCuriosityDoubles,
+                            sizeof(legacyCuriosityDoubles));
+
+                mutableRsacConfig->recurrentInputFeatureCount = stateSize;
+                mutableRsacConfig->nestedEncoderCount = 0;
+                mutableRsacConfig->remorseTraceBufferCapacity = 256;
+                logging::SpartanLogger::warn(
+                    "Detected legacy RSAC layout; shifted RSAC/Curiosity fields by 16 bytes and restored missing ints.");
+            }
         }
+
+        int32_t curiosityHiddenSize = config->forwardDynamicsHiddenLayerDimensionSize;
+        if (curiosityHiddenSize <= 0 || curiosityHiddenSize > stateSize * 1024) {
+            logging::SpartanLogger::warn(std::format(
+                "Curiosity forwardDynamicsHiddenLayerDimensionSize looks invalid ({}); falling back to 128.",
+                curiosityHiddenSize));
+            curiosityHiddenSize = 128;
+        }
+
         const int32_t rawRemorseTraceBufferCapacity = mutableRsacConfig->remorseTraceBufferCapacity;
         if (rawRemorseTraceBufferCapacity <= 0) {
             logging::SpartanLogger::warn(std::format(
                 "RSAC remorseTraceBufferCapacity looks invalid ({}); falling back to 256.",
                 rawRemorseTraceBufferCapacity));
             mutableRsacConfig->remorseTraceBufferCapacity = 256;
+        }
+
+        const int32_t normalizedRecurrentInputFeatureCount = mutableRsacConfig->recurrentInputFeatureCount;
+        if (normalizedRecurrentInputFeatureCount <= 0
+                || normalizedRecurrentInputFeatureCount > stateSize * 1024) {
+            logging::SpartanLogger::warn(std::format(
+                "RSAC recurrentInputFeatureCount looks corrupt ({}); falling back to stateSize={}.",
+                normalizedRecurrentInputFeatureCount, stateSize));
+            mutableRsacConfig->recurrentInputFeatureCount = stateSize;
         }
 
         logging::SpartanLogger::info(std::format(
