@@ -752,18 +752,17 @@ public final class SpartanModelAllocator {
      * <p>
      * Memory Layout (Strict C++ Standard Layout compliance):
      * <pre>
-     * Offset 0:    RecurrentSoftActorCriticHyperparameterConfig (408 bytes)
-     *              - Includes BaseHyperparameterConfig at offsets 0-64
-     *              - Includes RSAC-specific fields at offsets 64-152
-     *              - Includes Encoder Slots (5 * 16 = 80 bytes) at 152-232
-     *              - Includes padding to reach 408 bytes
-     * Offset 408:  forwardDynamicsHiddenLayerDimensionSize (int32_t)
-     * Offset 412:  [4 bytes padding for alignment]
-     * Offset 416:  intrinsicRewardScale (double)
-     * Offset 424:  intrinsicRewardClampingMinimum (double)
-     * Offset 432:  intrinsicRewardClampingMaximum (double)
-     * Offset 440:  forwardDynamicsLearningRate (double)
-     * Total: 448 bytes
+     * Offset 0-423:   RecurrentSoftActorCriticHyperparameterConfig (424 bytes)
+     *                 - BaseHyperparameterConfig: 0-63 (64 bytes)
+     *                 - RSAC fields: 64-167 (104 bytes)
+     *                 - NestedEncoderSlots: 168-423 (256 bytes)
+     * Offset 424-427: forwardDynamicsHiddenLayerDimensionSize (int32_t)
+     * Offset 428-431: _padding4 (4 bytes, zero-initialized)
+     * Offset 432-439: intrinsicRewardScale (double)
+     * Offset 440-447: intrinsicRewardClampingMinimum (double)
+     * Offset 448-455: intrinsicRewardClampingMaximum (double)
+     * Offset 456-463: forwardDynamicsLearningRate (double)
+     * Total: 464 bytes (must match CURIOSITY_RSAC_CONFIG_TOTAL_SIZE)
      * </pre>
      *
      * @param arena  the Arena for allocation
@@ -782,8 +781,7 @@ public final class SpartanModelAllocator {
 
         // Use a ConfiningArena to ensure temporary RSAC segment stays valid during the copy operation
         try (Arena temporaryArena = Arena.ofConfined()) {
-            // Serialize the RSAC config into a temporary segment
-            // This generates 408 bytes
+            // Serialize the RSAC config into a temporary segment (generates 424 bytes)
             MemorySegment rsacSegment = writeRSACConfig(temporaryArena, config.recurrentSoftActorCriticConfig(), stateSize, actionSize);
 
             // Copy the RSAC segment to the beginning of our shared-arena segment
@@ -796,11 +794,11 @@ public final class SpartanModelAllocator {
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_MODEL_TYPE_OFFSET,
                 config.modelType().getNativeValue());
 
-        // Write Curiosity-specific fields (offsets start at RSAC_CONFIG_TOTAL_SIZE)
+        // Write Curiosity-specific fields (starting at offset 424)
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.CURIOSITY_RSAC_FORWARD_DYNAMICS_HIDDEN_SIZE_OFFSET,
                 config.forwardDynamicsHiddenLayerDimensionSize());
 
-        // Implicit padding (4 bytes) at offset 412 is zero-initialized by arena allocation
+        // Offset 428-431: padding is zero-initialized by arena allocation
 
         segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.CURIOSITY_RSAC_INTRINSIC_REWARD_SCALE_OFFSET,
                 config.intrinsicRewardScale());

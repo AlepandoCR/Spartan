@@ -14,7 +14,16 @@
  * with C and direct memory mapping via Java FFM.
  * Explicit padding fields (_paddingX) are included to ensure Python FFM generators
  * perfectly mirror the C++ ABI layout without guessing.
+ *
+ * #pragma pack(1) forces BYTE-ALIGNMENT to ensure identical memory layouts
+ * across all platforms (Linux, Windows, macOS). This prevents compiler-specific
+ * padding that would cause Java FFM offsets to mismatch on different OSes.
  */
+
+//  CROSS-PLATFORM STRUCT PACKING
+// Force byte-packing (no padding) to ensure Linux and Windows use identical layouts.
+// Without this, struct sizes and offsets differ between platforms.
+#pragma pack(push, 1)
 
 extern "C" {
 
@@ -131,6 +140,12 @@ extern "C" {
         double forwardDynamicsLearningRate;
     };
 
+    // ==================== Compile-Time Layout Validation ====================
+    // These static_asserts ensure C++ struct layouts match Java FFM offsets exactly.
+    static_assert(sizeof(BaseHyperparameterConfig) == 64, "BaseHyperparameterConfig must be 64 bytes");
+    static_assert(sizeof(RecurrentSoftActorCriticHyperparameterConfig) == 424, "RecurrentSoftActorCriticHyperparameterConfig must be 424 bytes");
+    static_assert(sizeof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig) == 464, "CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig must be 464 bytes");
+
     //
     //  Multi-Agent Group Configuration
     //
@@ -141,4 +156,8 @@ extern "C" {
         int32_t _padding5; // EXPLICIT: Pads struct to 8-byte alignment
     };
 
-}
+} // extern "C"
+
+// ==================== END CROSS-PLATFORM STRUCT PACKING ====================
+#pragma pack(pop)
+

@@ -305,15 +305,23 @@ namespace org::spartan::internal {
         const int32_t gruInputSize = rsacConfig->recurrentInputFeatureCount > 0
             ? rsacConfig->recurrentInputFeatureCount : stateSize;
 
-        const size_t gruW_Count = static_cast<size_t>(3) * gruHiddenSize * (gruHiddenSize + gruInputSize);
-        const size_t gruB_Count = static_cast<size_t>(3) * gruHiddenSize;
+        const size_t gruW_Count = static_cast<size_t>(3) * static_cast<size_t>(gruHiddenSize) * (static_cast<size_t>(gruHiddenSize) + static_cast<size_t>(gruInputSize));
+        const size_t gruB_Count = static_cast<size_t>(3) * static_cast<size_t>(gruHiddenSize);
         const size_t gruS_Count = static_cast<size_t>(gruHiddenSize);
 
-        const size_t criticIn = static_cast<size_t>(gruHiddenSize) + actionSize;
-        size_t criticW_Count = (criticIn * criticHiddenSize) +
-                               (criticLayerCount > 1 ? static_cast<size_t>(criticHiddenSize) * criticHiddenSize * (criticLayerCount - 1) : 0) +
-                               criticHiddenSize;
-        size_t criticB_Count = static_cast<size_t>(criticHiddenSize) * criticLayerCount + 1;
+        logging::SpartanLogger::debug(std::format(
+            "[CURIOSITY-CONSTRUCT] GRU calculation: gruHiddenSize={}, gruInputSize={}, gruW_Count={}, gruB_Count={}, gruS_Count={}",
+            gruHiddenSize, gruInputSize, gruW_Count, gruB_Count, gruS_Count));
+
+        const size_t criticIn = static_cast<size_t>(gruHiddenSize) + static_cast<size_t>(actionSize);
+        size_t criticW_Count = (criticIn * static_cast<size_t>(criticHiddenSize)) +
+                               (criticLayerCount > 1 ? static_cast<size_t>(criticHiddenSize) * static_cast<size_t>(criticHiddenSize) * static_cast<size_t>(criticLayerCount - 1) : 0) +
+                               static_cast<size_t>(criticHiddenSize);
+        size_t criticB_Count = static_cast<size_t>(criticHiddenSize) * static_cast<size_t>(criticLayerCount) + 1;
+
+        logging::SpartanLogger::debug(std::format(
+            "[CURIOSITY-CONSTRUCT] Critic calculation: criticIn={}, criticHiddenSize={}, criticLayerCount={}, criticW_Count={}, criticB_Count={}",
+            criticIn, criticHiddenSize, criticLayerCount, criticW_Count, criticB_Count));
 
         // --- CRITIC SLICING ---
         auto criticSpan = std::span(criticWeightsBuffer, static_cast<size_t>(criticWeightsCount));
