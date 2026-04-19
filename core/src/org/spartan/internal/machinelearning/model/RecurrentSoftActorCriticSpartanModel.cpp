@@ -58,7 +58,8 @@ namespace org::spartan::internal::machinelearning {
         const int hiddenSize = config->actorHiddenLayerNeuronCount;
         const int actionSize = config->baseConfig.actionSize;
         const int contextSize = static_cast<int>(contextBuffer.size());
-        int encoderCount = config->nestedEncoderCount;
+        // Nested encoders are no longer supported - always disabled
+        const int encoderCount = 0;
         const int criticHiddenSize = config->criticHiddenLayerNeuronCount;
         const int criticLayerCount = config->criticHiddenLayerCount;
         const int criticCombinedSize = config->hiddenStateSize + actionSize;

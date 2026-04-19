@@ -20,7 +20,7 @@
  * padding that would cause Java FFM offsets to mismatch on different OSes.
  */
 
-//  CROSS-PLATFORM STRUCT PACKING
+//
 // Force byte-packing (no padding) to ensure Linux and Windows use identical layouts.
 // Without this, struct sizes and offsets differ between platforms.
 #pragma pack(push, 1)
@@ -51,7 +51,7 @@ extern "C" {
 
     struct BaseHyperparameterConfig {
         int32_t modelTypeIdentifier;
-        int32_t _padding0; // EXPLICIT: Forces 8-byte alignment for the next double
+        int32_t _padding0; // Forces 8-byte alignment for the next double
 
         double learningRate;
         double gamma;
@@ -62,7 +62,7 @@ extern "C" {
         int32_t actionSize;
         bool isTraining;
         bool debugLogging;
-        uint8_t _padding1[6]; // EXPLICIT: Pads struct to exactly 64 bytes
+        uint8_t _padding1[6]; // Pads struct to exactly 64 bytes
     };
 
     //
@@ -72,13 +72,19 @@ extern "C" {
     struct RecurrentSoftActorCriticHyperparameterConfig {
         BaseHyperparameterConfig baseConfig;
 
+        // All int32_t fields together (avoids alignment padding)
         int32_t hiddenStateSize;
         int32_t recurrentLayerDepth;
         int32_t actorHiddenLayerNeuronCount;
         int32_t actorHiddenLayerCount;
         int32_t criticHiddenLayerNeuronCount;
         int32_t criticHiddenLayerCount;
+        int32_t recurrentInputFeatureCount;
+        int32_t nestedEncoderCount;
+        int32_t remorseTraceBufferCapacity;
+        int32_t _padding2; // Forces 8-byte alignment for the next double
 
+        // All double fields together (8-byte aligned)
         double targetSmoothingCoefficient;
         double entropyTemperatureAlpha;
         double firstCriticLearningRate;
@@ -86,14 +92,9 @@ extern "C" {
         double policyNetworkLearningRate;
         double targetEntropy;
         double alphaLearningRate;
-
-        int32_t recurrentInputFeatureCount;
-        int32_t nestedEncoderCount;
-        int32_t remorseTraceBufferCapacity;
-        int32_t _padding2; // EXPLICIT: Forces 8-byte alignment for the next double
-
         double remorseMinimumSimilarityThreshold;
 
+        // Array at end
         NestedEncoderSlotDescriptor encoderSlots[SPARTAN_MAX_NESTED_ENCODER_SLOTS];
     };
 
@@ -108,7 +109,7 @@ extern "C" {
         int32_t replayBatchSize;
         int32_t hiddenLayerNeuronCount;
         int32_t hiddenLayerCount;
-        int32_t _padding3; // EXPLICIT: Pads struct to multiple of 8
+        int32_t _padding3; // Pads struct to multiple of 8
     };
 
     //
@@ -132,7 +133,7 @@ extern "C" {
         RecurrentSoftActorCriticHyperparameterConfig recurrentSoftActorCriticConfig;
 
         int32_t forwardDynamicsHiddenLayerDimensionSize;
-        int32_t _padding4; // EXPLICIT: Forces 8-byte alignment for the next double
+        int32_t _padding4; // Forces 8-byte alignment for the next double
 
         double intrinsicRewardScale;
         double intrinsicRewardClampingMinimum;
@@ -140,7 +141,7 @@ extern "C" {
         double forwardDynamicsLearningRate;
     };
 
-    // ==================== Compile-Time Layout Validation ====================
+    //  Compile-Time Layout Validation
     // These static_asserts ensure C++ struct layouts match Java FFM offsets exactly.
     static_assert(sizeof(BaseHyperparameterConfig) == 64, "BaseHyperparameterConfig must be 64 bytes");
     static_assert(sizeof(RecurrentSoftActorCriticHyperparameterConfig) == 424, "RecurrentSoftActorCriticHyperparameterConfig must be 424 bytes");
@@ -153,11 +154,10 @@ extern "C" {
     struct SpartanMultiAgentGroupHyperparameterConfig {
         BaseHyperparameterConfig baseConfig;
         int32_t maxAgents;
-        int32_t _padding5; // EXPLICIT: Pads struct to 8-byte alignment
+        int32_t _padding5; //Pads struct to 8-byte alignment
     };
 
 } // extern "C"
 
-// ==================== END CROSS-PLATFORM STRUCT PACKING ====================
 #pragma pack(pop)
 

@@ -279,34 +279,11 @@ namespace org::spartan::internal {
         const auto* config = static_cast<const CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig*>(
             opaqueHyperparameterConfig);
 
-
         logging::SpartanLogger::info(std::format(
             "[STRUCT-LAYOUT] sizeof(BaseHyperparameterConfig)={}, sizeof(RecurrentSoftActorCriticHyperparameterConfig)={}, sizeof(CuriosityDrivenRSAC)={}",
             sizeof(BaseHyperparameterConfig),
             sizeof(RecurrentSoftActorCriticHyperparameterConfig),
             sizeof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig)));
-
-        const auto* rsacBasePtr = &config->recurrentSoftActorCriticConfig;
-        const auto* hiddenStatePtr = &rsacBasePtr->hiddenStateSize;
-        const auto* recurrentInputPtr = &rsacBasePtr->recurrentInputFeatureCount;
-
-        uintptr_t rsacBaseAddr = reinterpret_cast<uintptr_t>(rsacBasePtr);
-        uintptr_t hiddenStateAddr = reinterpret_cast<uintptr_t>(hiddenStatePtr);
-        uintptr_t recurrentInputAddr = reinterpret_cast<uintptr_t>(recurrentInputPtr);
-
-        logging::SpartanLogger::info(std::format(
-            "[STRUCT-OFFSETS] RSACBase offset from Config=0, hiddenStateSize offset={}, recurrentInputFeatureCount offset={}",
-            (hiddenStateAddr - rsacBaseAddr),
-            (recurrentInputAddr - rsacBaseAddr)));
-
-        // 1. Extract Curiosity (Forward Dynamics) dimensions
-        const int32_t stateSize = config->recurrentSoftActorCriticConfig.baseConfig.stateSize;
-        const int32_t actionSize = config->recurrentSoftActorCriticConfig.baseConfig.actionSize;
-        const int32_t curiosityHiddenSize = config->forwardDynamicsHiddenLayerDimensionSize;
-
-        const size_t curiosityWeights = static_cast<size_t>(stateSize + actionSize) * curiosityHiddenSize +
-                                        static_cast<size_t>(curiosityHiddenSize) * stateSize;
-        const size_t curiosityBiases = static_cast<size_t>(curiosityHiddenSize) + stateSize;
 
         // Extract RSAC internal dimensions
         const auto* rsacConfig = &config->recurrentSoftActorCriticConfig;
@@ -316,14 +293,23 @@ namespace org::spartan::internal {
         const int32_t actorHiddenSize = rsacConfig->actorHiddenLayerNeuronCount;
         const int32_t actorLayerCount = rsacConfig->actorHiddenLayerCount;
 
-        // DEBUG: Verify if C++ is reading the struct layout correctly from Java
+        // 1. Extract Curiosity (Forward Dynamics) dimensions
+        const int32_t stateSize = config->recurrentSoftActorCriticConfig.baseConfig.stateSize;
+        const int32_t actionSize = config->recurrentSoftActorCriticConfig.baseConfig.actionSize;
+        const int32_t curiosityHiddenSize = config->forwardDynamicsHiddenLayerDimensionSize;
+
         logging::SpartanLogger::info(std::format(
             "[DEBUG-CONFIG] stateSize={}, actionSize={}, criticHidden={}, criticLayers={}, actorHidden={}, actorLayers={}",
             stateSize, actionSize, criticHiddenSize, criticLayerCount, actorHiddenSize, actorLayerCount));
 
         // RSAC Component Math (Line-by-line parity with Java Allocator)
-        const int32_t gruInputSize = rsacConfig->recurrentInputFeatureCount > 0
-            ? rsacConfig->recurrentInputFeatureCount : stateSize;
+        // Read recurrentInputFeatureCount directly from memory offset to bypass alignment issues
+        const uint8_t* rsacBytePtr = reinterpret_cast<const uint8_t*>(rsacConfig);
+        const int32_t* recurrentInputPtr = reinterpret_cast<const int32_t*>(rsacBytePtr + 88);
+        const int32_t gruInputSize = *recurrentInputPtr > 0 ? *recurrentInputPtr : stateSize;
+
+        logging::SpartanLogger::info(std::format(
+            "[CURIOSITY-CONSTRUCT] Reading gruInputSize from offset 88: value={}", gruInputSize));
 
         const size_t gruW_Count = static_cast<size_t>(3) * static_cast<size_t>(gruHiddenSize) * (static_cast<size_t>(gruHiddenSize) + static_cast<size_t>(gruInputSize));
         const size_t gruB_Count = static_cast<size_t>(3) * static_cast<size_t>(gruHiddenSize);
@@ -332,6 +318,10 @@ namespace org::spartan::internal {
         logging::SpartanLogger::info(std::format(
             "[CURIOSITY-CONSTRUCT] GRU calculation: gruHiddenSize={}, gruInputSize={}, gruW_Count={}, gruB_Count={}, gruS_Count={}",
             gruHiddenSize, gruInputSize, gruW_Count, gruB_Count, gruS_Count));
+
+        const size_t curiosityWeights = static_cast<size_t>(stateSize + actionSize) * curiosityHiddenSize +
+                                        static_cast<size_t>(curiosityHiddenSize) * stateSize;
+        const size_t curiosityBiases = static_cast<size_t>(curiosityHiddenSize) + stateSize;
 
         const size_t criticIn = static_cast<size_t>(gruHiddenSize) + static_cast<size_t>(actionSize);
         size_t criticW_Count = (criticIn * static_cast<size_t>(criticHiddenSize)) +

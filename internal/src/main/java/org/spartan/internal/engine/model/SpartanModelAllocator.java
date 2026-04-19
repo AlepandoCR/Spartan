@@ -191,7 +191,8 @@ public final class SpartanModelAllocator {
         segment.set(ValueLayout.JAVA_BYTE, SpartanConfigLayout.BASE_DEBUG_LOGGING_OFFSET,
                 (byte) (config.debugLogging() ? 1 : 0));
 
-        // Write RSAC-specific fields
+        // Write RSAC-specific fields IN THE CORRECT ORDER
+        // int32_t fields (64-99)
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_HIDDEN_STATE_SIZE_OFFSET,
                 config.hiddenStateSize());
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_RECURRENT_LAYER_DEPTH_OFFSET,
@@ -204,6 +205,14 @@ public final class SpartanModelAllocator {
                 config.criticHiddenLayerNeuronCount());
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_CRITIC_HIDDEN_LAYER_COUNT_OFFSET,
                 config.criticHiddenLayerCount());
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_RECURRENT_INPUT_FEATURE_COUNT_OFFSET,
+                config.recurrentInputFeatureCount());
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_NESTED_ENCODER_COUNT_OFFSET,
+                0); // Nested encoders no longer supported - always 0
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_REMORSE_BUFFER_CAPACITY_OFFSET,
+                config.remorseTraceBufferCapacity());
+
+        // double fields (104+)
         segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.RSAC_TARGET_SMOOTHING_OFFSET,
                 config.targetSmoothingCoefficient());
         segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.RSAC_ENTROPY_ALPHA_OFFSET,
@@ -218,12 +227,6 @@ public final class SpartanModelAllocator {
                 config.targetEntropy());
         segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.RSAC_ALPHA_LEARNING_RATE_OFFSET,
                 config.alphaLearningRate());
-        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_RECURRENT_INPUT_FEATURE_COUNT_OFFSET,
-                config.recurrentInputFeatureCount());
-        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_NESTED_ENCODER_COUNT_OFFSET,
-                0); // Nested encoders no longer supported - always 0
-        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_REMORSE_BUFFER_CAPACITY_OFFSET,
-                config.remorseTraceBufferCapacity());
         segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.RSAC_REMORSE_SIMILARITY_THRESHOLD_OFFSET,
                 config.remorseMinimumSimilarityThreshold());
 
@@ -232,11 +235,8 @@ public final class SpartanModelAllocator {
 
     /**
      * Calculates the total weight count for an RSAC model's actor network.
-     *
      * Includes:
-     * 1. Policy Network (Actor): Multi-layer MLP with GRU input.
-     *
-     * Note: Nested AutoEncoders are no longer supported.
+     * Policy Network (Actor): Multi-layer MLP with GRU input.
      *
      * @param config the RSAC configuration
      * @return total number of double weights for the actor (SIMD-padded)

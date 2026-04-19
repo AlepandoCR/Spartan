@@ -41,17 +41,17 @@ public final class SpartanConfigLayout {
     public static final long RSAC_ACTOR_HIDDEN_LAYER_COUNT_OFFSET         = 76;
     public static final long RSAC_CRITIC_HIDDEN_NEURON_COUNT_OFFSET       = 80;
     public static final long RSAC_CRITIC_HIDDEN_LAYER_COUNT_OFFSET        = 84;
-    public static final long RSAC_TARGET_SMOOTHING_OFFSET                 = 88;  // double
-    public static final long RSAC_ENTROPY_ALPHA_OFFSET                    = 96;
-    public static final long RSAC_FIRST_CRITIC_LR_OFFSET                  = 104;
-    public static final long RSAC_SECOND_CRITIC_LR_OFFSET                 = 112;
-    public static final long RSAC_POLICY_LR_OFFSET                        = 120;
-    public static final long RSAC_TARGET_ENTROPY_OFFSET                   = 128;  // double
-    public static final long RSAC_ALPHA_LEARNING_RATE_OFFSET              = 136;  // double
-    public static final long RSAC_RECURRENT_INPUT_FEATURE_COUNT_OFFSET    = 144; // int32_t
-    public static final long RSAC_NESTED_ENCODER_COUNT_OFFSET             = 148;
-    public static final long RSAC_REMORSE_BUFFER_CAPACITY_OFFSET          = 152;
-    // 4 bytes padding for double alignment
+    public static final long RSAC_RECURRENT_INPUT_FEATURE_COUNT_OFFSET    = 88; // int32_t
+    public static final long RSAC_NESTED_ENCODER_COUNT_OFFSET             = 92;
+    public static final long RSAC_REMORSE_BUFFER_CAPACITY_OFFSET          = 96;
+    // 4 bytes padding at 100-103
+    public static final long RSAC_TARGET_SMOOTHING_OFFSET                 = 104;  // double
+    public static final long RSAC_ENTROPY_ALPHA_OFFSET                    = 112;
+    public static final long RSAC_FIRST_CRITIC_LR_OFFSET                  = 120;
+    public static final long RSAC_SECOND_CRITIC_LR_OFFSET                 = 128;
+    public static final long RSAC_POLICY_LR_OFFSET                        = 136;
+    public static final long RSAC_TARGET_ENTROPY_OFFSET                   = 144;  // double
+    public static final long RSAC_ALPHA_LEARNING_RATE_OFFSET              = 152;  // double
     public static final long RSAC_REMORSE_SIMILARITY_THRESHOLD_OFFSET     = 160; // double
     public static final long RSAC_ENCODER_SLOTS_OFFSET                    = 168;
 
