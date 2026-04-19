@@ -17,17 +17,29 @@
  *
  */
 
+// Compiler-agnostic packing macros for both MSVC and GCC/Clang
+#if defined(_MSC_VER)
+    #define PACK_BEGIN __pragma(pack(push, 1))
+    #define PACK_END __pragma(pack(pop))
+    #define PACKED
+#else
+    #define PACK_BEGIN
+    #define PACK_END
+    #define PACKED __attribute__((packed))
+#endif
 
 extern "C" {
 
     constexpr int32_t SPARTAN_MAX_NESTED_ENCODER_SLOTS = 16;
 
+    PACK_BEGIN
     struct NestedEncoderSlotDescriptor {
         int32_t contextSliceStartIndex;
         int32_t contextSliceElementCount;
         int32_t latentDimensionSize;
         int32_t hiddenNeuronCount;
-    } __attribute__((packed));
+    } PACKED;
+    PACK_END
 
     enum SpartanModelType : int32_t {
         SPARTAN_MODEL_TYPE_DEFAULT                                      = 0,
@@ -42,6 +54,7 @@ extern "C" {
     //  Base Configuration
     //
 
+    PACK_BEGIN
     struct BaseHyperparameterConfig {
         int32_t modelTypeIdentifier;
         int32_t _padding0; // EXPLICIT: Forces 8-byte alignment for the next double
@@ -56,12 +69,14 @@ extern "C" {
         bool isTraining;
         bool debugLogging;
         uint8_t _padding1[6]; // EXPLICIT: Pads struct to exactly 64 bytes
-    } __attribute__((packed));
+    } PACKED;
+    PACK_END
 
     //
     //  Recurrent Soft Actor-Critic (RSAC) Configuration
     //
 
+    PACK_BEGIN
     struct RecurrentSoftActorCriticHyperparameterConfig {
         BaseHyperparameterConfig baseConfig;
 
@@ -89,12 +104,14 @@ extern "C" {
 
         // GROUP 3: Array at end
         NestedEncoderSlotDescriptor encoderSlots[SPARTAN_MAX_NESTED_ENCODER_SLOTS];
-    } __attribute__((packed));
+    } PACKED;
+    PACK_END
 
     //
     //  Double Deep Q-Network (DDQN) Configuration
     //
 
+    PACK_BEGIN
     struct DoubleDeepQNetworkHyperparameterConfig {
         BaseHyperparameterConfig baseConfig;
         int32_t targetNetworkSyncInterval;
@@ -103,12 +120,14 @@ extern "C" {
         int32_t hiddenLayerNeuronCount;
         int32_t hiddenLayerCount;
         int32_t _padding3; // EXPLICIT: Pads struct to multiple of 8
-    } __attribute__((packed));
+    } PACKED;
+    PACK_END
 
     //
     //  AutoEncoder Compressor Configuration
     //
 
+    PACK_BEGIN
     struct AutoEncoderCompressorHyperparameterConfig {
         BaseHyperparameterConfig baseConfig;
         int32_t latentDimensionSize;
@@ -116,12 +135,14 @@ extern "C" {
         int32_t encoderLayerCount;
         int32_t decoderLayerCount;
         double bottleneckRegularisationWeight;
-    } __attribute__((packed));
+    } PACKED;
+    PACK_END
 
     //
     //  Curiosity-Driven Recurrent Soft Actor-Critic Configuration
     //
 
+    PACK_BEGIN
     struct CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig {
         RecurrentSoftActorCriticHyperparameterConfig recurrentSoftActorCriticConfig;
 
@@ -132,7 +153,8 @@ extern "C" {
         double intrinsicRewardClampingMinimum;
         double intrinsicRewardClampingMaximum;
         double forwardDynamicsLearningRate;
-    } __attribute__((packed));
+    } PACKED;
+    PACK_END
 
     //  Compile-Time Layout Validation
     // These static_asserts ensure C++ struct layouts match Java FFM offsets exactly.
@@ -144,10 +166,12 @@ extern "C" {
     //  Multi-Agent Group Configuration
     //
 
+    PACK_BEGIN
     struct SpartanMultiAgentGroupHyperparameterConfig {
         BaseHyperparameterConfig baseConfig;
         int32_t maxAgents;
         int32_t _padding5; // EXPLICIT: Pads struct to 8-byte alignment
-    } __attribute__((packed));
+    } PACKED;
+    PACK_END
 
 } // extern "C"
