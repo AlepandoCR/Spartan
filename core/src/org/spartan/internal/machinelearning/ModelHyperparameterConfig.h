@@ -49,6 +49,7 @@ extern "C" {
         SPARTAN_MODEL_TYPE_AUTO_ENCODER_COMPRESSOR                      = 3,
         SPARTAN_MODEL_TYPE_CURIOSITY_DRIVEN_RECURRENT_SOFT_ACTOR_CRITIC = 4,
         SPARTAN_MODEL_TYPE_MULTI_AGENT_GROUP                            = 5,
+        SPARTAN_MODEL_TYPE_PROXIMAL_POLICY_OPTIMIZATION                 = 6,
     };
 
     //
@@ -178,5 +179,35 @@ extern "C" {
         int32_t _padding5; // EXPLICIT: Pads struct to 8-byte alignment
     } PACKED;
     PACK_END
+
+    //
+    //  Proximal Policy Optimization (PPO) Configuration
+    //
+
+    PACK_BEGIN
+    struct ProximalPolicyOptimizationHyperparameterConfig {
+        BaseHyperparameterConfig baseConfig;
+
+        int32_t actorHiddenNeuronCount;
+        int32_t actorHiddenLayerCount;
+        int32_t criticHiddenNeuronCount;
+        int32_t criticHiddenLayerCount;
+        int32_t trajectoryBufferCapacity;
+        int32_t trainingEpochCount;
+        int32_t miniBatchSize;
+        int32_t _padding6; // EXPLICIT: Forces 8-byte alignment for the next double
+
+        double clipRange;
+        double gaeGamma;
+        double gaeLambda;
+        double entropyCoefficient;
+        double valueLossCoefficient;
+        double maxGradientNorm;
+    } PACKED;
+    PACK_END
+
+    static_assert(sizeof(ProximalPolicyOptimizationHyperparameterConfig) == 144, "ProximalPolicyOptimizationHyperparameterConfig must be 144 bytes");
+    static_assert(offsetof(ProximalPolicyOptimizationHyperparameterConfig, actorHiddenNeuronCount) == 64, "PPO.actorHiddenNeuronCount offset must be 64 bytes");
+    static_assert(offsetof(ProximalPolicyOptimizationHyperparameterConfig, clipRange) == 96, "PPO.clipRange offset must be 96 bytes");
 
 } // extern "C"

@@ -246,5 +246,54 @@ namespace org::spartan::internal::math::tensor {
                 std::span<const double> stdDevs,
                 std::span<double> outActions,
                 std::uint64_t seed = 0);
+
+        static void applyLogExact(std::span<double> tensor);
+
+        static void computeGaussianLogProbabilities(
+                std::span<const double> actions,
+                std::span<const double> means,
+                std::span<const double> logStdDevs,
+                int actionDim,
+                int batchSize,
+                std::span<double> outLogProbs);
+
+        static void computeProbabilityRatios(
+                std::span<const double> logProbsNew,
+                std::span<const double> logProbsOld,
+                std::span<double> outRatios);
+
+        static void computeTDErrors(
+                std::span<const double> rewards,
+                std::span<const double> valuesPred,
+                std::span<const double> valuesPredNext,
+                double gamma,
+                std::span<double> outTDErrors);
+
+        static void computeGeneralizedAdvantages(
+                std::span<const double> tdErrors,
+                double gamma,
+                double lambdaGAE,
+                std::span<double> outAdvantages);
+
+        static void computeClippedSurrogateLoss(
+                std::span<const double> ratios,
+                std::span<const double> advantages,
+                double clipRange,
+                std::span<double> outSurrogateLoss);
+
+        [[nodiscard]] static double computeProximalPolicyOptimizationValueLoss(
+                std::span<const double> valuesPred,
+                std::span<const double> advantages,
+                std::span<const double> valuesOld);
+
+        static void computeProximalPolicyOptimizationValueGradients(
+                std::span<const double> valuesPred,
+                std::span<const double> advantages,
+                std::span<const double> valuesOld,
+                std::span<double> outGradients);
+
+        [[nodiscard]] static double computeGaussianEntropy(
+                std::span<const double> logStdDevs,
+                int actionDim);
     };
 }

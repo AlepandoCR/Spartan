@@ -73,7 +73,7 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
         // Serialize Config
         this.configBuffer = SpartanModelAllocator.serialize(this.arena, config, stateSize, actionCount);
 
-        // CRITICAL VALIDATION: Verify serialize() actually filled the buffer
+
         int storedSignature = configBuffer.get(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET);
         int expectedSignature = SpartanModelAllocator.getLayoutSignature();
         if (storedSignature == 0) {

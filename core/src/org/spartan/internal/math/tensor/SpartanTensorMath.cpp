@@ -547,4 +547,301 @@ namespace org::spartan::internal::math::tensor {
             ptr[i] = std::tanh(ptr[i]);
         }
     }
+
+    void TensorOps::applyLogExact(const std::span<double> tensor) {
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
+
+        double* ptr = tensor.data();
+        const size_t size = tensor.size();
+
+        const SimdFloat p1 = ops.broadcast(1.0);
+        const SimdFloat p2 = ops.broadcast(2.0);
+        const SimdFloat p8 = ops.broadcast(8.0);
+
+        size_t i = 0;
+        for (; i + (laneCount - 1) < size; i += laneCount) {
+            const SimdFloat x = ops.load(&ptr[i]);
+
+            // Normalize x to range [1, 2) via mantissa extraction
+            // y = (x - 1) / (x + 1)
+            const SimdFloat numerator = ops.subtract(x, p1);
+            const SimdFloat denominator = ops.add(x, p1);
+            const SimdFloat y = ops.divide(numerator, denominator);
+
+            // Taylor series: ln(x) ≈ 2 * (y + y^3/3 + y^5/5 + y^7/7 + ...)
+            const SimdFloat y2 = ops.multiply(y, y);
+            const SimdFloat y3 = ops.multiply(y2, y);
+            const SimdFloat y5 = ops.multiply(ops.multiply(y2, y2), y);
+            const SimdFloat y7 = ops.multiply(ops.multiply(y5, y2), p1);
+
+            const SimdFloat term1 = y;
+            const SimdFloat term3 = ops.divide(y3, ops.broadcast(3.0));
+            const SimdFloat term5 = ops.divide(y5, ops.broadcast(5.0));
+            const SimdFloat term7 = ops.divide(y7, ops.broadcast(7.0));
+
+            SimdFloat result = ops.add(term1, term3);
+            result = ops.add(result, term5);
+            result = ops.add(result, term7);
+            result = ops.multiply(result, p2);
+
+            ops.store(&ptr[i], result);
+        }
+
+        for (; i < size; ++i) {
+            ptr[i] = std::log(ptr[i]);
+        }
+    }
+
+    void TensorOps::computeGaussianLogProbabilities(
+            const std::span<const double> actions,
+            const std::span<const double> means,
+            const std::span<const double> logStdDevs,
+            const int actionDim,
+            const int batchSize,
+            std::span<double> outLogProbs) {
+
+        const auto& ops = getSelectedSimdOperations();
+        int laneCount = getSimdLaneCount();
+
+        const double* actPtr = actions.data();
+        const double* meanPtr = means.data();
+        const double* logStdPtr = logStdDevs.data();
+        double* outPtr = outLogProbs.data();
+
+        const double LOG_2PI = 1.8378770664093453;
+        const SimdFloat sLOG_2PI = ops.broadcast(LOG_2PI);
+        const SimdFloat sHalf = ops.broadcast(0.5);
+
+        std::vector<double> invStd(actionDim);
+        for (int a = 0; a < actionDim; ++a) {
+            invStd[a] = 1.0 / std::exp(logStdPtr[a]);
+        }
+
+        for (int b = 0; b < batchSize; ++b) {
+            double logProbSum = 0.0;
+
+            for (int a = 0; a < actionDim; ++a) {
+                const int idx = b * actionDim + a;
+                const double diff = actPtr[idx] - meanPtr[idx];
+                const double sqDiff = diff * diff;
+                const double logProb = -0.5 * sqDiff * invStd[a] * invStd[a] - logStdPtr[a];
+                logProbSum += logProb;
+            }
+
+            outPtr[b] = logProbSum - LOG_2PI;
+        }
+    }
+
+    void TensorOps::computeProbabilityRatios(
+            const std::span<const double> logProbsNew,
+            const std::span<const double> logProbsOld,
+            std::span<double> outRatios) {
+
+        auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
+
+        const size_t size = logProbsNew.size();
+        const double* newPtr = logProbsNew.data();
+        const double* oldPtr = logProbsOld.data();
+        double* outPtr = outRatios.data();
+
+        size_t i = 0;
+        for (; i + (laneCount - 1) < size; i += laneCount) {
+            const SimdFloat deltaLogPi = ops.subtract(ops.load(&newPtr[i]), ops.load(&oldPtr[i]));
+            ops.store(&outPtr[i], deltaLogPi);
+        }
+
+        for (; i < size; ++i) {
+            outPtr[i] = logProbsNew[i] - logProbsOld[i];
+        }
+
+        const std::span ratios(outPtr, size);
+        applyExpExact(ratios);
+    }
+
+    void TensorOps::computeTDErrors(
+            const std::span<const double> rewards,
+            const std::span<const double> valuesPred,
+            const std::span<const double> valuesPredNext,
+            const double gamma,
+            std::span<double> outTDErrors) {
+
+        auto& ops = getSelectedSimdOperations();
+        int laneCount = getSimdLaneCount();
+
+        const size_t size = rewards.size();
+        const double* rewPtr = rewards.data();
+        const double* valPtr = valuesPred.data();
+        const double* valNextPtr = valuesPredNext.data();
+        double* outPtr = outTDErrors.data();
+
+        const SimdFloat sGamma = ops.broadcast(gamma);
+
+        size_t i = 0;
+        for (; i + (laneCount - 1) < size; i += laneCount) {
+            const SimdFloat td = ops.fusedMultiplyAdd(
+                sGamma,
+                ops.load(&valNextPtr[i]),
+                ops.subtract(ops.load(&rewPtr[i]), ops.load(&valPtr[i])));
+            ops.store(&outPtr[i], td);
+        }
+
+        for (; i < size; ++i) {
+            outPtr[i] = rewPtr[i] + gamma * valNextPtr[i] - valPtr[i];
+        }
+    }
+
+    void TensorOps::computeGeneralizedAdvantages(
+            const std::span<const double> tdErrors,
+            const double gamma,
+            const double lambdaGAE,
+            std::span<double> outAdvantages) {
+
+        const size_t T = tdErrors.size();
+        if (T == 0) return;
+
+        const double* deltaPtr = tdErrors.data();
+        double* advPtr = outAdvantages.data();
+        const double gammaLambda = gamma * lambdaGAE;
+
+        advPtr[T - 1] = deltaPtr[T - 1];
+        for (int t = static_cast<int>(T) - 2; t >= 0; --t) {
+            advPtr[t] = deltaPtr[t] + gammaLambda * advPtr[t + 1];
+        }
+    }
+
+    void TensorOps::computeClippedSurrogateLoss(
+            const std::span<const double> ratios,
+            const std::span<const double> advantages,
+            const double clipRange,
+            std::span<double> outSurrogateLoss) {
+
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
+
+        const size_t size = ratios.size();
+        const double* ratPtr = ratios.data();
+        const double* advPtr = advantages.data();
+        double* outPtr = outSurrogateLoss.data();
+
+        const double clipMin = 1.0 - clipRange;
+        const double clipMax = 1.0 + clipRange;
+
+        const SimdFloat sClipMin = ops.broadcast(clipMin);
+        const SimdFloat sClipMax = ops.broadcast(clipMax);
+        const SimdFloat sNegOne = ops.broadcast(-1.0);
+
+        size_t i = 0;
+        for (; i + (laneCount - 1) < size; i += laneCount) {
+            const SimdFloat r = ops.load(&ratPtr[i]);
+            const SimdFloat adv = ops.load(&advPtr[i]);
+
+            const SimdFloat unclipped = ops.multiply(r, adv);
+            const SimdFloat rClipped = ops.minimum(sClipMax, ops.maximum(sClipMin, r));
+            const SimdFloat clipped = ops.multiply(rClipped, adv);
+
+            const SimdFloat minTerm = ops.minimum(unclipped, clipped);
+            ops.store(&outPtr[i], ops.multiply(minTerm, sNegOne));
+        }
+
+        for (; i < size; ++i) {
+            double r = ratPtr[i];
+            const double adv = advPtr[i];
+            double unclipped = r * adv;
+            const double rClipped = std::max(clipMin, std::min(clipMax, r));
+            double clipped = rClipped * adv;
+            outPtr[i] = -std::min(unclipped, clipped);
+        }
+    }
+
+    double TensorOps::computeProximalPolicyOptimizationValueLoss(
+            const std::span<const double> valuesPred,
+            const std::span<const double> advantages,
+            const std::span<const double> valuesOld) {
+
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
+
+        const size_t size = valuesPred.size();
+        const double* predPtr = valuesPred.data();
+        const double* advPtr = advantages.data();
+        const double* oldPtr = valuesOld.data();
+
+        SimdFloat accSum = ops.setZero();
+
+        size_t i = 0;
+        for (; i + (laneCount - 1) < size; i += laneCount) {
+            const SimdFloat target = ops.add(ops.load(&advPtr[i]), ops.load(&oldPtr[i]));
+            const SimdFloat diff = ops.subtract(ops.load(&predPtr[i]), target);
+            accSum = ops.fusedMultiplyAdd(diff, diff, accSum);
+        }
+
+        double sum = ops.horizontalSum(accSum);
+
+        for (; i < size; ++i) {
+            const double target = advPtr[i] + oldPtr[i];
+            const double diff = predPtr[i] - target;
+            sum += diff * diff;
+        }
+
+        return sum / size;
+    }
+
+    void TensorOps::computeProximalPolicyOptimizationValueGradients(
+            const std::span<const double> valuesPred,
+            const std::span<const double> advantages,
+            const std::span<const double> valuesOld,
+            std::span<double> outGradients) {
+
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
+
+        const size_t size = valuesPred.size();
+        const double* predPtr = valuesPred.data();
+        const double* advPtr = advantages.data();
+        const double* oldPtr = valuesOld.data();
+        double* gradPtr = outGradients.data();
+
+        const double scale = 2.0 / size;
+        const SimdFloat sScale = ops.broadcast(scale);
+
+        size_t i = 0;
+        for (; i + (laneCount - 1) < size; i += laneCount) {
+            const SimdFloat target = ops.add(ops.load(&advPtr[i]), ops.load(&oldPtr[i]));
+            const SimdFloat diff = ops.subtract(ops.load(&predPtr[i]), target);
+            ops.store(&gradPtr[i], ops.multiply(diff, sScale));
+        }
+
+        for (; i < size; ++i) {
+            const double target = advPtr[i] + oldPtr[i];
+            gradPtr[i] = (predPtr[i] - target) * scale;
+        }
+    }
+
+    double TensorOps::computeGaussianEntropy(
+            const std::span<const double> logStdDevs,
+            const int actionDim) {
+
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
+
+        const double* logStdPtr = logStdDevs.data();
+        constexpr double LOG_2PIE = 1.4189385332046727;
+
+        double entropy = 0.0;
+
+        size_t i = 0;
+        for (; i + (laneCount - 1) < actionDim; i += laneCount) {
+            const SimdFloat logStds = ops.load(&logStdPtr[i]);
+            const SimdFloat contribution = ops.add(logStds, ops.broadcast(LOG_2PIE));
+            entropy += ops.horizontalSum(contribution);
+        }
+
+        for (; i < actionDim; ++i) {
+            entropy += logStdPtr[i] + LOG_2PIE;
+        }
+
+        return entropy;
+    }
 }
