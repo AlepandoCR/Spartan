@@ -13,6 +13,7 @@
 #include "internal/logging/SpartanLogger.h"
 #include "internal/machinelearning/model/SpartanModel.h"
 #include "internal/machinelearning/model/SpartanAgent.h"
+#include "internal/machinelearning/model/ProximalPolicyOptimizationSpartanModel.h"
 #include "internal/machinelearning/ModelHyperparameterConfig.h"
 #include "internal/machinelearning/persistence/SpartanPersistence.h"
 
@@ -39,7 +40,7 @@ namespace org::spartan::internal::machinelearning {
 
             activeModels_.erase(iterator);
 
-            auto newSnapshot = std::make_shared<std::vector<SpartanModel*>>();
+            const auto newSnapshot = std::make_shared<std::vector<SpartanModel*>>();
             newSnapshot->reserve(activeModels_.size());
             for (auto& modelEntry : activeModels_ | std::views::values) {
                 newSnapshot->push_back(modelEntry.get());
@@ -48,7 +49,7 @@ namespace org::spartan::internal::machinelearning {
         }
     }
 
-    void SpartanModelRegistry::tickAll() {
+    void SpartanModelRegistry::tickAll() const {
         std::shared_ptr<std::vector<SpartanModel*>> snapshot;
         {
             std::lock_guard lock(registryMutex_);
@@ -72,7 +73,7 @@ namespace org::spartan::internal::machinelearning {
 #endif
     }
 
-    bool SpartanModelRegistry::hasIdleModelAvailable() const noexcept {
+    bool SpartanModelRegistry::hasIdleModelAvailable() noexcept {
         return false;
     }
 
@@ -154,6 +155,40 @@ namespace org::spartan::internal::machinelearning {
         return nullptr;
     }
 
+    int32_t SpartanModelRegistry::getProximalPolicyOptimizationDebugScalarCount(const uint64_t agentIdentifier) {
+        std::lock_guard lock(registryMutex_);
+        const auto iterator = activeModels_.find(agentIdentifier);
+        if (iterator == activeModels_.end()) {
+            return -1;
+        }
+
+        const auto* proximalPolicyOptimizationModel =
+            dynamic_cast<ProximalPolicyOptimizationSpartanModel*>(iterator->second.get());
+        if (!proximalPolicyOptimizationModel) {
+            return -1;
+        }
+
+        return ProximalPolicyOptimizationSpartanModel::getDebugScalarCount();
+    }
+
+    int32_t SpartanModelRegistry::copyProximalPolicyOptimizationDebugScalars(
+            const uint64_t agentIdentifier,
+            const std::span<double> outputBuffer) {
+        std::lock_guard lock(registryMutex_);
+        const auto iterator = activeModels_.find(agentIdentifier);
+        if (iterator == activeModels_.end()) {
+            return -1;
+        }
+
+        const auto* proximalPolicyOptimizationModel =
+            dynamic_cast<ProximalPolicyOptimizationSpartanModel*>(iterator->second.get());
+        if (!proximalPolicyOptimizationModel) {
+            return -1;
+        }
+
+        return proximalPolicyOptimizationModel->copyDebugScalars(outputBuffer);
+    }
+
     bool SpartanModelRegistry::tickSingleAgent(const uint64_t agentIdentifier,
                                                 const double rewardSignal) {
         std::lock_guard lock(registryMutex_);
@@ -214,8 +249,8 @@ namespace org::spartan::internal::machinelearning {
             topologyEntries.push_back(criticTopologyEntry);
         }
 
-        // Concatenate model and critic weights into a single contiguous blob.
-        // This allocation is acceptable because persistence is a cold-path operation.
+        // concatenate model and critic weights into a single contiguous blob.
+        // this allocation is acceptable because persistence is a cold-path operation.
         std::vector<double> concatenatedWeightBlob;
         concatenatedWeightBlob.reserve(modelWeightBlob.size() + criticWeightBlob.size());
         concatenatedWeightBlob.insert(concatenatedWeightBlob.end(),

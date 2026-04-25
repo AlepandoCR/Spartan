@@ -100,11 +100,11 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
             }
             case DoubleDeepQNetworkConfig dConfig -> {
                 mWeights = SpartanModelAllocator.calculateDDQNModelWeightCount(dConfig, stateSize, actionCount);
-                cWeights = SpartanModelAllocator.calculateDDQNCriticWeightCount(dConfig);
+                cWeights = SpartanModelAllocator.calculateDDQNCriticWeightCount();
             }
             case AutoEncoderCompressorConfig aConfig -> {
                 mWeights = SpartanModelAllocator.calculateAutoEncoderModelWeightCount(aConfig, stateSize);
-                cWeights = SpartanModelAllocator.calculateAutoEncoderCriticWeightCount(aConfig);
+                cWeights = SpartanModelAllocator.calculateAutoEncoderCriticWeightCount();
             }
             default ->
                 // Fallback or error? Assuming known types from factory.

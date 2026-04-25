@@ -58,6 +58,18 @@ public class SpartanNative {
             throw new RuntimeException("Failed to bind native function: spartan_unregister_model", e);
         }
         try {
+            var addr = loader.find("spartan_proximal_policy_optimization_debug_get_scalar_count").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_proximal_policy_optimization_debug_get_scalar_count"));
+            SPARTAN_PROXIMAL_POLICY_OPTIMIZATION_DEBUG_GET_SCALAR_COUNT_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to bind native function: spartan_proximal_policy_optimization_debug_get_scalar_count", e);
+        }
+        try {
+            var addr = loader.find("spartan_proximal_policy_optimization_debug_copy_scalars").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_proximal_policy_optimization_debug_copy_scalars"));
+            SPARTAN_PROXIMAL_POLICY_OPTIMIZATION_DEBUG_COPY_SCALARS_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to bind native function: spartan_proximal_policy_optimization_debug_copy_scalars", e);
+        }
+        try {
             var addr = loader.find("spartan_tick_all").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_tick_all"));
             SPARTAN_TICK_ALL_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
         } catch (Exception e) {
@@ -184,6 +196,8 @@ public class SpartanNative {
     private static final MethodHandle SPARTAN_TEST_VECTOR_UNION_HANDLE;
     private static final MethodHandle SPARTAN_REGISTER_MODEL_HANDLE;
     private static final MethodHandle SPARTAN_UNREGISTER_MODEL_HANDLE;
+    private static final MethodHandle SPARTAN_PROXIMAL_POLICY_OPTIMIZATION_DEBUG_GET_SCALAR_COUNT_HANDLE;
+    private static final MethodHandle SPARTAN_PROXIMAL_POLICY_OPTIMIZATION_DEBUG_COPY_SCALARS_HANDLE;
     private static final MethodHandle SPARTAN_TICK_ALL_HANDLE;
     private static final MethodHandle UPDATECONTEXTPOINTER_HANDLE;
     private static final MethodHandle SPARTAN_UPDATE_CLEAN_SIZES_HANDLE;
@@ -253,6 +267,28 @@ public class SpartanNative {
             return (int) SPARTAN_UNREGISTER_MODEL_HANDLE.invokeExact(agentIdentifier);
         } catch (Throwable t) {
             throw new RuntimeException("Native invocation failed: spartan_unregister_model", t);
+        }
+    }
+
+    /**
+     * Returns the number of scalar values exposed by the ProximalPolicyOptimization debug snapshot.
+     */
+    public static int spartanProximalPolicyOptimizationDebugGetScalarCount(long agentIdentifier) {
+        try {
+            return (int) SPARTAN_PROXIMAL_POLICY_OPTIMIZATION_DEBUG_GET_SCALAR_COUNT_HANDLE.invokeExact(agentIdentifier);
+        } catch (Throwable t) {
+            throw new RuntimeException("Native invocation failed: spartan_proximal_policy_optimization_debug_get_scalar_count", t);
+        }
+    }
+
+    /**
+     * Copies a scalar debug snapshot from a ProximalPolicyOptimization model into a Java-owned buffer.
+     */
+    public static int spartanProximalPolicyOptimizationDebugCopyScalars(long agentIdentifier, @NotNull MemorySegment outputBuffer, int outputCount) {
+        try {
+            return (int) SPARTAN_PROXIMAL_POLICY_OPTIMIZATION_DEBUG_COPY_SCALARS_HANDLE.invokeExact(agentIdentifier, outputBuffer, outputCount);
+        } catch (Throwable t) {
+            throw new RuntimeException("Native invocation failed: spartan_proximal_policy_optimization_debug_copy_scalars", t);
         }
     }
 

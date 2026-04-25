@@ -9,10 +9,6 @@
 #include <cstring>
 #include "../../logging/SpartanLogger.h"
 #include "ModelPersistenceModule.h"
-#include "RsacPersistenceModule.h"
-#include "DdqnPersistenceModule.h"
-#include "AutoEncoderPersistenceModule.h"
-#include "CuriosityRsacPersistenceModule.h"
 
 using namespace org::spartan::internal::logging;
 
@@ -55,7 +51,7 @@ namespace org::spartan::internal::machinelearning::persistence {
      * @param byteLength   Number of bytes to process.
      * @return The finalised CRC-32 value.
      */
-    static uint32_t computeCrc32(const uint8_t* dataPointer, const size_t byteLength) {
+    [[maybe_unused]] static uint32_t computeCrc32(const uint8_t* dataPointer, const size_t byteLength) {
         uint32_t crcAccumulator = 0xFFFFFFFF; // Initial value for CRC-32
         for (size_t byteIndex = 0; byteIndex < byteLength; ++byteIndex) {
             const auto lookupIndex = static_cast<uint8_t>(crcAccumulator ^ dataPointer[byteIndex]);
@@ -75,7 +71,7 @@ namespace org::spartan::internal::machinelearning::persistence {
      * @param byteLength     Number of bytes to process.
      * @return The updated (non-finalised) CRC accumulator.
      */
-    static inline uint32_t accumulateCrc32(
+    static uint32_t accumulateCrc32(
             uint32_t crcAccumulator,
             const uint8_t* dataPointer,
             const size_t byteLength) {
@@ -255,12 +251,10 @@ namespace org::spartan::internal::machinelearning::persistence {
         return true;
     }
 
-    // ...existing CRC and file I/O code...
-
     bool saveModelWithModule(
             const char* filePath,
             const SpartanModel* model,
-            uint32_t modelTypeIdentifier) {
+            const uint32_t modelTypeIdentifier) {
 
         // Get the appropriate persistence module for this model type
         ModelPersistenceModule* module =
@@ -295,8 +289,8 @@ namespace org::spartan::internal::machinelearning::persistence {
         tocEntry.biasElementCount = 0;
 
         // Save using standard persistence functions
-        std::vector<SubModelTopologyEntry> tocEntries{tocEntry};
-        bool success = saveModel(filePath, modelTypeIdentifier,
+        std::vector tocEntries{tocEntry};
+        const bool success = saveModel(filePath, modelTypeIdentifier,
                                  std::span(tocEntries),
                                  std::span(serializedWeights));
 
@@ -312,7 +306,7 @@ namespace org::spartan::internal::machinelearning::persistence {
     bool loadModelWithModule(
             const char* filePath,
             SpartanModel* model,
-            uint32_t modelTypeIdentifier) {
+            const uint32_t modelTypeIdentifier) {
 
         // Get the appropriate persistence module for this model type
         ModelPersistenceModule* persistenceModule =

@@ -319,18 +319,17 @@ public final class SpartanModelAllocator {
             int stateSize,
             int actionSize
     ) {
-        long gruHiddenSize = config.hiddenStateSize();
+        long gruHiddenState = config.hiddenStateSize();
         long gruInputSize = config.recurrentInputFeatureCount() > 0 ? config.recurrentInputFeatureCount() : stateSize;
-        long gruConcatSize = gruHiddenSize + gruInputSize;
+        long gruConcatSize = gruHiddenState + gruInputSize;
 
         // 1. GRU Components
-        long gruGateWeights = 3L * gruHiddenSize * gruConcatSize;
-        long gruGateBiases = 3L * gruHiddenSize;
-        long gruHiddenState = gruHiddenSize;
+        long gruGateWeights = 3L * gruHiddenState * gruConcatSize;
+        long gruGateBiases = 3L * gruHiddenState;
         long gruTotal = simdPadElementCount(gruGateWeights + gruGateBiases + gruHiddenState);
 
         // 2. Twin Critic Components (Multi-Layer)
-        long criticInput = gruHiddenSize + actionSize;
+        long criticInput = gruHiddenState + actionSize;
         long criticHidden = config.criticHiddenLayerNeuronCount();
         long criticLayers = config.criticHiddenLayerCount();
 
@@ -459,7 +458,7 @@ public final class SpartanModelAllocator {
      * DDQN doesn't have separate critic weights - uses same buffer as model.
      * Returns 0 as placeholder for interface compatibility.
      */
-    public static long calculateDDQNCriticWeightCount(@NotNull DoubleDeepQNetworkConfig config) {
+    public static long calculateDDQNCriticWeightCount() {
         // DDQN combines value estimation in the Q-network itself
         // No separate critic buffer needed
         return 0;
@@ -576,7 +575,7 @@ public final class SpartanModelAllocator {
      * AutoEncoder doesn't have separate critic weights.
      * Returns 0 as placeholder for interface compatibility.
      */
-    public static long calculateAutoEncoderCriticWeightCount(@NotNull AutoEncoderCompressorConfig config) {
+    public static long calculateAutoEncoderCriticWeightCount() {
         return 0;
     }
 
@@ -733,34 +732,19 @@ public final class SpartanModelAllocator {
     ) {
 
         // Start with base RSAC critic weights (GRU + twin critics)
-        long baseRsacCriticWeightsPadded = calculateRSACCriticWeightCount(
+        long baseRsacWeightsRaw = calculateRSACCriticWeightCount(
                 config.recurrentSoftActorCriticConfig(),
                 stateSize,
                 actionSize);
-        // Don't remove safety padding - it's already included in the total
-        long baseRsacWeightsRaw = baseRsacCriticWeightsPadded;
 
         if (baseRsacWeightsRaw < 0L) {
             throw new IllegalArgumentException("Base RSAC critic weights calculation returned invalid value");
         }
 
         // forward dynamics network parameters
-        long stateSizeLong = (long) stateSize;
-        long actionSizeLong = (long) actionSize;
         long hiddenSize = config.forwardDynamicsHiddenLayerDimensionSize();
 
-        if (stateSizeLong <= 0L || actionSizeLong < 0L || hiddenSize <= 0L) {
-            throw new IllegalArgumentException(
-                    "Invalid Forward Dynamics dimensions: state=" + stateSizeLong
-                            + ", action=" + actionSizeLong + ", hidden=" + hiddenSize);
-        }
-
-        // structure of forward dynamics weights and biases (before padding):
-        // Forward Dynamics: input (state + action) -> hidden -> output (state)
-        long inputHiddenWeights = (stateSizeLong + actionSizeLong) * hiddenSize;
-        long hiddenOutputWeights = hiddenSize * stateSizeLong;
-        long biases = hiddenSize + stateSizeLong;
-        long forwardDynamicsTotalRaw = inputHiddenWeights + hiddenOutputWeights + biases;
+        long forwardDynamicsTotalRaw = getForwardDynamicsTotalRaw(stateSize, actionSize, hiddenSize);
 
         // apply SIMD padding to the forward dynamics block
         long forwardDynamicsTotalPadded = simdPadElementCount(forwardDynamicsTotalRaw);
@@ -773,6 +757,21 @@ public final class SpartanModelAllocator {
         }
 
         return totalWeights;
+    }
+
+    private static long getForwardDynamicsTotalRaw(long stateSize, long actionSize, long hiddenSize) {
+        if (stateSize <= 0L || actionSize < 0L || hiddenSize <= 0L) {
+            throw new IllegalArgumentException(
+                    "Invalid Forward Dynamics dimensions: state=" + stateSize
+                            + ", action=" + actionSize + ", hidden=" + hiddenSize);
+        }
+
+        // structure of forward dynamics weights and biases (before padding):
+        // Forward Dynamics: input (state + action) -> hidden -> output (state)
+        long inputHiddenWeights = (stateSize + actionSize) * hiddenSize;
+        long hiddenOutputWeights = hiddenSize * stateSize;
+        long biases = hiddenSize + stateSize;
+        return inputHiddenWeights + hiddenOutputWeights + biases;
     }
 
     // ==================== Curiosity-Driven RSAC Config Serialization ====================
@@ -844,6 +843,72 @@ public final class SpartanModelAllocator {
         return segment;
     }
 
+    public static int calculateProximalPolicyOptimizationModelWeightCount(
+            @NotNull ProximalPolicyOptimizationConfig config,
+            int stateSize,
+            int actionSize) {
+
+        int actorHidden = config.actorHiddenNeuronCount();
+        int criticHidden = config.criticHiddenNeuronCount();
+
+        int actorWeights = (stateSize * actorHidden) +
+                (actorHidden * actorHidden * (config.actorHiddenLayerCount() - 1)) +
+                (actorHidden * actionSize * 2);
+        int actorBiases = (actorHidden * config.actorHiddenLayerCount()) + (actionSize * 2);
+
+        int criticWeights = (stateSize * criticHidden) +
+                (criticHidden * criticHidden * (config.criticHiddenLayerCount() - 1)) +
+                criticHidden;
+        int criticBiases = (criticHidden * config.criticHiddenLayerCount()) + 1;
+
+        return actorWeights + actorBiases + criticWeights + criticBiases;
+    }
+
+
+    public static @NotNull MemorySegment writePPOConfig(
+            @NotNull Arena arena,
+            @NotNull ProximalPolicyOptimizationConfig config,
+            int stateSize,
+            int actionSize) {
+
+        MemorySegment segment = arena.allocate(
+                SpartanConfigLayout.PPO_CONFIG_TOTAL_SIZE_PADDED,
+                SIMD_ALIGNMENT_BYTES
+        );
+
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_MODEL_TYPE_OFFSET, 6); // MODEL_TYPE_PROXIMAL_POLICY_OPTIMIZATION
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_LEARNING_RATE_OFFSET, config.learningRate());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_GAMMA_OFFSET, config.gamma());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_EPSILON_OFFSET, config.epsilon());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_EPSILON_MIN_OFFSET, config.epsilonMin());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.BASE_EPSILON_DECAY_OFFSET, config.epsilonDecay());
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_STATE_SIZE_OFFSET, stateSize);
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_ACTION_SIZE_OFFSET, actionSize);
+        segment.set(ValueLayout.JAVA_BYTE, SpartanConfigLayout.BASE_IS_TRAINING_OFFSET,
+                (byte) (config.isTraining() ? 1 : 0));
+        segment.set(ValueLayout.JAVA_BYTE, SpartanConfigLayout.BASE_DEBUG_LOGGING_OFFSET,
+                (byte) (config.debugLogging() ? 1 : 0));
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET,
+                layoutSignature());
+
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.PPO_ACTOR_HIDDEN_NEURON_COUNT_OFFSET, config.actorHiddenNeuronCount());
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.PPO_ACTOR_HIDDEN_LAYER_COUNT_OFFSET, config.actorHiddenLayerCount());
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.PPO_CRITIC_HIDDEN_NEURON_COUNT_OFFSET, config.criticHiddenNeuronCount());
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.PPO_CRITIC_HIDDEN_LAYER_COUNT_OFFSET, config.criticHiddenLayerCount());
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.PPO_TRAJECTORY_BUFFER_CAPACITY_OFFSET, config.trajectoryBufferCapacity());
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.PPO_TRAINING_EPOCH_COUNT_OFFSET, config.trainingEpochCount());
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.PPO_MINI_BATCH_SIZE_OFFSET, config.miniBatchSize());
+
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.PPO_CLIP_RANGE_OFFSET, config.clipRange());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.PPO_GAE_GAMMA_OFFSET, config.gaeGamma());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.PPO_GAE_LAMBDA_OFFSET, config.gaeLambda());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.PPO_ENTROPY_COEFFICIENT_OFFSET, config.entropyCoefficient());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.PPO_VALUE_LOSS_COEFFICIENT_OFFSET, config.valueLossCoefficient());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.PPO_MAX_GRADIENT_NORM_OFFSET, config.maxGradientNorm());
+
+        return segment;
+    }
+
     /**
      * Serializes any SpartanModelConfig into a C-compatible MemorySegment.
      * Dispatches to the specific write method based on the config type.
@@ -864,20 +929,9 @@ public final class SpartanModelAllocator {
             return writeAutoEncoderConfig(arena, ae, stateSize, actionSize);
         } else if (config instanceof SpartanMultiAgentGroupConfig groupConfig) {
             return writeMultiAgentGroupConfig(arena, groupConfig);
+        } else if (config instanceof ProximalPolicyOptimizationConfig ppo) {
+            return writePPOConfig(arena, ppo, stateSize, actionSize);
         }
         throw new IllegalArgumentException("Unknown config type: " + config.getClass().getName());
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

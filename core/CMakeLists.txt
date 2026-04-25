@@ -118,10 +118,13 @@ add_library(spartan_core SHARED
         ${ML_PATH}/network/GaussianPolicyNetwork.h
         ${ML_PATH}/network/GatedRecurrentUnitLayer.h
         ${ML_PATH}/network/NestedAutoEncoderUnit.h
+        ${ML_PATH}/network/ProximalPolicyOptimizationActorNetwork.h
+        ${ML_PATH}/network/ProximalPolicyOptimizationCriticNetwork.h
 
         # --- Machine Learning: Temporal Credit Assignment ---
         ${ML_PATH}/trace/RemorseTraceBuffer.h
         ${ML_PATH}/trace/RemorseTraceBuffer.cpp
+        ${ML_PATH}/trace/GeneralizedAdvantageBuffer.h
 
         # --- Machine Learning: Experience Replay ---
         ${ML_PATH}/replay/ExperienceReplayBuffer.h
@@ -143,6 +146,8 @@ add_library(spartan_core SHARED
          ${ML_PATH}/persistence/AutoEncoderPersistenceModule.cpp
          ${ML_PATH}/persistence/CuriosityRsacPersistenceModule.h
          ${ML_PATH}/persistence/CuriosityRsacPersistenceModule.cpp
+         ${ML_PATH}/persistence/ProximalPolicyOptimizationPersistenceModule.h
+         ${ML_PATH}/persistence/ProximalPolicyOptimizationPersistenceModule.cpp
 
         # --- Machine Learning: Model Hierarchy (Frontier A) ---
         ${ML_PATH}/model/SpartanModel.h
@@ -159,6 +164,8 @@ add_library(spartan_core SHARED
         ${ML_PATH}/model/AutoEncoderCompressorSpartanModel.cpp
         ${ML_PATH}/model/CuriosityDrivenRecurrentSoftActorCriticSpartanModel.h
         ${ML_PATH}/model/CuriosityDrivenRecurrentSoftActorCriticSpartanModel.cpp
+        ${ML_PATH}/model/ProximalPolicyOptimizationSpartanModel.h
+        ${ML_PATH}/model/ProximalPolicyOptimizationSpartanModel.cpp
         ${ML_PATH}/model/SpartanMultiAgentGroup.h
         ${ML_PATH}/model/SpartanMultiAgentGroup.cpp
 

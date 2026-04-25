@@ -42,6 +42,21 @@ namespace org::spartan::internal::machinelearning {
         [[nodiscard]] std::span<const double> getCriticWeights() const noexcept override;
         [[nodiscard]] std::span<double> getCriticWeightsMutable() noexcept override;
 
+        [[nodiscard]] std::span<const double> getActorWeights() const noexcept;
+        [[nodiscard]] std::span<double> getActorWeightsMutable() const noexcept;
+
+        [[nodiscard]] std::span<const double> getActorBiases() const noexcept;
+        [[nodiscard]] std::span<double> getActorBiasesMutable() const noexcept;
+
+        [[nodiscard]] std::span<const double> getCriticNetworkWeights() const noexcept;
+        [[nodiscard]] std::span<double> getCriticNetworkWeightsMutable() const noexcept;
+
+        [[nodiscard]] std::span<const double> getCriticBiases() const noexcept;
+        [[nodiscard]] std::span<double> getCriticBiasesMutable() const noexcept;
+
+        [[nodiscard]] static int32_t getDebugScalarCount() noexcept;
+        [[nodiscard]] int32_t copyDebugScalars(std::span<double> outputBuffer) const noexcept;
+
     private:
         [[nodiscard]] const ProximalPolicyOptimizationHyperparameterConfig* typedConfig() const noexcept {
             return static_cast<const ProximalPolicyOptimizationHyperparameterConfig*>(
@@ -85,9 +100,11 @@ namespace org::spartan::internal::machinelearning {
         std::vector<double> adamCriticBiasMomentum_;
         std::vector<double> adamCriticBiasVelocity_;
 
-        std::span<const double> criticWeightsSpan_;
+        std::span<double> criticWeightsSpan_;
         std::span<double> actorNetworkWeights_;
+        std::span<double> actorNetworkBiases_;
         std::span<double> criticNetworkWeights_;
+        std::span<double> criticNetworkBiases_;
     };
 
 }

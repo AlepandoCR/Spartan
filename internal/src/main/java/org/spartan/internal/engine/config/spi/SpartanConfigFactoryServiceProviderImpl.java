@@ -172,4 +172,51 @@ public class SpartanConfigFactoryServiceProviderImpl implements SpartanConfigFac
                 maxAgents
         );
     }
+
+    @Override
+    public @NotNull ProximalPolicyOptimizationConfig createProximalPolicyOptimizationConfig(
+            double learningRate,
+            double gamma,
+            double epsilon,
+            double epsilonMin,
+            double epsilonDecay,
+            boolean debugLogging,
+            boolean isTraining,
+            int actorHiddenNeuronCount,
+            int actorHiddenLayerCount,
+            int criticHiddenNeuronCount,
+            int criticHiddenLayerCount,
+            int trajectoryBufferCapacity,
+            int trainingEpochCount,
+            int miniBatchSize,
+            double clipRange,
+            double gaeGamma,
+            double gaeLambda,
+            double entropyCoefficient,
+            double valueLossCoefficient,
+            double maxGradientNorm
+    ) {
+        return new ProximalPolicyOptimizationConfigImpl(
+                learningRate,
+                gamma,
+                epsilon,
+                epsilonMin,
+                epsilonDecay,
+                debugLogging,
+                isTraining,
+                actorHiddenNeuronCount,
+                actorHiddenLayerCount,
+                criticHiddenNeuronCount,
+                criticHiddenLayerCount,
+                trajectoryBufferCapacity,
+                trainingEpochCount,
+                miniBatchSize,
+                clipRange,
+                gaeGamma,
+                gaeLambda,
+                entropyCoefficient,
+                valueLossCoefficient,
+                maxGradientNorm
+        );
+    }
 }

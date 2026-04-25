@@ -181,7 +181,7 @@ extern "C" {
     PACK_END
 
     //
-    //  Proximal Policy Optimization (PPO) Configuration
+    //  Proximal Policy Optimization Configuration
     //
 
     PACK_BEGIN
@@ -203,11 +203,12 @@ extern "C" {
         double entropyCoefficient;
         double valueLossCoefficient;
         double maxGradientNorm;
+        uint8_t _padding7[8]; // Explicit tail padding to keep the structure size at 152 bytes
     } PACKED;
     PACK_END
 
-    static_assert(sizeof(ProximalPolicyOptimizationHyperparameterConfig) == 144, "ProximalPolicyOptimizationHyperparameterConfig must be 144 bytes");
-    static_assert(offsetof(ProximalPolicyOptimizationHyperparameterConfig, actorHiddenNeuronCount) == 64, "PPO.actorHiddenNeuronCount offset must be 64 bytes");
-    static_assert(offsetof(ProximalPolicyOptimizationHyperparameterConfig, clipRange) == 96, "PPO.clipRange offset must be 96 bytes");
+    static_assert(sizeof(ProximalPolicyOptimizationHyperparameterConfig) == 152, "ProximalPolicyOptimizationHyperparameterConfig must be 152 bytes");
+    static_assert(offsetof(ProximalPolicyOptimizationHyperparameterConfig, actorHiddenNeuronCount) == 64, "ProximalPolicyOptimization.actorHiddenNeuronCount offset must be 64 bytes");
+    static_assert(offsetof(ProximalPolicyOptimizationHyperparameterConfig, clipRange) == 96, "ProximalPolicyOptimization.clipRange offset must be 96 bytes");
 
 } // extern "C"

@@ -1,5 +1,7 @@
 package org.spartan.api.engine.config;
 
+import org.jetbrains.annotations.NotNull;
+
 /**
  * Discriminator identifying which model family a config belongs to.
  * <p>
@@ -57,7 +59,12 @@ public enum SpartanModelType {
     /**
      * Multi-Agent group container (not a per-agent model).
      */
-    MULTI_AGENT_GROUP(5);
+    MULTI_AGENT_GROUP(5),
+
+    /**
+     * Proximity policy optimization
+     */
+    PROXIMAL_POLICY_OPTIMIZATION(6);
 
     private final int nativeValue;
 
@@ -82,7 +89,7 @@ public enum SpartanModelType {
      * @return the matching SpartanModelType
      * @throws IllegalArgumentException if no matching type exists
      */
-    public static SpartanModelType fromNativeValue(int nativeValue) {
+    public static @NotNull SpartanModelType fromNativeValue(int nativeValue) {
         for (SpartanModelType type : values()) {
             if (type.nativeValue == nativeValue) {
                 return type;

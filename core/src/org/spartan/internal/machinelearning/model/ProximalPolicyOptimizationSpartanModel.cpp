@@ -1,5 +1,10 @@
+//
+// Created by Alepando 23/04/26
+
+
 #include "ProximalPolicyOptimizationSpartanModel.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numeric>
 
@@ -25,11 +30,22 @@ namespace org::spartan::internal::machinelearning {
           actorNetwork_(actorNetworkWeights, actorNetworkBiases),
           criticWeightsSpan_(criticNetworkWeights),
           actorNetworkWeights_(actorNetworkWeights),
-          criticNetworkWeights_(criticNetworkWeights) {
+          actorNetworkBiases_(actorNetworkBiases),
+          criticNetworkWeights_(criticNetworkWeights),
+          criticNetworkBiases_(criticNetworkBiases) {
 
         auto* config = typedConfig();
 
         criticNetwork_.initialize(criticNetworkWeights, criticNetworkBiases);
+
+        if (criticNetworkWeights.data() != nullptr
+                && criticNetworkBiases.data() != nullptr
+                && criticNetworkWeights.data() + criticNetworkWeights.size() == criticNetworkBiases.data()) {
+            criticWeightsSpan_ = std::span(criticNetworkWeights.data(),
+                criticNetworkWeights.size() + criticNetworkBiases.size());
+        } else {
+            criticWeightsSpan_ = criticNetworkWeights;
+        }
 
         trajectoryBuffer_.initialize(
             config->baseConfig.stateSize,
@@ -87,6 +103,19 @@ namespace org::spartan::internal::machinelearning {
             scratchpadA_,
             scratchpadB_);
 
+        std::vector actorLogStdSnapshot(actorLogStdDevsBuffer_);
+        if (currentExplorationRate_ != 1.0) {
+            const double explorationLogScale = currentExplorationRate_ > 0.0
+                ? std::log(currentExplorationRate_)
+                : 0.0;
+            for (double& logStdValue : actorLogStdSnapshot) {
+                logStdValue += explorationLogScale;
+            }
+        }
+
+        actorLogStdDevsBuffer_ = actorLogStdSnapshot;
+        TensorOps::applyExpFast(actorLogStdDevsBuffer_);
+
         TensorOps::applyGaussianNoise(
             actorMeansBuffer_,
             actorLogStdDevsBuffer_,
@@ -97,7 +126,7 @@ namespace org::spartan::internal::machinelearning {
         TensorOps::computeGaussianLogProbabilities(
             actionOutputBuffer_,
             actorMeansBuffer_,
-            actorLogStdDevsBuffer_,
+            actorLogStdSnapshot,
             config->baseConfig.actionSize,
             1,
             logProbBuffer);
@@ -290,6 +319,9 @@ namespace org::spartan::internal::machinelearning {
                     const double* logStds = batchActorLogStds.data() + bi * actionSize;
                     const double* act     = actions.data() + i * actionSize;
 
+                    std::vector sigmaBuffer(logStds, logStds + actionSize);
+                    TensorOps::applyExpFast(std::span(sigmaBuffer));
+
 
                     // actor trunk forward with saved activations
                     // postActs[0..stateSize-1]  = input copy
@@ -337,11 +369,15 @@ namespace org::spartan::internal::machinelearning {
                         ? (-adv * r) / static_cast<double>(batchSize)
                         : 0.0;
 
+                    logProbsNew_[bi] = batchLogProbsNew[bi];
+                    probabilityRatios_[bi] = batchRatios[bi];
+                    surrogateLosses_[bi] = batchSurrogateLosses[bi];
+
                     std::vector<double> dL_dMean(actionSize);
                     std::vector<double> dL_dLogStd(actionSize);
 
                     for (int d = 0; d < actionSize; ++d) {
-                        const double sigma  = std::exp(logStds[d]);
+                        const double sigma  = sigmaBuffer[d];
                         const double sigma2 = sigma * sigma;
                         const double diff   = act[d] - means[d];
 
@@ -475,9 +511,23 @@ namespace org::spartan::internal::machinelearning {
                         std::span<const double> headB = criticBiases.subspan(criticTrunkBiasCount, criticHeadBiasCount);
                         TensorOps::denseForwardPass(criticTrunkOut, headW, headB, vNewSpan);
 
-                        // dL/dV = 2*(V_new - (A + V_old)) / batchSize
-                        const double returnTarget = advantages_[i] + values[i];
-                        const double dL_dVNew = 2.0 * (vNew - returnTarget) / static_cast<double>(batchSize);
+                        const std::array valuePrediction{vNew};
+                        const std::array advantageTarget{advantages_[i]};
+                        const std::array valueBaseline{values[i]};
+                        std::array<double, 1> valueGradient{};
+
+                        valueLosses_[bi] = TensorOps::computeProximalPolicyOptimizationValueLoss(
+                            std::span<const double>(valuePrediction),
+                            std::span<const double>(advantageTarget),
+                            std::span<const double>(valueBaseline));
+
+                        TensorOps::computeProximalPolicyOptimizationValueGradients(
+                            std::span<const double>(valuePrediction),
+                            std::span<const double>(advantageTarget),
+                            std::span<const double>(valueBaseline),
+                            std::span<double>(valueGradient));
+
+                        const double dL_dVNew = valueGradient[0];
 
                         // Output head backward
                         auto hwg = std::span(criticWeightGrads.data() + criticTrunkWeightCount, criticHeadWeightCount);
@@ -512,20 +562,20 @@ namespace org::spartan::internal::machinelearning {
                             for (int j = 0; j < outS; ++j)
                                 currentGrad[j] *= (preAct[j] > 0.0) ? 1.0 : 0.01;
 
-                            std::span<double> bgSlice(criticBiasGrads.data() + tbOff, outS);
+                            std::span bgSlice(criticBiasGrads.data() + tbOff, outS);
                             for (int j = 0; j < outS; ++j) bgSlice[j] += currentGrad[j];
 
                             const size_t prevPostOff = tPostOff - inS;
                             std::span<const double> layerIn(criticPostActs.data() + prevPostOff, inS);
                             std::span<const double> lw = criticNetworkWeights_.subspan(twOff, outS * inS);
-                            std::span<double>       wg = std::span<double>(criticWeightGrads.data() + twOff, outS * inS);
+                            auto wg = std::span(criticWeightGrads.data() + twOff, outS * inS);
 
-                            std::vector<double> inputGrad(inS, 0.0);
+                            std::vector inputGrad(inS, 0.0);
                             TensorOps::denseBackwardPass(
                                 layerIn,
                                 std::span<const double>(currentGrad.data(), outS),
                                 lw, wg,
-                                std::span<double>(inputGrad.data(), inS));
+                                std::span(inputGrad.data(), inS));
 
                             currentGrad.assign(inputGrad.begin(), inputGrad.end());
                         }
@@ -579,9 +629,65 @@ namespace org::spartan::internal::machinelearning {
     }
 
     std::span<double> ProximalPolicyOptimizationSpartanModel::getCriticWeightsMutable() noexcept {
-        return const_cast<double*>(criticWeightsSpan_.data()) ?
-            std::span(const_cast<double*>(criticWeightsSpan_.data()), criticWeightsSpan_.size()) :
-            std::span<double>();
+        return criticWeightsSpan_;
+    }
+
+    std::span<const double> ProximalPolicyOptimizationSpartanModel::getActorWeights() const noexcept {
+        return actorNetworkWeights_;
+    }
+
+    std::span<double> ProximalPolicyOptimizationSpartanModel::getActorWeightsMutable() const noexcept {
+        return actorNetworkWeights_;
+    }
+
+    std::span<const double> ProximalPolicyOptimizationSpartanModel::getActorBiases() const noexcept {
+        return std::span<const double>(actorNetworkBiases_.data(), actorNetworkBiases_.size());
+    }
+
+    std::span<double> ProximalPolicyOptimizationSpartanModel::getActorBiasesMutable() const noexcept {
+        return actorNetworkBiases_;
+    }
+
+    std::span<const double> ProximalPolicyOptimizationSpartanModel::getCriticNetworkWeights() const noexcept {
+        return criticNetworkWeights_;
+    }
+
+    std::span<double> ProximalPolicyOptimizationSpartanModel::getCriticNetworkWeightsMutable() const noexcept {
+        return criticNetworkWeights_;
+    }
+
+    std::span<const double> ProximalPolicyOptimizationSpartanModel::getCriticBiases() const noexcept {
+        return std::span<const double>(criticNetworkBiases_.data(), criticNetworkBiases_.size());
+    }
+
+    std::span<double> ProximalPolicyOptimizationSpartanModel::getCriticBiasesMutable() const noexcept {
+        return criticNetworkBiases_;
+    }
+
+    int32_t ProximalPolicyOptimizationSpartanModel::getDebugScalarCount() noexcept {
+        return 12;
+    }
+
+    int32_t ProximalPolicyOptimizationSpartanModel::copyDebugScalars(std::span<double> outputBuffer) const noexcept {
+        const int32_t requiredCount = getDebugScalarCount();
+        if (outputBuffer.size() < static_cast<size_t>(requiredCount)) {
+            return -1;
+        }
+
+        outputBuffer[0] = 1.0; // Layout version
+        outputBuffer[1] = static_cast<double>(trainingStepCounter_);
+        outputBuffer[2] = static_cast<double>(ticksSinceLastUpdate_);
+        outputBuffer[3] = currentExplorationRate_;
+        outputBuffer[4] = criticValueBuffer_;
+        outputBuffer[5] = hasPreviousState_ ? 1.0 : 0.0;
+        outputBuffer[6] = static_cast<double>(trajectoryBuffer_.size());
+        outputBuffer[7] = actorMeansBuffer_.empty() ? 0.0 : actorMeansBuffer_[0];
+        outputBuffer[8] = actorLogStdDevsBuffer_.empty() ? 0.0 : actorLogStdDevsBuffer_[0];
+        outputBuffer[9] = advantages_.empty() ? 0.0 : advantages_[0];
+        outputBuffer[10] = tdErrors_.empty() ? 0.0 : tdErrors_[0];
+        outputBuffer[11] = probabilityRatios_.empty() ? 0.0 : probabilityRatios_[0];
+
+        return requiredCount;
     }
 
 }

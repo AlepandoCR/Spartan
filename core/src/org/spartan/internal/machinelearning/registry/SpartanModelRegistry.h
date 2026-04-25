@@ -9,7 +9,6 @@
 #include <mutex>
 #include <cstdint>
 #include <vector>
-#include <atomic>
 
 #include "internal/machinelearning/model/SpartanModel.h"
 
@@ -59,7 +58,7 @@ namespace org::spartan::internal::machinelearning {
         /**
          * @brief Processes all agents in parallel.
          */
-        void tickAll();
+        void tickAll() const;
 
         /**
          * @brief Processes a single agent with a reward signal in one tick.
@@ -105,14 +104,14 @@ namespace org::spartan::internal::machinelearning {
          * @brief Checks if there are any models in the idle pool ready for recycling.
          * @return true if a model can be reused without allocation.
          */
-        [[nodiscard]] bool hasIdleModelAvailable() const noexcept;
+        [[nodiscard]] static bool hasIdleModelAvailable() noexcept;
 
         /**
         * @brief Attempts to retrieve a model from the idle pool.
         * @return A unique_ptr to the model, or nullptr if the pool is empty.
         * @warning The caller takes ownership and MUST rebind/re-register it.
         */
-        [[nodiscard]] std::unique_ptr<SpartanModel> getIdleModelToRebind() noexcept;
+        [[nodiscard]] static std::unique_ptr<SpartanModel> getIdleModelToRebind() noexcept;
 
         void updateModelContext(uint64_t agentIdentifier, std::span<const double> newPtr);
 
@@ -142,6 +141,10 @@ namespace org::spartan::internal::machinelearning {
          * @return Pointer to the active model, or nullptr if not found.
          */
         SpartanModel* getModel(uint64_t agentIdentifier);
+
+        int32_t getProximalPolicyOptimizationDebugScalarCount(uint64_t agentIdentifier);
+        int32_t copyProximalPolicyOptimizationDebugScalars(uint64_t agentIdentifier,
+                                                           std::span<double> outputBuffer);
 
     private:
         /** @brief Guards concurrent access to the model map and snapshot. */

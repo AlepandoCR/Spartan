@@ -3,22 +3,15 @@ package org.spartan.internal.facade;
 import org.jetbrains.annotations.NotNull;
 import org.spartan.api.SpartanApi;
 import org.spartan.api.engine.SpartanModel;
-import org.spartan.api.engine.model.SpartanMultiAgentModel;
+import org.spartan.api.engine.model.*;
 import org.spartan.api.engine.action.SpartanActionManager;
 import org.spartan.api.engine.config.*;
 import org.spartan.api.engine.context.SpartanContext;
-import org.spartan.api.engine.model.AutoEncoderCompressorModel;
-import org.spartan.api.engine.model.CuriosityDrivenRecurrentSoftActorCriticModel;
-import org.spartan.api.engine.model.DoubleDeepQNetworkModel;
-import org.spartan.api.engine.model.RecurrentSoftActorCriticModel;
 import org.spartan.internal.engine.SpartanModelImpl;
 import org.spartan.internal.engine.action.SpartanActionManagerImpl;
 import org.spartan.internal.engine.context.SpartanContextImpl;
 import org.spartan.internal.bridge.SpartanNative;
-import org.spartan.internal.engine.model.AutoEncoderCompressorModelImpl;
-import org.spartan.internal.engine.model.CuriosityDrivenRecurrentSoftActorCriticModelImpl;
-import org.spartan.internal.engine.model.DoubleDeepQNetworkModelImpl;
-import org.spartan.internal.engine.model.RecurrentSoftActorCriticModelImpl;
+import org.spartan.internal.engine.model.*;
 import org.spartan.internal.engine.SpartanMultiAgentModelImpl;
 
 import java.lang.foreign.Arena;
@@ -151,6 +144,23 @@ public class SpartanApiImpl implements SpartanApi {
                 config,
                 context,
                 actions.getActions(),
+                arena
+        );
+    }
+
+    @Override
+    public @NotNull ProximalPolicyOptimizationModel createProximalPolicyOptimizationModel(
+            @NotNull String identifier,
+            @NotNull ProximalPolicyOptimizationConfig config,
+            @NotNull SpartanContext context,
+            @NotNull SpartanActionManager actions
+    ) {
+        return new ProximalPolicyOptimizationSpartanModelImpl(
+                identifier,
+                ThreadLocalRandom.current().nextLong(),
+                config,
+                context,
+                actions,
                 arena
         );
     }

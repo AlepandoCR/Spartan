@@ -71,10 +71,10 @@ namespace org::spartan::internal {
          * @param sourceSetSize   Number of elements in @p sourceFuzzySet.
          * @return Elapsed nanoseconds.
          */
-        static long computeFuzzySetUnion(double* targetFuzzySet,
-                                         double* sourceFuzzySet,
-                                         int targetSetSize,
-                                         int sourceSetSize);
+        static int64_t computeFuzzySetUnion(double* targetFuzzySet,
+                                            double* sourceFuzzySet,
+                                            int targetSetSize,
+                                            int sourceSetSize);
 
 
         /**
@@ -155,9 +155,8 @@ namespace org::spartan::internal {
         /**
          * @brief Loads model weights from a .spartan binary file into a pre-allocated buffer.
          *
+         * @param agentIdentifier      Unique identifier of the model to restore.
          * @param filePath             Null-terminated path to the input .spartan file.
-         * @param targetWeightBuffer   Pointer to the JVM-owned weight buffer to populate.
-         * @param targetWeightCount    Number of doubles in the target buffer.
          * @return True on success and CRC-32 validation, false otherwise.
          */
         bool loadModel(uint64_t agentIdentifier, const char* filePath);
@@ -276,6 +275,11 @@ namespace org::spartan::internal {
           * @return True on success, false on failure.
           */
          bool loadModel(uint64_t agentIdentifier, const char* filePath, uint32_t modelTypeId);
+
+         int32_t getProximalPolicyOptimizationDebugScalarCount(uint64_t agentIdentifier);
+         int32_t copyProximalPolicyOptimizationDebugScalars(uint64_t agentIdentifier,
+                                                            double* outputBuffer,
+                                                            int32_t outputCount);
 
     private:
         /** @brief The model registry owned by this engine instance. */

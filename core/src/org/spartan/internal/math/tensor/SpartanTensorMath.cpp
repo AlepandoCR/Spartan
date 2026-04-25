@@ -594,15 +594,12 @@ namespace org::spartan::internal::math::tensor {
     }
 
     void TensorOps::computeGaussianLogProbabilities(
-            const std::span<const double> actions,
-            const std::span<const double> means,
-            const std::span<const double> logStdDevs,
-            const int actionDim,
-            const int batchSize,
-            std::span<double> outLogProbs) {
-
-        const auto& ops = getSelectedSimdOperations();
-        int laneCount = getSimdLaneCount();
+        const std::span<const double> actions,
+        const std::span<const double> means,
+        const std::span<const double> logStdDevs,
+        const int actionDim,
+        const int batchSize,
+        std::span<double> outLogProbs) {
 
         const double* actPtr = actions.data();
         const double* meanPtr = means.data();
@@ -610,12 +607,11 @@ namespace org::spartan::internal::math::tensor {
         double* outPtr = outLogProbs.data();
 
         const double LOG_2PI = 1.8378770664093453;
-        const SimdFloat sLOG_2PI = ops.broadcast(LOG_2PI);
-        const SimdFloat sHalf = ops.broadcast(0.5);
+        const double CONSTANT_TERM = 0.5 * actionDim * LOG_2PI;
 
         std::vector<double> invStd(actionDim);
         for (int a = 0; a < actionDim; ++a) {
-            invStd[a] = 1.0 / std::exp(logStdPtr[a]);
+            invStd[a] = std::exp(-logStdPtr[a]);
         }
 
         for (int b = 0; b < batchSize; ++b) {
@@ -625,11 +621,13 @@ namespace org::spartan::internal::math::tensor {
                 const int idx = b * actionDim + a;
                 const double diff = actPtr[idx] - meanPtr[idx];
                 const double sqDiff = diff * diff;
+
                 const double logProb = -0.5 * sqDiff * invStd[a] * invStd[a] - logStdPtr[a];
                 logProbSum += logProb;
             }
 
-            outPtr[b] = logProbSum - LOG_2PI;
+
+            outPtr[b] = logProbSum - CONSTANT_TERM;
         }
     }
 
@@ -638,7 +636,7 @@ namespace org::spartan::internal::math::tensor {
             const std::span<const double> logProbsOld,
             std::span<double> outRatios) {
 
-        auto& ops = getSelectedSimdOperations();
+        const auto& ops = getSelectedSimdOperations();
         const int laneCount = getSimdLaneCount();
 
         const size_t size = logProbsNew.size();
@@ -667,8 +665,8 @@ namespace org::spartan::internal::math::tensor {
             const double gamma,
             std::span<double> outTDErrors) {
 
-        auto& ops = getSelectedSimdOperations();
-        int laneCount = getSimdLaneCount();
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
 
         const size_t size = rewards.size();
         const double* rewPtr = rewards.data();

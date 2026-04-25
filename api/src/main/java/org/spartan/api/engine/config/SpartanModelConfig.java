@@ -17,8 +17,7 @@ package org.spartan.api.engine.config;
  * @see SpartanModelType
  */
 public sealed interface SpartanModelConfig
-        permits RecurrentSoftActorCriticConfig, DoubleDeepQNetworkConfig, AutoEncoderCompressorConfig,
-                CuriosityDrivenRecurrentSoftActorCriticConfig, SpartanMultiAgentGroupConfig {
+        permits AutoEncoderCompressorConfig, CuriosityDrivenRecurrentSoftActorCriticConfig, DoubleDeepQNetworkConfig, ProximalPolicyOptimizationConfig, RecurrentSoftActorCriticConfig, SpartanMultiAgentGroupConfig {
 
     /**
      * Returns the model type discriminator.

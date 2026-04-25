@@ -185,6 +185,23 @@ public interface SpartanApi extends AutoCloseable {
             @NotNull SpartanActionManager actions
     );
 
+
+    /**
+     *  Creates a Proximal Policy Optimization Model (PPO)
+     * @param identifier the model identifier
+     * @param config the PPO configuration
+     * @param context the observation context
+     * @param actions the action manager
+     * @return the instantiated ppo model
+     */
+    @Contract("_, _, _, _ -> new")
+    @NotNull ProximalPolicyOptimizationModel createProximalPolicyOptimizationModel(
+            @NotNull String identifier,
+            @NotNull ProximalPolicyOptimizationConfig config,
+            @NotNull SpartanContext context,
+            @NotNull SpartanActionManager actions
+    );
+
     /**
      * Closes the API and frees all associated native memory (Contexts, Models, Buffers).
      * Call this when the plugin disables or the game session ends.

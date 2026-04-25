@@ -5,6 +5,7 @@
 #include <memory>
 #include <span>
 #include <format>
+#include <string_view>
 
 #include "math/fuzzy/SpartanFuzzyMath.h"
 #include "memory/ArrayCleaners.h"
@@ -13,7 +14,7 @@
 #include "machinelearning/model/DoubleDeepQNetworkSpartanModel.h"
 #include "machinelearning/model/AutoEncoderCompressorSpartanModel.h"
 #include "machinelearning/model/CuriosityDrivenRecurrentSoftActorCriticSpartanModel.h"
-#include "machinelearning/persistence/SpartanPersistence.h"
+#include "machinelearning/model/ProximalPolicyOptimizationSpartanModel.h"
 #include "machinelearning/persistence/SpartanPersistence.h"
 
 namespace org::spartan::internal {
@@ -24,18 +25,20 @@ namespace org::spartan::internal {
         }
     }
 
-    long SpartanEngine::computeFuzzySetUnion(double* targetFuzzySet,
-                                             double* sourceFuzzySet,
-                                             const int targetSetSize,
-                                             const int sourceSetSize) {
+    int64_t SpartanEngine::computeFuzzySetUnion(double* targetFuzzySet,
+                                                double* sourceFuzzySet,
+                                                const int targetSetSize,
+                                                const int sourceSetSize) {
         const auto timerStart = std::chrono::high_resolution_clock::now();
         std::span<double> targetCleanView =
             memory::MemoryUtils::cleanView(targetFuzzySet, targetSetSize);
         const std::span<double> sourceCleanView =
             memory::MemoryUtils::cleanView(sourceFuzzySet, sourceSetSize);
-        math::fuzzy::FuzzySetOps::unionSets(targetCleanView.data(),
-                                            sourceCleanView.data(),
-                                            std::min(targetSetSize, sourceSetSize));
+        math::fuzzy::FuzzySetOps::unionSets(
+            targetCleanView.data(),
+            sourceCleanView.data(),
+            std::min(targetSetSize, sourceSetSize)
+            );
         const auto timerEnd = std::chrono::high_resolution_clock::now();
         const auto elapsedNanoseconds =
             std::chrono::duration_cast<std::chrono::nanoseconds>(timerEnd - timerStart).count();
@@ -342,7 +345,7 @@ namespace org::spartan::internal {
 
         const size_t gruW_Count = static_cast<size_t>(3) * static_cast<size_t>(gruHiddenSize) * (static_cast<size_t>(gruHiddenSize) + static_cast<size_t>(gruInputSize));
         const size_t gruB_Count = static_cast<size_t>(3) * static_cast<size_t>(gruHiddenSize);
-        const size_t gruS_Count = static_cast<size_t>(gruHiddenSize);
+        const auto gruS_Count = static_cast<size_t>(gruHiddenSize);
 
         logging::SpartanLogger::info(std::format(
             "[CURIOSITY-CONSTRUCT] GRU calculation: gruHiddenSize={}, gruInputSize={}, gruW_Count={}, gruB_Count={}, gruS_Count={}",
@@ -375,9 +378,8 @@ namespace org::spartan::internal {
                 logging::SpartanLogger::error(std::format("OUT OF BOUNDS (Critic): {} needs {}, but only {} left", name, size, criticWeightsCount - cOffset));
                 return {};
             }
-            const auto s = criticSpan.subspan(cOffset, size);
             cOffset += size;
-            return s;
+            return criticSpan.subspan(cOffset - size, size);
         };
 
         auto gruW = safeCriticSlice(gruW_Count, "GRU weights");
@@ -417,7 +419,7 @@ namespace org::spartan::internal {
             return nullptr;
         }
 
-        // --- MODEL (ACTOR) SLICING ---
+        //  MODEL (ACTOR) SLICING
         auto modelSpan = std::span(modelWeightsBuffer, static_cast<size_t>(modelWeightsCount));
         size_t mOffset = 0;
 
@@ -430,9 +432,8 @@ namespace org::spartan::internal {
                 logging::SpartanLogger::error(std::format("OUT OF BOUNDS (Model): {} needs {}, but only {} left", name, size, modelWeightsCount - mOffset));
                 return {};
             }
-            const auto s = modelSpan.subspan(mOffset, size);
             mOffset += size;
-            return s;
+            return modelSpan.subspan(mOffset - size, size);
         };
 
         size_t policyW_Count = (static_cast<size_t>(actorHiddenSize) * gruHiddenSize) +
@@ -456,7 +457,7 @@ namespace org::spartan::internal {
         }
         auto encoderPool = modelSpan.subspan(mOffset);
 
-        // 4. Final Object Construction
+        // Final Object Construction
         const uint64_t rsacId = (agentIdentifier << 1) | 1;
         auto contextSpan = std::span<const double>(contextBuffer, static_cast<size_t>(contextCount));
         auto actionSpan = std::span(actionOutputBuffer, static_cast<size_t>(actionOutputCount));
@@ -481,6 +482,102 @@ namespace org::spartan::internal {
             curW, curB, std::move(internalRSAC));
     }
 
+    static std::unique_ptr<machinelearning::SpartanModel> constructProximalPolicyOptimizationModel(
+            const uint64_t agentIdentifier,
+            void* opaqueHyperparameterConfig,
+            double* criticWeightsBuffer,
+            const int32_t criticWeightsCount,
+            double* modelWeightsBuffer,
+            const int32_t modelWeightsCount,
+            double* contextBuffer,
+            const int32_t contextCount,
+            double* actionOutputBuffer,
+            const int32_t actionOutputCount) {
+
+        const auto* config = static_cast<const ProximalPolicyOptimizationHyperparameterConfig*>(
+            opaqueHyperparameterConfig);
+
+        const int stateSize = config->baseConfig.stateSize;
+        const int actionSize = config->baseConfig.actionSize;
+        const int actorHiddenSize = config->actorHiddenNeuronCount;
+        const int actorLayerCount = config->actorHiddenLayerCount;
+        const int criticHiddenSize = config->criticHiddenNeuronCount;
+        const int criticLayerCount = config->criticHiddenLayerCount;
+
+        const size_t actorWeightCount = static_cast<size_t>(actorHiddenSize) * stateSize
+            + (actorLayerCount > 1 ? static_cast<size_t>(actorHiddenSize) * actorHiddenSize * (actorLayerCount - 1) : 0)
+            + static_cast<size_t>(actionSize) * actorHiddenSize * 2;
+        const size_t actorBiasCount = static_cast<size_t>(actorHiddenSize) * actorLayerCount + static_cast<size_t>(actionSize) * 2;
+
+        const size_t criticWeightCount = static_cast<size_t>(criticHiddenSize) * stateSize
+            + (criticLayerCount > 1 ? static_cast<size_t>(criticHiddenSize) * criticHiddenSize * (criticLayerCount - 1) : 0)
+            + static_cast<size_t>(criticHiddenSize);
+        const size_t criticBiasCount = static_cast<size_t>(criticHiddenSize) * criticLayerCount + 1;
+
+        const auto modelSpan = std::span(modelWeightsBuffer, static_cast<size_t>(modelWeightsCount));
+        size_t modelOffset = 0;
+
+        auto safeModelSlice = [&](size_t size, std::string_view name) -> std::span<double> {
+            if (size == 0) {
+                logging::SpartanLogger::error(std::format("Model slice size is zero: {}", name));
+                return {};
+            }
+            if (modelOffset + size > static_cast<size_t>(modelWeightsCount)) {
+                logging::SpartanLogger::error(std::format(
+                    "OUT OF BOUNDS (Model): {} needs {}, but only {} left", name, size, modelWeightsCount - modelOffset));
+                return {};
+            }
+            modelOffset += size;
+            return modelSpan.subspan(modelOffset - size, size);
+        };
+
+        auto actorWeights = safeModelSlice(actorWeightCount, "Actor weights");
+        auto actorBiases = safeModelSlice(actorBiasCount, "Actor biases");
+        if (actorWeights.empty() || actorBiases.empty()) {
+            logging::SpartanLogger::error("ProximalPolicyOptimization actor slicing failed; aborting model construction");
+            return nullptr;
+        }
+
+        const auto criticSpan = std::span(criticWeightsBuffer, static_cast<size_t>(criticWeightsCount));
+        size_t criticOffset = 0;
+
+        auto safeCriticSlice = [&](size_t size, std::string_view name) -> std::span<double> {
+            if (size == 0) {
+                logging::SpartanLogger::error(std::format("Critic slice size is zero: {}", name));
+                return {};
+            }
+            if (criticOffset + size > static_cast<size_t>(criticWeightsCount)) {
+                logging::SpartanLogger::error(std::format(
+                    "OUT OF BOUNDS (Critic): {} needs {}, but only {} left", name, size, criticWeightsCount - criticOffset));
+                return {};
+            }
+            criticOffset += size;
+            return criticSpan.subspan(criticOffset - size, size);
+        };
+
+        auto criticWeightsView = safeCriticSlice(criticWeightCount, "Critic weights");
+        auto criticBiasesView = safeCriticSlice(criticBiasCount, "Critic biases");
+        if (criticWeightsView.empty() || criticBiasesView.empty()) {
+            logging::SpartanLogger::error("ProximalPolicyOptimization critic slicing failed; aborting model construction");
+            return nullptr;
+        }
+
+        auto contextSpan = std::span<const double>(contextBuffer, static_cast<size_t>(contextCount));
+        auto actionSpan = std::span(actionOutputBuffer, static_cast<size_t>(actionOutputCount));
+
+        return std::make_unique<machinelearning::ProximalPolicyOptimizationSpartanModel>(
+            agentIdentifier,
+            opaqueHyperparameterConfig,
+            modelSpan,
+            contextSpan,
+            actionSpan,
+            actorWeights,
+            actorBiases,
+            criticWeightsView,
+            criticBiasesView
+            );
+    }
+
     void SpartanEngine::registerAgent(const uint64_t agentIdentifier,
                                       void* opaqueHyperparameterConfig,
                                       double* criticWeightsBuffer,
@@ -500,7 +597,7 @@ namespace org::spartan::internal {
             std::format("SpartanEngine::registerAgent: detected modelType={} for agent {}", modelType, agentIdentifier));
 
         // Handle uninitialized or default models
-        if (modelType == SPARTAN_MODEL_TYPE_DEFAULT || modelType == 0) {
+            if (modelType == SPARTAN_MODEL_TYPE_DEFAULT) {
             const std::span contextSpan(contextBuffer, static_cast<size_t>(contextCount));
             const std::span modelWeightsSpan(modelWeightsBuffer, static_cast<size_t>(modelWeightsCount));
             const std::span actionOutputSpan(actionOutputBuffer, static_cast<size_t>(actionOutputCount));
@@ -575,9 +672,20 @@ namespace org::spartan::internal {
                     std::format("Registered CuriosityDrivenRecurrentSoftActorCritic agent {}", agentIdentifier));
                 break;
 
+            case SPARTAN_MODEL_TYPE_PROXIMAL_POLICY_OPTIMIZATION:
+                model = constructProximalPolicyOptimizationModel(
+                    agentIdentifier, opaqueHyperparameterConfig,
+                    criticWeightsBuffer, criticWeightsCount,
+                    modelWeightsBuffer, modelWeightsCount,
+                    contextBuffer, contextCount,
+                    actionOutputBuffer, actionOutputCount);
+                logging::SpartanLogger::info(
+                    std::format("Registered ProximalPolicyOptimization agent {}", agentIdentifier));
+                break;
+
             default:
                 logging::SpartanLogger::error(
-                    std::format("Unknown model type {} for agent {}; valid types are 0 (DEFAULT), 1 (RSAC), 2 (DDQN), 3 (AUTOENCODER), 4 (CURIOSITY_RSAC). This likely indicates uninitialized or corrupted config buffer.", modelType, agentIdentifier));
+                    std::format("Unknown model type {} for agent {}; valid types are 0 (DEFAULT), 1 (RSAC), 2 (DDQN), 3 (AUTOENCODER), 4 (CURIOSITY_RSAC), 6 (ProximalPolicyOptimization). This likely indicates uninitialized or corrupted config buffer.", modelType, agentIdentifier));
                 return;
         }
 
@@ -629,8 +737,7 @@ namespace org::spartan::internal {
         bool foundAndSaved = false;
         multiAgentRegistry_.forEach([&](const std::unique_ptr<machinelearning::SpartanMultiAgentGroup>& group) {
             if (foundAndSaved) return;
-            machinelearning::SpartanAgent* agent = group->getAgent(agentIdentifier);
-            if (agent) {
+            if (machinelearning::SpartanAgent* agent = group->getAgent(agentIdentifier)) {
                 // Determine model type
                 const auto* baseConfig = static_cast<const BaseHyperparameterConfig*>(
                     agent->getOpaqueHyperparameterConfig());
@@ -695,8 +802,7 @@ namespace org::spartan::internal {
 
         multiAgentRegistry_.forEach([&](const std::unique_ptr<machinelearning::SpartanMultiAgentGroup>& group) {
             if (targetModel) return;
-            machinelearning::SpartanAgent* agent = group->getAgent(agentIdentifier);
-            if (agent) {
+            if (machinelearning::SpartanAgent* agent = group->getAgent(agentIdentifier)) {
                 targetModel = agent;
             }
         });
@@ -738,9 +844,11 @@ namespace org::spartan::internal {
         }
 
         // Unpack into the active model's buffers
-        std::copy(concatBuffer.begin(), concatBuffer.begin() + modelWeightBlob.size(), modelWeightBlob.begin());
+        std::copy_n(concatBuffer.begin(), static_cast<std::ptrdiff_t>(modelWeightBlob.size()), modelWeightBlob.begin());
         if (!criticWeightBlob.empty()) {
-            std::copy(concatBuffer.begin() + modelWeightBlob.size(), concatBuffer.end(), criticWeightBlob.begin());
+            std::copy_n(concatBuffer.begin() + static_cast<std::ptrdiff_t>(modelWeightBlob.size()),
+                        static_cast<std::ptrdiff_t>(criticWeightBlob.size()),
+                        criticWeightBlob.begin());
         }
 
         logging::SpartanLogger::info(
@@ -978,6 +1086,23 @@ namespace org::spartan::internal {
                 std::format("loadModel: Failed to load agent {} from {}", agentIdentifier, filePath));
         }
         return success;
+    }
+
+    int32_t SpartanEngine::getProximalPolicyOptimizationDebugScalarCount(const uint64_t agentIdentifier) {
+        return modelRegistry_.getProximalPolicyOptimizationDebugScalarCount(agentIdentifier);
+    }
+
+    int32_t SpartanEngine::copyProximalPolicyOptimizationDebugScalars(
+            const uint64_t agentIdentifier,
+            double* outputBuffer,
+            const int32_t outputCount) {
+        if (outputBuffer == nullptr || outputCount <= 0) {
+            return -1;
+        }
+
+        return modelRegistry_.copyProximalPolicyOptimizationDebugScalars(
+            agentIdentifier,
+            std::span<double>(outputBuffer, static_cast<size_t>(outputCount)));
     }
 
 }

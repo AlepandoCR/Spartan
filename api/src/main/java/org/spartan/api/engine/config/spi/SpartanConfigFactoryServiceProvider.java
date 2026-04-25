@@ -90,4 +90,28 @@ public interface SpartanConfigFactoryServiceProvider {
             boolean isTraining,
             int maxAgents
     );
+
+    @Contract("_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_ -> new")
+    @NotNull ProximalPolicyOptimizationConfig createProximalPolicyOptimizationConfig(
+            double learningRate,
+            double gamma,
+            double epsilon,
+            double epsilonMin,
+            double epsilonDecay,
+            boolean debugLogging,
+            boolean isTraining,
+            int actorHiddenNeuronCount,
+            int actorHiddenLayerCount,
+            int criticHiddenNeuronCount,
+            int criticHiddenLayerCount,
+            int trajectoryBufferCapacity,
+            int trainingEpochCount,
+            int miniBatchSize,
+            double clipRange,
+            double gaeGamma,
+            double gaeLambda,
+            double entropyCoefficient,
+            double valueLossCoefficient,
+            double maxGradientNorm
+    );
 }

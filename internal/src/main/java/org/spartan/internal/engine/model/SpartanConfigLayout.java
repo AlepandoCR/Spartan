@@ -103,4 +103,27 @@ public final class SpartanConfigLayout {
     public static final long MULTI_AGENT_MAX_AGENTS_OFFSET      = 64; // int32_t
     public static final long MULTI_AGENT_CONFIG_TOTAL_SIZE      = 72;
     public static final long MULTI_AGENT_CONFIG_TOTAL_SIZE_PADDED = ((MULTI_AGENT_CONFIG_TOTAL_SIZE + 63) / 64) * 64;
+
+// ==================== Proximal Policy Optimization (PPO) Config ===================
+
+    public static final long PPO_ACTOR_HIDDEN_NEURON_COUNT_OFFSET       = 64; // int32_t
+    public static final long PPO_ACTOR_HIDDEN_LAYER_COUNT_OFFSET        = 68; // int32_t
+    public static final long PPO_CRITIC_HIDDEN_NEURON_COUNT_OFFSET      = 72; // int32_t
+    public static final long PPO_CRITIC_HIDDEN_LAYER_COUNT_OFFSET       = 76; // int32_t
+    public static final long PPO_TRAJECTORY_BUFFER_CAPACITY_OFFSET      = 80; // int32_t
+    public static final long PPO_TRAINING_EPOCH_COUNT_OFFSET            = 84; // int32_t
+    public static final long PPO_MINI_BATCH_SIZE_OFFSET                 = 88; // int32_t
+
+    public static final long PPO_CLIP_RANGE_OFFSET                      = 96;  // double
+    public static final long PPO_GAE_GAMMA_OFFSET                       = 104; // double
+    public static final long PPO_GAE_LAMBDA_OFFSET                      = 112; // double
+    public static final long PPO_ENTROPY_COEFFICIENT_OFFSET             = 120; // double
+    public static final long PPO_VALUE_LOSS_COEFFICIENT_OFFSET          = 128; // double
+    public static final long PPO_MAX_GRADIENT_NORM_OFFSET               = 136; // double
+
+    public static final long PPO_CONFIG_TOTAL_SIZE = 152;
+
+    public static final long PPO_CONFIG_TOTAL_SIZE_PADDED = ((PPO_CONFIG_TOTAL_SIZE + 63) / 64) * 64;
+
+
 }

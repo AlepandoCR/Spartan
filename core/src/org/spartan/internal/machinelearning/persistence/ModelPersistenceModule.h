@@ -34,8 +34,7 @@ namespace org::spartan::internal::machinelearning::persistence {
          * @param model Pointer to the SpartanModel to serialize
          * @return Vector of doubles representing all weights in deterministic order
          */
-        virtual std::vector<double> serialize(
-                const org::spartan::internal::machinelearning::SpartanModel* model) = 0;
+        virtual std::vector<double> serialize(const SpartanModel* model) = 0;
 
         /**
          * Deserializes weights from a flat vector into a model.
@@ -44,7 +43,7 @@ namespace org::spartan::internal::machinelearning::persistence {
          * @param weights Vector of doubles (must match expected size)
          * @return true if successful, false if size/type mismatch
          */
-        virtual bool deserialize(org::spartan::internal::machinelearning::SpartanModel* model,
+        virtual bool deserialize(SpartanModel* model,
                                  const std::vector<double>& weights) = 0;
 
         /**
@@ -53,14 +52,14 @@ namespace org::spartan::internal::machinelearning::persistence {
          * @param modelTypeIdentifier The model type ID from .spartan header
          * @return true if this module handles this type
          */
-        virtual bool canHandle(uint32_t modelTypeIdentifier) const = 0;
+        [[nodiscard]] virtual bool canHandle(uint32_t modelTypeIdentifier) const = 0;
 
         /**
          * Returns the model type ID this module is responsible for.
          *
          * @return Model type identifier (e.g., MODEL_TYPE_RSAC)
          */
-        virtual uint32_t modelTypeId() const = 0;
+        [[nodiscard]] virtual uint32_t modelTypeId() const = 0;
     };
 
     /**
@@ -92,12 +91,13 @@ namespace org::spartan::internal::machinelearning::persistence {
          */
         ModelPersistenceModule* getModule(uint32_t modelTypeId);
 
+        ModelPersistenceRegistry(const ModelPersistenceRegistry&) = delete;
+        ModelPersistenceRegistry& operator=(const ModelPersistenceRegistry&) = delete;
+
     private:
         ModelPersistenceRegistry() = default;
         ~ModelPersistenceRegistry() = default;
 
-        ModelPersistenceRegistry(const ModelPersistenceRegistry&) = delete;
-        ModelPersistenceRegistry& operator=(const ModelPersistenceRegistry&) = delete;
 
         std::map<uint32_t, std::unique_ptr<ModelPersistenceModule>> modules_;
     };

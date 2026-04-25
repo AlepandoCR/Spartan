@@ -80,7 +80,10 @@ public class CuriosityDrivenRecurrentSoftActorCriticModelImpl
         this.criticWeightsCount = (int) criticWeightCountLong;
 
         // Use ValueLayout to ensure correct element scaling
-        this.criticWeightsBuffer = arena.allocate(ValueLayout.JAVA_DOUBLE, criticWeightCountLong + SIMD_PADDING_DOUBLES);
+        this.criticWeightsBuffer = arena.allocate(
+                ValueLayout.JAVA_DOUBLE,
+                criticWeightCountLong + SIMD_PADDING_DOUBLES
+        );
     }
 
     @Override

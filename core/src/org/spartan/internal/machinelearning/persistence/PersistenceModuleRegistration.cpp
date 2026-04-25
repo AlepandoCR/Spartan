@@ -8,6 +8,7 @@
 #include "DdqnPersistenceModule.h"
 #include "AutoEncoderPersistenceModule.h"
 #include "CuriosityRsacPersistenceModule.h"
+#include "ProximalPolicyOptimizationPersistenceModule.h"
 #include "../../logging/SpartanLogger.h"
 
 namespace org::spartan::internal::machinelearning::persistence {
@@ -21,6 +22,7 @@ namespace org::spartan::internal::machinelearning::persistence {
         DdqnPersistenceModule::initializeAndRegister();
         AutoEncoderPersistenceModule::initializeAndRegister();
         CuriosityRsacPersistenceModule::initializeAndRegister();
+        ProximalPolicyOptimizationPersistenceModule::initializeAndRegister();
 
         logging::SpartanLogger::debug("[PersistenceModuleRegistration] All persistence modules registered successfully");
     }
@@ -35,7 +37,7 @@ namespace org::spartan::internal::machinelearning::persistence {
     };
 
     // This static variable ensures modules are initialized when the library loads
-    static const PersistenceModuleAutoInitializer moduleAutoInitializer;
+    [[maybe_unused]] static const PersistenceModuleAutoInitializer moduleAutoInitializer;
 
 }
 

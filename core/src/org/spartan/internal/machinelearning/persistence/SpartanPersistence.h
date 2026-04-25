@@ -46,6 +46,7 @@ namespace org::spartan::internal::machinelearning::persistence {
         MODEL_TYPE_DOUBLE_DEEP_Q_NETWORK                 = 2,
         MODEL_TYPE_AUTO_ENCODER_COMPRESSOR               = 3,
         MODEL_TYPE_CURIOSITY_DRIVEN_RECURRENT_SOFT_ACTOR_CRITIC = 4,
+        MODEL_TYPE_PROXIMAL_POLICY_OPTIMIZATION          = 6,
     };
 
     /**
@@ -200,7 +201,7 @@ namespace org::spartan::internal::machinelearning::persistence {
      * @return True on success, false on failure.
      */
     bool saveModelWithModule(const char* filePath,
-                            const org::spartan::internal::machinelearning::SpartanModel* model,
+                            const SpartanModel* model,
                             uint32_t modelTypeIdentifier);
 
     /**
@@ -215,7 +216,7 @@ namespace org::spartan::internal::machinelearning::persistence {
      * @return True on success, false on failure.
      */
     bool loadModelWithModule(const char* filePath,
-                            org::spartan::internal::machinelearning::SpartanModel* model,
+                            SpartanModel* model,
                             uint32_t modelTypeIdentifier);
 
 }
