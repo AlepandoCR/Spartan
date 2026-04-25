@@ -106,6 +106,10 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
                 mWeights = SpartanModelAllocator.calculateAutoEncoderModelWeightCount(aConfig, stateSize);
                 cWeights = SpartanModelAllocator.calculateAutoEncoderCriticWeightCount();
             }
+            case ProximalPolicyOptimizationConfig pConfig -> {
+                mWeights = SpartanModelAllocator.calculateProximalPolicyOptimizationModelWeightCount(pConfig, stateSize, actionCount);
+                cWeights = SpartanModelAllocator.calculateProximalPolicyOptimizationCriticWeightCount(pConfig, stateSize);
+            }
             default ->
                 // Fallback or error? Assuming known types from factory.
                     throw new IllegalArgumentException("Unsupported config type: " + config.getClass());

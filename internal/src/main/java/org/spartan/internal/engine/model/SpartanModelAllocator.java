@@ -571,6 +571,16 @@ public final class SpartanModelAllocator {
                 + latentBufferCount;
     }
 
+    public static long calculateProximalPolicyOptimizationCriticWeightCount(@NotNull ProximalPolicyOptimizationConfig config, int stateSize) {
+        int h = config.criticHiddenNeuronCount();
+        int l = config.criticHiddenLayerCount();
+
+        long weights = ((long) stateSize * h) + ((long) h * h * (l - 1)) + h;
+        long biases = ((long) h * l) + 1;
+
+        return weights + biases;
+    }
+
     /**
      * AutoEncoder doesn't have separate critic weights.
      * Returns 0 as placeholder for interface compatibility.
