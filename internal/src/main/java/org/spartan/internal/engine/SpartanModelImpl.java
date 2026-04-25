@@ -282,17 +282,19 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
      * @return the model type ID matching SpartanModelType enum values
      */
     private int determineModelTypeId() {
-        if (config instanceof RecurrentSoftActorCriticConfig) {
-            return SpartanModelType.RECURRENT_SOFT_ACTOR_CRITIC.getNativeValue();
-        } else if (config instanceof DoubleDeepQNetworkConfig) {
-            return SpartanModelType.DOUBLE_DEEP_Q_NETWORK.getNativeValue();
-        } else if (config instanceof AutoEncoderCompressorConfig) {
-            return SpartanModelType.AUTO_ENCODER_COMPRESSOR.getNativeValue();
-        } else if (config instanceof CuriosityDrivenRecurrentSoftActorCriticConfig) {
-            return SpartanModelType.CURIOSITY_DRIVEN_RECURRENT_SOFT_ACTOR_CRITIC.getNativeValue();
-        } else {
-            throw new IllegalArgumentException("Unknown config type: " + config.getClass());
-        }
+        return switch (config) {
+            case RecurrentSoftActorCriticConfig _ ->
+                    SpartanModelType.RECURRENT_SOFT_ACTOR_CRITIC.getNativeValue();
+            case DoubleDeepQNetworkConfig _ ->
+                    SpartanModelType.DOUBLE_DEEP_Q_NETWORK.getNativeValue();
+            case AutoEncoderCompressorConfig _ ->
+                    SpartanModelType.AUTO_ENCODER_COMPRESSOR.getNativeValue();
+            case CuriosityDrivenRecurrentSoftActorCriticConfig _ ->
+                    SpartanModelType.CURIOSITY_DRIVEN_RECURRENT_SOFT_ACTOR_CRITIC.getNativeValue();
+            case ProximalPolicyOptimizationConfig _ ->
+                    SpartanModelType.PROXIMAL_POLICY_OPTIMIZATION.getNativeValue();
+            default -> throw new IllegalArgumentException("Unknown config type: " + config.getClass());
+        };
     }
 
     @Override
