@@ -597,12 +597,12 @@ namespace org::spartan::internal {
             std::format("SpartanEngine::registerAgent: detected modelType={} for agent {}", modelType, agentIdentifier));
 
         // Handle uninitialized or default models
-            if (modelType == SPARTAN_MODEL_TYPE_DEFAULT) {
+        if (modelType == SPARTAN_MODEL_TYPE_DEFAULT) {
             const std::span contextSpan(contextBuffer, static_cast<size_t>(contextCount));
             const std::span modelWeightsSpan(modelWeightsBuffer, static_cast<size_t>(modelWeightsCount));
             const std::span actionOutputSpan(actionOutputBuffer, static_cast<size_t>(actionOutputCount));
 
-            if (auto recycledModel = modelRegistry_.getIdleModelToRebind()) {
+            if (auto recycledModel = machinelearning::SpartanModelRegistry::getIdleModelToRebind()) {
                 recycledModel->rebind(agentIdentifier,
                                       opaqueHyperparameterConfig,
                                       modelWeightsSpan,
@@ -708,8 +708,8 @@ namespace org::spartan::internal {
                                       const int32_t rewardEntryCount) {
         if (agentIdentifiersBuffer != nullptr && rewardSignalsBuffer != nullptr && rewardEntryCount > 0) {
             modelRegistry_.distributeRewardsByIdentifier(
-                std::span<const uint64_t>(agentIdentifiersBuffer, rewardEntryCount),
-                std::span<const double>(rewardSignalsBuffer, rewardEntryCount));
+                std::span(agentIdentifiersBuffer, rewardEntryCount),
+                std::span(rewardSignalsBuffer, rewardEntryCount));
         }
         modelRegistry_.tickAll();
     }
@@ -737,7 +737,7 @@ namespace org::spartan::internal {
         bool foundAndSaved = false;
         multiAgentRegistry_.forEach([&](const std::unique_ptr<machinelearning::SpartanMultiAgentGroup>& group) {
             if (foundAndSaved) return;
-            if (machinelearning::SpartanAgent* agent = group->getAgent(agentIdentifier)) {
+            if (const machinelearning::SpartanAgent* agent = group->getAgent(agentIdentifier)) {
                 // Determine model type
                 const auto* baseConfig = static_cast<const BaseHyperparameterConfig*>(
                     agent->getOpaqueHyperparameterConfig());
@@ -837,8 +837,7 @@ namespace org::spartan::internal {
         }
 
         std::vector<double> concatBuffer(expectedWeightCount);
-        auto weightSpan = std::span(concatBuffer);
-        if (!loadWeights(filePath, header, weightSpan)) {
+        if (auto weightSpan = std::span(concatBuffer); !loadWeights(filePath, header, weightSpan)) {
             logging::SpartanLogger::error("loadModel: CRC-32 mismatch or I/O error reading weights.");
             return false;
         }
@@ -882,7 +881,7 @@ namespace org::spartan::internal {
         }
 
         auto contextSpan = std::span<const double>(sharedContextBuffer, sharedContextCount);
-        auto actionsSpan = std::span<double>(sharedActionsBuffer, sharedActionsCount);
+        auto actionsSpan = std::span(sharedActionsBuffer, sharedActionsCount);
 
         auto group = std::make_unique<machinelearning::SpartanMultiAgentGroup>(
             groupIdentifier,
@@ -904,8 +903,7 @@ namespace org::spartan::internal {
     }
 
     void SpartanEngine::tickMultiAgentGroup(const uint64_t groupIdentifier) {
-        auto groupPtr = multiAgentRegistry_.get(groupIdentifier);
-        if (groupPtr && *groupPtr) {
+        if (auto groupPtr = multiAgentRegistry_.get(groupIdentifier); groupPtr && *groupPtr) {
             (*groupPtr)->processTick();
             return;
         }

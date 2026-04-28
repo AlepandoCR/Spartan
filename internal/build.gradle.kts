@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "org.spartan.internal"
-version = "1.0.25"
+version = "1.0.26"
 
 java{
     withSourcesJar()

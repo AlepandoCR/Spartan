@@ -12,8 +12,8 @@
 namespace org::spartan::internal::math::metric {
 
     double VectorMetrics::cosineSimilarity(const double* firstVector, const double* secondVector, const int arrayLength) {
-        auto& ops = simd::getSelectedSimdOperations();
-        int laneCount = simd::getSimdLaneCount();
+        const auto& ops = simd::getSelectedSimdOperations();
+        const int laneCount = simd::getSimdLaneCount();
 
         simd::SimdFloat simdDotProductAccumulator = ops.setZero();
         simd::SimdFloat simdFirstMagnitudeSquaredAccumulator = ops.setZero();
@@ -45,8 +45,8 @@ namespace org::spartan::internal::math::metric {
     }
 
     double VectorMetrics::fuzzyJaccard(const double* firstVector, const double* secondVector, const int arrayLength) {
-        auto& ops = simd::getSelectedSimdOperations();
-        int laneCount = simd::getSimdLaneCount();
+        const auto& ops = simd::getSelectedSimdOperations();
+        const int laneCount = simd::getSimdLaneCount();
 
         simd::SimdFloat simdIntersectionAccumulator = ops.setZero();
         simd::SimdFloat simdUnionAccumulator = ops.setZero();

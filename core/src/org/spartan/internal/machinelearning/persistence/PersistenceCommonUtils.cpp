@@ -8,19 +8,19 @@ namespace org::spartan::internal::machinelearning::persistence {
 
     std::vector<double> PersistenceCommonUtils::safeExtractSpan(
             const std::span<const double>& source,
-            size_t offset,
-            size_t count,
+            const size_t offset,
+            const size_t count,
             const std::string& label) {
 
         if (offset + count > source.size()) {
-            std::string error = label + ": Requested bounds [" + std::to_string(offset) +
+            const std::string error = label + ": Requested bounds [" + std::to_string(offset) +
                                ", " + std::to_string(offset + count) + ") exceed source size " +
                                std::to_string(source.size());
             logging::SpartanLogger::error("PersistenceCommonUtils::safeExtractSpan: " + error);
             throw std::out_of_range(error);
         }
 
-        std::vector<double> result(source.begin() + offset, source.begin() + offset + count);
+        std::vector result(source.begin() + offset, source.begin() + offset + count);
         return result;
     }
 
@@ -30,15 +30,16 @@ namespace org::spartan::internal::machinelearning::persistence {
         return static_cast<size_t>(outputSize) * (static_cast<size_t>(inputSize) + 1);
     }
 
-    size_t PersistenceCommonUtils::computeSimdAlignedSize(size_t sizeInDoubles) {
+    size_t PersistenceCommonUtils::computeSimdAlignedSize(const size_t sizeInDoubles) {
         // SIMD alignment: 64 bytes = 8 doubles
         constexpr size_t SIMD_LANE_COUNT = 8;
-        return (sizeInDoubles + (SIMD_LANE_COUNT - 1)) & ~(SIMD_LANE_COUNT - 1);
+        return sizeInDoubles + (SIMD_LANE_COUNT - 1) & ~(SIMD_LANE_COUNT - 1);
     }
 
     std::vector<double> PersistenceCommonUtils::removeSimdPadding(
             const std::vector<double>& weights,
-            size_t originalCount) {
+            const size_t originalCount
+            ) {
 
         if (weights.size() < originalCount) {
             logging::SpartanLogger::error("PersistenceCommonUtils::removeSimdPadding: " +
@@ -47,13 +48,13 @@ namespace org::spartan::internal::machinelearning::persistence {
             return weights;
         }
 
-        std::vector<double> result(weights.begin(), weights.begin() + originalCount);
+        std::vector result(weights.begin(), weights.begin() + originalCount);
         return result;
     }
 
     std::vector<double> PersistenceCommonUtils::addSimdPadding(
             const std::vector<double>& weights,
-            size_t targetAlignedCount) {
+            const size_t targetAlignedCount) {
 
         if (weights.size() > targetAlignedCount) {
             logging::SpartanLogger::error("PersistenceCommonUtils::addSimdPadding: " +

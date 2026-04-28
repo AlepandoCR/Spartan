@@ -7,11 +7,11 @@
 #include <cstddef>
 #include <string>
 
+#include "SpartanPersistence.h"
+
 namespace org::spartan::internal::machinelearning::persistence {
 
-    ProximalPolicyOptimizationPersistenceModule::ProximalPolicyOptimizationPersistenceModule() {
-        // Empty constructor; registration is handled by initializeAndRegister().
-    }
+    ProximalPolicyOptimizationPersistenceModule::ProximalPolicyOptimizationPersistenceModule() = default;
 
     void ProximalPolicyOptimizationPersistenceModule::initializeAndRegister() {
         static bool initialized = false;
@@ -96,12 +96,12 @@ namespace org::spartan::internal::machinelearning::persistence {
         return true;
     }
 
-    bool ProximalPolicyOptimizationPersistenceModule::canHandle(uint32_t modelTypeIdentifier) const {
-        return modelTypeIdentifier == SPARTAN_MODEL_TYPE_PROXIMAL_POLICY_OPTIMIZATION;
+    bool ProximalPolicyOptimizationPersistenceModule::canHandle(const uint32_t modelTypeIdentifier) const {
+        return modelTypeIdentifier == MODEL_TYPE_PROXIMAL_POLICY_OPTIMIZATION;
     }
 
     uint32_t ProximalPolicyOptimizationPersistenceModule::modelTypeId() const {
-        return SPARTAN_MODEL_TYPE_PROXIMAL_POLICY_OPTIMIZATION;
+        return MODEL_TYPE_PROXIMAL_POLICY_OPTIMIZATION;
     }
 
 }

@@ -5,9 +5,7 @@
 
 namespace org::spartan::internal::machinelearning::persistence {
 
-    RsacPersistenceModule::RsacPersistenceModule() {
-        // Empty constructor - registration handled by initializeAndRegister()
-    }
+    RsacPersistenceModule::RsacPersistenceModule() = default;
 
     void RsacPersistenceModule::initializeAndRegister() {
         static bool initialized = false;
@@ -19,7 +17,7 @@ namespace org::spartan::internal::machinelearning::persistence {
     }
 
     std::vector<double> RsacPersistenceModule::serialize(
-            const machinelearning::SpartanModel* model) {
+            const SpartanModel* model) {
 
         const auto* rsacModel = dynamic_cast<const RecurrentSoftActorCriticSpartanModel*>(model);
         if (!rsacModel) {
@@ -30,11 +28,11 @@ namespace org::spartan::internal::machinelearning::persistence {
         std::vector<double> weights;
 
         // Serialize:
-        // 1. GRU weights + biases (from criticWeights)
-        // 2. Critic1 weights + biases (from criticWeights)
-        // 3. Critic2 weights + biases (from criticWeights)
-        // 4. Actor weights + biases (from modelWeights)
-        // 5. Adam moments for all networks
+        // GRU weights + biases (from criticWeights)
+        // Critic1 weights + biases (from criticWeights)
+        // Critic2 weights + biases (from criticWeights)
+        // Actor weights + biases (from modelWeights)
+        //  Adam moments for all networks
 
         // Concatenate all weights: critic buffer contains all critic networks (GRU + Q1 + Q2),
         // model buffer contains actor/policy. This deterministic order ensures correct deserialization.
@@ -73,7 +71,7 @@ namespace org::spartan::internal::machinelearning::persistence {
         }
 
         // Restore critic weights
-        std::copy(weights.begin(), weights.begin() + criticWeights.size(),
+        std::copy_n(weights.begin(), criticWeights.size(),
                  rsacModel->getCriticWeightsMutable().begin());
 
         // Restore model weights
@@ -86,7 +84,7 @@ namespace org::spartan::internal::machinelearning::persistence {
         return true;
     }
 
-    bool RsacPersistenceModule::canHandle(uint32_t modelTypeIdentifier) const {
+    bool RsacPersistenceModule::canHandle(const uint32_t modelTypeIdentifier) const {
         return modelTypeIdentifier == MODEL_TYPE_RSAC;
     }
 

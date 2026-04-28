@@ -6,6 +6,8 @@
 
 #include <span>
 #include <cstdint>
+#include <mutex>
+#include <shared_mutex>
 
 /**
  * @file SpartanModel.h
@@ -23,7 +25,7 @@
  *   - @c SpartanCompressor  -  representation-learning models (AutoEncoder, ...)
  *
  * The hyperparameter config pointer is stored as @c void* so that each
- * concrete model can @c static_cast to its own specialised Plain Old Data struct
+ * concrete model can @c static_cast to its own specialized Plain Old Data struct
  * without polluting the base interface with template parameters.
  *
  * @note All memory is owned by the Java Virtual Machine.  This class only stores non-owning
@@ -42,8 +44,8 @@ namespace org::spartan::internal::machinelearning {
         // Non-copyable / move-only
         SpartanModel(const SpartanModel&) = delete;
         SpartanModel& operator=(const SpartanModel&) = delete;
-        SpartanModel(SpartanModel&&) noexcept = default;
-        SpartanModel& operator=(SpartanModel&&) noexcept = default;
+        SpartanModel(SpartanModel&&) noexcept = delete;
+        SpartanModel& operator=(SpartanModel&&) noexcept = delete;
 
         // Virtual API (Frontier A)
 
@@ -64,6 +66,8 @@ namespace org::spartan::internal::machinelearning {
          * @param newContextBuffer Updated span over the Java Virtual Machine-owned state memory.
          */
         void setContextBuffer(const std::span<const double> newContextBuffer) {
+            // Protect concurrent readers in processTick by taking an exclusive lock
+            std::unique_lock lock(processMutex_);
             contextBuffer_ = newContextBuffer;
         }
 
@@ -78,6 +82,7 @@ namespace org::spartan::internal::machinelearning {
          * @param newCleanSizesBuffer Read-only span over the JVM-owned clean sizes array.
          */
         void setCleanSizesBuffer(const std::span<const int32_t> newCleanSizesBuffer) {
+            std::unique_lock lock(processMutex_);
             cleanSizesBuffer_ = newCleanSizesBuffer;
         }
 
@@ -99,6 +104,7 @@ namespace org::spartan::internal::machinelearning {
                             const std::span<double> modelWeights,
                             const std::span<const double> contextBuffer,
                             const std::span<double> actionOutputBuffer) {
+            std::unique_lock lock(processMutex_);
             agentIdentifier_ = agentIdentifier;
             opaqueHyperparameterConfig_ = opaqueHyperparameterConfig;
             modelWeights_ = modelWeights;
@@ -113,10 +119,24 @@ namespace org::spartan::internal::machinelearning {
          * and later rebind to a different agent.
          */
         virtual void unbind() {
+            std::unique_lock lock(processMutex_);
             opaqueHyperparameterConfig_ = nullptr;
             modelWeights_ = std::span<double>();
             contextBuffer_ = std::span<const double>();
             actionOutputBuffer_ = std::span<double>();
+        }
+
+        /**
+         * @brief Wrapper that acquires a shared lock for safe concurrent ticks.
+         *
+         * Models should not be invoked via processTick() directly from
+         * external registries; registries should call processTickWithLock()
+         * which guarantees the necessary synchronization with rebind/update
+         * operations performed by the Java bridge.
+         */
+        void processTickWithLock() {
+            std::shared_lock lock(processMutex_);
+            processTick();
         }
 
         /** @brief Returns the unique agent identifier bound to this model. */
@@ -133,7 +153,7 @@ namespace org::spartan::internal::machinelearning {
         }
 
         /** @brief Returns a mutable view of the model's weight buffer for rebind. */
-        [[nodiscard]] std::span<double> getModelWeightsMutable() noexcept {
+        [[nodiscard]] std::span<double> getModelWeightsMutable() const noexcept {
             return modelWeights_;
         }
 
@@ -180,7 +200,7 @@ namespace org::spartan::internal::machinelearning {
               contextBuffer_(contextBuffer),
               actionOutputBuffer_(actionOutputBuffer) {}
 
-        /** @brief Default constructor for deferred initialisation via rebind(). */
+        /** @brief Default constructor for deferred initialization via rebind(). */
         SpartanModel() = default;
 
         // Shared state (non-owning views over Java Virtual Machine memory)
@@ -192,6 +212,14 @@ namespace org::spartan::internal::machinelearning {
         std::span<double> modelWeights_;
         std::span<const double> contextBuffer_;
         std::span<double> actionOutputBuffer_;
+
+        /**
+         * Mutex protecting context/weight/action pointer updates from concurrent
+         * tick execution. Writers (rebind/setContextBuffer/setCleanSizesBuffer)
+         * acquire unique_lock; tick runners acquire shared_lock via
+         * processTickWithLock().
+         */
+        mutable std::shared_mutex processMutex_;
 
         /** @brief Per-encoder clean element counts for dynamic context slicing (JVM-owned). */
         std::span<const int32_t> cleanSizesBuffer_;

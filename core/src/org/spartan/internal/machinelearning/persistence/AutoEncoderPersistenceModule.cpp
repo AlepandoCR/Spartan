@@ -5,9 +5,7 @@
 
 namespace org::spartan::internal::machinelearning::persistence {
 
-    AutoEncoderPersistenceModule::AutoEncoderPersistenceModule() {
-        // Empty constructor - registration handled by initializeAndRegister()
-    }
+    AutoEncoderPersistenceModule::AutoEncoderPersistenceModule() = default;
 
     void AutoEncoderPersistenceModule::initializeAndRegister() {
         static bool initialized = false;
@@ -19,7 +17,7 @@ namespace org::spartan::internal::machinelearning::persistence {
     }
 
     std::vector<double> AutoEncoderPersistenceModule::serialize(
-            const machinelearning::SpartanModel* model) {
+            const SpartanModel* model) {
 
         const auto* aeModel = dynamic_cast<const AutoEncoderCompressorSpartanModel*>(model);
         if (!aeModel) {
@@ -56,7 +54,7 @@ namespace org::spartan::internal::machinelearning::persistence {
             return false;
         }
 
-        std::copy(weights.begin(), weights.end(), modelWeights.begin());
+        std::ranges::copy(weights, modelWeights.begin());
 
         return true;
     }

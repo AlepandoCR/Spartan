@@ -12,8 +12,8 @@
 namespace org::spartan::internal::math::fuzzy {
 
     void FuzzySetOps::unionSets(double* targetSet, const double* sourceSet, const int arrayLength) {
-        auto& ops = simd::getSelectedSimdOperations();
-        int laneCount = simd::getSimdLaneCount();
+        const auto& ops = simd::getSelectedSimdOperations();
+        const int laneCount = simd::getSimdLaneCount();
 
         int elementIndex = 0;
         for (; elementIndex <= arrayLength - laneCount; elementIndex += laneCount) {
@@ -28,8 +28,8 @@ namespace org::spartan::internal::math::fuzzy {
     }
 
     void FuzzySetOps::intersectSets(double* targetSet, const double* sourceSet, const int arrayLength) {
-        auto& ops = simd::getSelectedSimdOperations();
-        int laneCount = simd::getSimdLaneCount();
+        const auto& ops = simd::getSelectedSimdOperations();
+        const int laneCount = simd::getSimdLaneCount();
 
         int elementIndex = 0;
         for (; elementIndex <= arrayLength - laneCount; elementIndex += laneCount) {
@@ -44,8 +44,8 @@ namespace org::spartan::internal::math::fuzzy {
     }
 
     void FuzzySetOps::complementSet(double* targetSet, const int arrayLength) {
-        auto& ops = simd::getSelectedSimdOperations();
-        int laneCount = simd::getSimdLaneCount();
+        const auto& ops = simd::getSelectedSimdOperations();
+        const int laneCount = simd::getSimdLaneCount();
 
         int elementIndex = 0;
         const simd::SimdFloat simdIdentityValue = ops.broadcast(1.0);
@@ -60,8 +60,8 @@ namespace org::spartan::internal::math::fuzzy {
     }
 
     void FuzzyModifiers::applyConcentration(double* targetSet, const int arrayLength) {
-        auto& ops = simd::getSelectedSimdOperations();
-        int laneCount = simd::getSimdLaneCount();
+        const auto& ops = simd::getSelectedSimdOperations();
+        const int laneCount = simd::getSimdLaneCount();
 
         int elementIndex = 0;
         for (; elementIndex <= arrayLength - laneCount; elementIndex += laneCount) {
@@ -75,8 +75,8 @@ namespace org::spartan::internal::math::fuzzy {
     }
 
     void FuzzyModifiers::applyDilation(double* targetSet, const int arrayLength) {
-        auto& ops = simd::getSelectedSimdOperations();
-        int laneCount = simd::getSimdLaneCount();
+        const auto& ops = simd::getSelectedSimdOperations();
+        const int laneCount = simd::getSimdLaneCount();
 
         int elementIndex = 0;
         for (; elementIndex <= arrayLength - laneCount; elementIndex += laneCount) {

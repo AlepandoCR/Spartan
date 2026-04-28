@@ -85,6 +85,32 @@ namespace org::spartan::internal::machinelearning {
         const int latentSize = config->latentDimensionSize;
         const int hiddenSize = config->encoderHiddenNeuronCount;
 
+        const size_t requiredEncoderWeights = static_cast<size_t>(hiddenSize) * stateSize
+            + static_cast<size_t>(latentSize) * hiddenSize;
+        const size_t requiredEncoderBiases = static_cast<size_t>(hiddenSize) + latentSize;
+        const size_t requiredDecoderWeights = static_cast<size_t>(hiddenSize) * latentSize
+            + static_cast<size_t>(stateSize) * hiddenSize;
+
+        if (const size_t requiredDecoderBiases = static_cast<size_t>(hiddenSize) + stateSize;
+                contextBuffer_.size() < static_cast<size_t>(stateSize)
+                || actionOutputBuffer_.size() < static_cast<size_t>(latentSize)
+                || latentBuffer_.size() < static_cast<size_t>(latentSize)
+                || encoderWeights_.size() < requiredEncoderWeights
+                || encoderBiases_.size() < requiredEncoderBiases
+                || decoderWeights_.size() < requiredDecoderWeights
+                || decoderBiases_.size() < requiredDecoderBiases
+            ) {
+            logging::SpartanLogger::error(std::format(
+                "[AUTOENCODER] Invalid buffer sizes: context={}, action={}, latent={}, encW={}, encB={}, decW={}, decB={}",
+                contextBuffer_.size(), actionOutputBuffer_.size(), latentBuffer_.size(),
+                encoderWeights_.size(), encoderBiases_.size(), decoderWeights_.size(), decoderBiases_.size()));
+            return;
+        }
+
+        const auto contextView = contextBuffer_.subspan(0, static_cast<size_t>(stateSize));
+        const auto latentView = latentBuffer_.subspan(0, static_cast<size_t>(latentSize));
+        const auto actionView = actionOutputBuffer_.subspan(0, static_cast<size_t>(latentSize));
+
         //
         // Phase A: Encoder forward pass.
         //   Input -> Dense(stateSize, hiddenSize) -> LeakyReLU -> Dense(hiddenSize, latentSize) -> Latent
@@ -92,7 +118,7 @@ namespace org::spartan::internal::machinelearning {
 
         // Layer 1: Input -> Hidden
         TensorOps::denseForwardPass(
-            contextBuffer_,
+            contextView,
             encoderWeights_.subspan(0, static_cast<size_t>(hiddenSize) * stateSize),
             encoderBiases_.subspan(0, hiddenSize),
             std::span(encoderHiddenActivation_));
@@ -104,13 +130,13 @@ namespace org::spartan::internal::machinelearning {
             std::span<const double>(encoderHiddenActivation_),
             encoderWeights_.subspan(encoderLayer2WeightOffset, static_cast<size_t>(latentSize) * hiddenSize),
             encoderBiases_.subspan(hiddenSize, latentSize),
-            latentBuffer_);
+            latentView);
 
         //
         // Phase B: Copy latent representation to the action output buffer.
         //          This is what Java reads as the compressed observation.
         //
-        std::memcpy(actionOutputBuffer_.data(), latentBuffer_.data(),
+        std::memcpy(actionView.data(), latentView.data(),
                      static_cast<size_t>(latentSize) * sizeof(double));
 
         //
@@ -120,7 +146,7 @@ namespace org::spartan::internal::machinelearning {
 
         // Decoder Layer 1: Latent -> Hidden
         TensorOps::denseForwardPass(
-            std::span<const double>(latentBuffer_.data(), latentSize),
+            std::span<const double>(latentView.data(), latentSize),
             decoderWeights_.subspan(0, static_cast<size_t>(hiddenSize) * latentSize),
             decoderBiases_.subspan(0, hiddenSize),
             std::span(decoderHiddenActivation_));
@@ -183,7 +209,7 @@ namespace org::spartan::internal::machinelearning {
 
         // Decoder Layer 1 backward: hidden gradient -> latent gradient
         TensorOps::denseBackwardPass(
-            std::span<const double>(latentBuffer_.data(), latentSize),
+            std::span<const double>(latentView.data(), latentSize),
             std::span<const double>(inputGradientScratchpad_.data(), hiddenSize),
             decoderWeights_.subspan(0, static_cast<size_t>(hiddenSize) * latentSize),
             std::span(decoderWeightGradients_.data(),

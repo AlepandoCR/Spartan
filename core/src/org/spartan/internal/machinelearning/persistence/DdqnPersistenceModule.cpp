@@ -5,9 +5,7 @@
 
 namespace org::spartan::internal::machinelearning::persistence {
 
-    DdqnPersistenceModule::DdqnPersistenceModule() {
-        // Empty constructor - registration handled by initializeAndRegister()
-    }
+    DdqnPersistenceModule::DdqnPersistenceModule() = default;
 
     void DdqnPersistenceModule::initializeAndRegister() {
         static bool initialized = false;
@@ -19,7 +17,7 @@ namespace org::spartan::internal::machinelearning::persistence {
     }
 
     std::vector<double> DdqnPersistenceModule::serialize(
-            const machinelearning::SpartanModel* model) {
+            const SpartanModel* model) {
 
         const auto* ddqnModel = dynamic_cast<const DoubleDeepQNetworkSpartanModel*>(model);
         if (!ddqnModel) {
@@ -43,7 +41,7 @@ namespace org::spartan::internal::machinelearning::persistence {
     }
 
     bool DdqnPersistenceModule::deserialize(
-            machinelearning::SpartanModel* model,
+            SpartanModel* model,
             const std::vector<double>& weights) {
 
         auto* ddqnModel = dynamic_cast<DoubleDeepQNetworkSpartanModel*>(model);
@@ -55,13 +53,12 @@ namespace org::spartan::internal::machinelearning::persistence {
         const auto criticWeights = ddqnModel->getCriticWeights();
         const auto modelWeights = ddqnModel->getModelWeightsMutable();
 
-        size_t expectedSize = criticWeights.size() + modelWeights.size();
-        if (weights.size() != expectedSize) {
+        if (const size_t expectedSize = criticWeights.size() + modelWeights.size(); weights.size() != expectedSize) {
             logging::SpartanLogger::error("DdqnPersistenceModule::deserialize: Size mismatch");
             return false;
         }
 
-        std::copy(weights.begin(), weights.begin() + criticWeights.size(),
+        std::copy_n(weights.begin(), criticWeights.size(),
                  ddqnModel->getCriticWeightsMutable().begin());
 
         std::copy(weights.begin() + criticWeights.size(), weights.end(),

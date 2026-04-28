@@ -63,12 +63,13 @@ namespace org::spartan::internal::machinelearning {
 #if defined(__cpp_lib_execution) && !defined(__clang__)
         std::for_each(std::execution::par, snapshot->begin(), snapshot->end(),
             [](SpartanModel* model) {
-                model->processTick();
+                // Acquire shared lock inside model to prevent concurrent rebind/update races
+                model->processTickWithLock();
             });
 #else
         std::for_each(snapshot->begin(), snapshot->end(),
             [](SpartanModel* model) {
-                model->processTick();
+                model->processTickWithLock();
             });
 #endif
     }
@@ -205,7 +206,7 @@ namespace org::spartan::internal::machinelearning {
             agentPointer->applyReward(rewardSignal);
         }
 
-        model->processTick();
+        model->processTickWithLock();
         return true;
     }
 

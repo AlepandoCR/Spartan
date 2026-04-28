@@ -35,6 +35,12 @@ namespace org::spartan::internal::math::tensor {
 
         if (inputSize == 0 || outputSize == 0) return;
 
+        const size_t expectedWeightCount = inputSize * outputSize;
+        if (weights.size() < expectedWeightCount || biases.size() < outputSize) {
+            std::ranges::fill(outputs, 0.0);
+            return;
+        }
+
         const double* __restrict inputPtr = inputs.data();
         const double* __restrict weightPtr = weights.data();
         const double* __restrict biasPtr = biases.data();
@@ -66,8 +72,8 @@ namespace org::spartan::internal::math::tensor {
      * Elements < 0 are set to 0.
      */
     void TensorOps::applyReLU(const std::span<double> tensor) {
-        auto& ops = getSelectedSimdOperations();
-        int laneCount = getSimdLaneCount();
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
 
         double* ptr = tensor.data();
         const size_t size = tensor.size();
@@ -85,8 +91,8 @@ namespace org::spartan::internal::math::tensor {
      * Prevents "dying neurons" by allowing a small gradient (alpha) for negative values.
      */
     void TensorOps::applyLeakyReLU(const std::span<double> tensor, const double alpha) {
-        auto& ops = getSelectedSimdOperations();
-        int laneCount = getSimdLaneCount();
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
 
         double* ptr = tensor.data();
         const size_t size = tensor.size();
@@ -107,8 +113,8 @@ namespace org::spartan::internal::math::tensor {
      * Provides high throughput for policy networks with negligible error.
      */
     void TensorOps::applyTanh(const std::span<double> tensor) {
-        auto& ops = getSelectedSimdOperations();
-        int laneCount = getSimdLaneCount();
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
 
         double* ptr = tensor.data();
         const size_t size = tensor.size();
@@ -123,7 +129,7 @@ namespace org::spartan::internal::math::tensor {
             const SimdFloat x2 = ops.multiply(x, x);
             const SimdFloat num = ops.multiply(x, ops.add(c27, x2));
             const SimdFloat den = ops.fusedMultiplyAdd(c9, x2, c27);
-            SimdFloat res = ops.divide(num, den);
+            const SimdFloat res = ops.divide(num, den);
             ops.store(&ptr[i], ops.maximum(n1, ops.minimum(p1, res)));
         }
         for (; i < size; ++i) ptr[i] = std::tanh(ptr[i]);
@@ -134,8 +140,8 @@ namespace org::spartan::internal::math::tensor {
      * Prevents exponential overflow in discrete action spaces.
      */
     void TensorOps::applySoftmax(const std::span<double> tensor) {
-        auto& ops = getSelectedSimdOperations();
-        int laneCount = getSimdLaneCount();
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
 
         if (tensor.empty()) return;
         double* ptr = tensor.data();
@@ -172,8 +178,8 @@ namespace org::spartan::internal::math::tensor {
      * If the global norm exceeds maxNorm, all gradients are scaled down.
      */
     void TensorOps::clipGradients(std::span<double> gradients, const double maxNorm) {
-        auto& ops = getSelectedSimdOperations();
-        int laneCount = getSimdLaneCount();
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
 
         const size_t size = gradients.size();
         const double* ptr = gradients.data();
@@ -188,8 +194,7 @@ namespace org::spartan::internal::math::tensor {
         double totalSumSq = ops.horizontalSum(sumSqAcc);
         for (; i < size; ++i) totalSumSq += ptr[i] * ptr[i];
 
-        double norm = std::sqrt(totalSumSq);
-        if (norm > maxNorm) {
+        if (const double norm = std::sqrt(totalSumSq); norm > maxNorm) {
             const double scale = maxNorm / (norm + 1e-8);
             const SimdFloat sScale = ops.broadcast(scale);
 
@@ -205,13 +210,17 @@ namespace org::spartan::internal::math::tensor {
      * Performs a Polyak (Soft) update for target networks.
      * target = tau * online + (1 - tau) * target
      */
-    void TensorOps::applyPolyakAveraging(const std::span<const double> online, const std::span<double> target, const double tau) {
-        auto& ops = getSelectedSimdOperations();
-        int laneCount = getSimdLaneCount();
+    void TensorOps::applyPolyakAveraging(
+        const std::span<const double> onlineWeights,
+        const std::span<double> targetWeights,
+        const double tau
+        ) {
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
 
-        const size_t size = online.size();
-        const double* oPtr = online.data();
-        double* tPtr = target.data();
+        const size_t size = onlineWeights.size();
+        const double* oPtr = onlineWeights.data();
+        double* tPtr = targetWeights.data();
         const SimdFloat sTau = ops.broadcast(tau);
 
         size_t i = 0;
@@ -229,44 +238,50 @@ namespace org::spartan::internal::math::tensor {
      * Updates weights using first (m) and second (v) moments of gradients.
      */
     void TensorOps::applyAdamUpdate(
-            const std::span<double> w, const std::span<const double> g,
-            const std::span<double> m, const std::span<double> v,
-            const double lr, const double b1, const double b2,
-            const double eps, const int t) {
+            const std::span<double> weights,
+            const std::span<const double> gradients,
+            const std::span<double> momentum,
+            const std::span<double> velocity,
+            const double learningRate,
+            const double beta1,
+            const double beta2,
+            const double epsilon,
+            const int timestep
+            ) {
 
-        auto& ops = getSelectedSimdOperations();
-        int laneCount = getSimdLaneCount();
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
 
-        const size_t size = w.size();
-        const double alphaEff = lr * std::sqrt(1.0 - std::pow(b2, t)) / (1.0 - std::pow(b1, t));
+        const size_t size = weights.size();
+        const double alphaEff = learningRate * std::sqrt(1.0 - std::pow(beta2, timestep)) / (1.0 - std::pow(beta1, timestep));
 
-        const SimdFloat sb1 = ops.broadcast(b1), sb1c = ops.broadcast(1.0 - b1);
-        const SimdFloat sb2 = ops.broadcast(b2), sb2c = ops.broadcast(1.0 - b2);
-        const SimdFloat se = ops.broadcast(eps), sa = ops.broadcast(-alphaEff);
+        const SimdFloat sb1 = ops.broadcast(beta1), sb1c = ops.broadcast(1.0 - beta1);
+        const SimdFloat sb2 = ops.broadcast(beta2), sb2c = ops.broadcast(1.0 - beta2);
+        const SimdFloat se = ops.broadcast(epsilon), sa = ops.broadcast(-alphaEff);
 
-        double* wP = w.data(); const double* gP = g.data();
-        double* mP = m.data(); double* vP = v.data();
+        double* wP = weights.data(); const double* gP = gradients.data();
+        double* mP = momentum.data(); double* vP = velocity.data();
 
         size_t i = 0;
         for (; i + (laneCount - 1) < size; i += laneCount) {
-            SimdFloat grad = ops.load(&gP[i]);
+            const SimdFloat grad = ops.load(&gP[i]);
             // m = b1 * m + (1 - b1) * g
-            SimdFloat nm = ops.fusedMultiplyAdd(ops.load(&mP[i]), sb1, ops.multiply(grad, sb1c));
+            const SimdFloat nm = ops.fusedMultiplyAdd(ops.load(&mP[i]), sb1, ops.multiply(grad, sb1c));
             // v = b2 * v + (1 - b2) * g^2
-            SimdFloat nv = ops.fusedMultiplyAdd(ops.load(&vP[i]), sb2, ops.multiply(ops.multiply(grad, grad), sb2c));
+            const SimdFloat nv = ops.fusedMultiplyAdd(ops.load(&vP[i]), sb2, ops.multiply(ops.multiply(grad, grad), sb2c));
 
             ops.store(&mP[i], nm);
             ops.store(&vP[i], nv);
 
             // w = w - alpha * (m / (sqrt(v) + eps))
-            SimdFloat update = ops.divide(nm, ops.add(ops.sqrt(nv), se));
+            const SimdFloat update = ops.divide(nm, ops.add(ops.sqrt(nv), se));
             ops.store(&wP[i], ops.fusedMultiplyAdd(update, sa, ops.load(&wP[i])));
         }
 
         for (; i < size; ++i) {
-            mP[i] = b1 * mP[i] + (1.0 - b1) * gP[i];
-            vP[i] = b2 * vP[i] + (1.0 - b2) * gP[i] * gP[i];
-            wP[i] -= alphaEff * (mP[i] / (std::sqrt(vP[i]) + eps));
+            mP[i] = beta1 * mP[i] + (1.0 - beta1) * gP[i];
+            vP[i] = beta2 * vP[i] + (1.0 - beta2) * gP[i] * gP[i];
+            wP[i] -= alphaEff * (mP[i] / (std::sqrt(vP[i]) + epsilon));
         }
     }
 
@@ -275,20 +290,23 @@ namespace org::spartan::internal::math::tensor {
      * Computes both Weight Gradients (outWG) and Input Gradients (outIG).
      */
     void TensorOps::denseBackwardPass(
-            const std::span<const double> in, const std::span<const double> outG,
-            const std::span<const double> w, const std::span<double> outWG,
-            const std::span<double> outIG) {
+            const std::span<const double> inputs,
+            const std::span<const double> outputGradients,
+            const std::span<const double> weights,
+            const std::span<double> outWeightGradients,
+            const std::span<double> outInputGradients
+            ) {
 
-        auto& ops = getSelectedSimdOperations();
-        int laneCount = getSimdLaneCount();
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
 
-        const size_t inS = in.size(), outS = outG.size();
+        const size_t inS = inputs.size(), outS = outputGradients.size();
         if (inS == 0 || outS == 0) return;
 
-        std::fill(outIG.begin(), outIG.end(), 0.0);
-        const double* inP = in.data(); const double* ogP = outG.data();
-        const double* wP = w.data(); double* wgP = outWG.data();
-        double* igP = outIG.data();
+        std::ranges::fill(outInputGradients, 0.0);
+        const double* inP = inputs.data(); const double* ogP = outputGradients.data();
+        const double* wP = weights.data(); double* wgP = outWeightGradients.data();
+        double* igP = outInputGradients.data();
 
         for (size_t n = 0; n < outS; ++n) {
             const SimdFloat sGrad = ops.broadcast(ogP[n]);
@@ -345,8 +363,8 @@ namespace org::spartan::internal::math::tensor {
      * Uses a rational approximant for speed.
      */
     void TensorOps::applySigmoidFast(const std::span<double> tensor) {
-        auto& ops = getSelectedSimdOperations();
-        int laneCount = getSimdLaneCount();
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
 
         double* ptr = tensor.data();
         const size_t size = tensor.size();
@@ -377,8 +395,8 @@ namespace org::spartan::internal::math::tensor {
      * Uses Taylor series approximation for speed on embedded hardware.
      */
     void TensorOps::applyExpFast(const std::span<double> tensor) {
-        auto& ops = getSelectedSimdOperations();
-        int laneCount = getSimdLaneCount();
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
 
         double* ptr = tensor.data();
         const size_t size = tensor.size();
@@ -449,8 +467,8 @@ namespace org::spartan::internal::math::tensor {
             const std::span<const double> predictions,
             const std::span<const double> targets) {
 
-        auto& ops = getSelectedSimdOperations();
-        int laneCount = getSimdLaneCount();
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
 
         const size_t size = predictions.size();
         if (size == 0) return 0.0;
@@ -486,8 +504,8 @@ namespace org::spartan::internal::math::tensor {
             const std::span<const double> targets,
             const std::span<double> gradientsOutput) {
 
-        auto& ops = getSelectedSimdOperations();
-        int laneCount = getSimdLaneCount();
+        const auto& ops = getSelectedSimdOperations();
+        const int laneCount = getSimdLaneCount();
 
         const size_t size = predictions.size();
         if (size == 0) return;
@@ -599,14 +617,15 @@ namespace org::spartan::internal::math::tensor {
         const std::span<const double> logStdDevs,
         const int actionDim,
         const int batchSize,
-        std::span<double> outLogProbs) {
+        std::span<double> outLogProbs
+        ) {
 
         const double* actPtr = actions.data();
         const double* meanPtr = means.data();
         const double* logStdPtr = logStdDevs.data();
         double* outPtr = outLogProbs.data();
 
-        const double LOG_2PI = 1.8378770664093453;
+        constexpr double LOG_2PI = 1.8378770664093453;
         const double CONSTANT_TERM = 0.5 * actionDim * LOG_2PI;
 
         std::vector<double> invStd(actionDim);
@@ -634,7 +653,8 @@ namespace org::spartan::internal::math::tensor {
     void TensorOps::computeProbabilityRatios(
             const std::span<const double> logProbsNew,
             const std::span<const double> logProbsOld,
-            std::span<double> outRatios) {
+            std::span<double> outRatios
+            ) {
 
         const auto& ops = getSelectedSimdOperations();
         const int laneCount = getSimdLaneCount();
@@ -694,7 +714,8 @@ namespace org::spartan::internal::math::tensor {
             const std::span<const double> tdErrors,
             const double gamma,
             const double lambdaGAE,
-            std::span<double> outAdvantages) {
+            std::span<double> outAdvantages
+            ) {
 
         const size_t T = tdErrors.size();
         if (T == 0) return;
@@ -843,3 +864,4 @@ namespace org::spartan::internal::math::tensor {
         return entropy;
     }
 }
+

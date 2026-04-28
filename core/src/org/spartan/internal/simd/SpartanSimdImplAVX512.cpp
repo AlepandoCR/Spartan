@@ -13,119 +13,119 @@ namespace org::spartan::internal::simd::implementations {
     #pragma GCC target("avx512f,avx512dq")
     #pragma clang attribute push(__attribute__((target("avx512f,avx512dq"))), apply_to=function)
     SimdFloat avx512_load(const double* ptr) {
-        SimdFloat result;
-        __m512d v = _mm512_loadu_pd(ptr);
+        SimdFloat result{};
+        const __m512d v = _mm512_loadu_pd(ptr);
         _mm512_storeu_pd(result.data, v);
         return result;
     }
 
-    void avx512_store(double* ptr, SimdFloat value) {
-        __m512d v = _mm512_loadu_pd(value.data);
+    void avx512_store(double* ptr, const SimdFloat &value) {
+        const __m512d v = _mm512_loadu_pd(value.data);
         _mm512_storeu_pd(ptr, v);
     }
 
-    SimdFloat avx512_add(SimdFloat a, SimdFloat b) {
-        SimdFloat result;
-        __m512d va = _mm512_loadu_pd(a.data);
-        __m512d vb = _mm512_loadu_pd(b.data);
+    SimdFloat avx512_add(const SimdFloat &a, const SimdFloat &b) {
+        SimdFloat result{};
+        const __m512d va = _mm512_loadu_pd(a.data);
+        const __m512d vb = _mm512_loadu_pd(b.data);
         _mm512_storeu_pd(result.data, _mm512_add_pd(va, vb));
         return result;
     }
 
-    SimdFloat avx512_subtract(SimdFloat a, SimdFloat b) {
-        SimdFloat result;
-        __m512d va = _mm512_loadu_pd(a.data);
-        __m512d vb = _mm512_loadu_pd(b.data);
+    SimdFloat avx512_subtract(const SimdFloat &a, const SimdFloat &b) {
+        SimdFloat result{};
+        const __m512d va = _mm512_loadu_pd(a.data);
+        const __m512d vb = _mm512_loadu_pd(b.data);
         _mm512_storeu_pd(result.data, _mm512_sub_pd(va, vb));
         return result;
     }
 
-    SimdFloat avx512_multiply(SimdFloat a, SimdFloat b) {
-        SimdFloat result;
-        __m512d va = _mm512_loadu_pd(a.data);
-        __m512d vb = _mm512_loadu_pd(b.data);
+    SimdFloat avx512_multiply(const SimdFloat &a, const SimdFloat &b) {
+        SimdFloat result{};
+        const __m512d va = _mm512_loadu_pd(a.data);
+        const __m512d vb = _mm512_loadu_pd(b.data);
         _mm512_storeu_pd(result.data, _mm512_mul_pd(va, vb));
         return result;
     }
 
-    SimdFloat avx512_divide(SimdFloat a, SimdFloat b) {
-        SimdFloat result;
-        __m512d va = _mm512_loadu_pd(a.data);
-        __m512d vb = _mm512_loadu_pd(b.data);
+    SimdFloat avx512_divide(const SimdFloat &a, const SimdFloat &b) {
+        SimdFloat result{};
+        const __m512d va = _mm512_loadu_pd(a.data);
+        const __m512d vb = _mm512_loadu_pd(b.data);
         _mm512_storeu_pd(result.data, _mm512_div_pd(va, vb));
         return result;
     }
 
-    SimdFloat avx512_fusedMultiplyAdd(SimdFloat mul1, SimdFloat mul2, SimdFloat add) {
-        SimdFloat result;
-        __m512d vm1 = _mm512_loadu_pd(mul1.data);
-        __m512d vm2 = _mm512_loadu_pd(mul2.data);
-        __m512d va = _mm512_loadu_pd(add.data);
+    SimdFloat avx512_fusedMultiplyAdd(const SimdFloat &mul1, const SimdFloat &mul2, const SimdFloat &add) {
+        SimdFloat result{};
+        const __m512d vm1 = _mm512_loadu_pd(mul1.data);
+        const __m512d vm2 = _mm512_loadu_pd(mul2.data);
+        const __m512d va = _mm512_loadu_pd(add.data);
         _mm512_storeu_pd(result.data, _mm512_fmadd_pd(vm1, vm2, va));
         return result;
     }
 
-    SimdFloat avx512_maximum(SimdFloat a, SimdFloat b) {
-        SimdFloat result;
-        __m512d va = _mm512_loadu_pd(a.data);
-        __m512d vb = _mm512_loadu_pd(b.data);
+    SimdFloat avx512_maximum(const SimdFloat &a, const SimdFloat &b) {
+        SimdFloat result{};
+        const __m512d va = _mm512_loadu_pd(a.data);
+        const __m512d vb = _mm512_loadu_pd(b.data);
         _mm512_storeu_pd(result.data, _mm512_max_pd(va, vb));
         return result;
     }
 
-    SimdFloat avx512_minimum(SimdFloat a, SimdFloat b) {
-        SimdFloat result;
-        __m512d va = _mm512_loadu_pd(a.data);
-        __m512d vb = _mm512_loadu_pd(b.data);
+    SimdFloat avx512_minimum(const SimdFloat &a, const SimdFloat &b) {
+        SimdFloat result{};
+        const __m512d va = _mm512_loadu_pd(a.data);
+        const __m512d vb = _mm512_loadu_pd(b.data);
         _mm512_storeu_pd(result.data, _mm512_min_pd(va, vb));
         return result;
     }
 
-    SimdFloat avx512_setZero(void) {
-        SimdFloat result;
+    SimdFloat avx512_setZero() {
+        SimdFloat result{};
         _mm512_storeu_pd(result.data, _mm512_setzero_pd());
         return result;
     }
 
-    SimdFloat avx512_broadcast(double scalar) {
-        SimdFloat result;
+    SimdFloat avx512_broadcast(const double scalar) {
+        SimdFloat result{};
         _mm512_storeu_pd(result.data, _mm512_set1_pd(scalar));
         return result;
     }
 
-    double avx512_horizontalSum(SimdFloat value) {
-        __m512d v = _mm512_loadu_pd(value.data);
+    double avx512_horizontalSum(const SimdFloat &value) {
+        const __m512d v = _mm512_loadu_pd(value.data);
         return _mm512_reduce_add_pd(v);
     }
 
-    SimdFloat avx512_sqrt(SimdFloat value) {
-        SimdFloat result;
-        __m512d v = _mm512_loadu_pd(value.data);
+    SimdFloat avx512_sqrt(const SimdFloat &value) {
+        SimdFloat result{};
+        const __m512d v = _mm512_loadu_pd(value.data);
         _mm512_storeu_pd(result.data, _mm512_sqrt_pd(v));
         return result;
     }
 
-    SimdFloat avx512_abs(SimdFloat value) {
-        SimdFloat result;
-        __m512d v = _mm512_loadu_pd(value.data);
+    SimdFloat avx512_abs(const SimdFloat &value) {
+        SimdFloat result{};
+        const __m512d v = _mm512_loadu_pd(value.data);
         _mm512_storeu_pd(result.data, _mm512_abs_pd(v));
         return result;
     }
 
-    SimdFloat avx512_compareGreaterThan(SimdFloat a, SimdFloat b) {
-        SimdFloat result;
-        __m512d va = _mm512_loadu_pd(a.data);
-        __m512d vb = _mm512_loadu_pd(b.data);
-        __mmask8 mask = _mm512_cmp_pd_mask(va, vb, _CMP_GT_OQ);
+    SimdFloat avx512_compareGreaterThan(const SimdFloat &a, const SimdFloat &b) {
+        SimdFloat result{};
+        const __m512d va = _mm512_loadu_pd(a.data);
+        const __m512d vb = _mm512_loadu_pd(b.data);
+        const __mmask8 mask = _mm512_cmp_pd_mask(va, vb, _CMP_GT_OQ);
         _mm512_storeu_pd(result.data, _mm512_maskz_mov_pd(mask, _mm512_set1_pd(1.0)));
         return result;
     }
 
-    SimdFloat avx512_blend(SimdFloat trueValue, SimdFloat falseValue, SimdFloat mask) {
-        SimdFloat result;
-        __m512d vt = _mm512_loadu_pd(trueValue.data);
-        __m512d vf = _mm512_loadu_pd(falseValue.data);
-        __m512d vm = _mm512_loadu_pd(mask.data);
+    SimdFloat avx512_blend(const SimdFloat &trueValue, const SimdFloat &falseValue, const SimdFloat &mask) {
+        SimdFloat result{};
+        const __m512d vt = _mm512_loadu_pd(trueValue.data);
+        const __m512d vf = _mm512_loadu_pd(falseValue.data);
+        const __m512d vm = _mm512_loadu_pd(mask.data);
         __mmask8 mmask = _mm512_cmp_pd_mask(vm, _mm512_setzero_pd(), _CMP_NEQ_OQ);
         _mm512_storeu_pd(result.data, _mm512_mask_blend_pd(mmask, vf, vt));
         return result;

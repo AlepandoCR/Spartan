@@ -4,10 +4,6 @@
 
 #pragma once
 
-#include <span>
-#include <cstdint>
-#include "SpartanSimdDetector.h"
-
 /**
  * @file SpartanSimdOps.h
  * @brief Runtime-dispatched PRIMITIVE SIMD operations.
@@ -40,29 +36,29 @@ namespace org::spartan::internal::simd {
     struct SimdOperations {
         // Primitive load/store
         SimdFloat (*load)(const double* ptr) = nullptr;
-        void (*store)(double* ptr, SimdFloat value) = nullptr;
+        void (*store)(double* ptr, const SimdFloat &value) = nullptr;
 
         // Basic arithmetic
-        SimdFloat (*add)(SimdFloat a, SimdFloat b) = nullptr;
-        SimdFloat (*subtract)(SimdFloat a, SimdFloat b) = nullptr;
-        SimdFloat (*multiply)(SimdFloat a, SimdFloat b) = nullptr;
-        SimdFloat (*divide)(SimdFloat a, SimdFloat b) = nullptr;
-        SimdFloat (*fusedMultiplyAdd)(SimdFloat mul1, SimdFloat mul2, SimdFloat add) = nullptr;
+        SimdFloat (*add)(const SimdFloat &a, const SimdFloat &b) = nullptr;
+        SimdFloat (*subtract)(const SimdFloat &a, const SimdFloat &b) = nullptr;
+        SimdFloat (*multiply)(const SimdFloat &a, const SimdFloat &b) = nullptr;
+        SimdFloat (*divide)(const SimdFloat &a, const SimdFloat &b) = nullptr;
+        SimdFloat (*fusedMultiplyAdd)(const SimdFloat &mul1, const SimdFloat &mul2, const SimdFloat &add) = nullptr;
 
         // Min/max
-        SimdFloat (*maximum)(SimdFloat a, SimdFloat b) = nullptr;
-        SimdFloat (*minimum)(SimdFloat a, SimdFloat b) = nullptr;
+        SimdFloat (*maximum)(const SimdFloat &a, const SimdFloat &b) = nullptr;
+        SimdFloat (*minimum)(const SimdFloat &a, const SimdFloat &b) = nullptr;
 
         // Utility
-        SimdFloat (*setZero)(void) = nullptr;
+        SimdFloat (*setZero)() = nullptr;
         SimdFloat (*broadcast)(double scalar) = nullptr;
-        double (*horizontalSum)(SimdFloat value) = nullptr;
+        double (*horizontalSum)(const SimdFloat &value) = nullptr;
 
         // Advanced
-        SimdFloat (*sqrt)(SimdFloat value) = nullptr;
-        SimdFloat (*abs)(SimdFloat value) = nullptr;
-        SimdFloat (*compareGreaterThan)(SimdFloat a, SimdFloat b) = nullptr;
-        SimdFloat (*blend)(SimdFloat trueValue, SimdFloat falseValue, SimdFloat mask) = nullptr;
+        SimdFloat (*sqrt)(const SimdFloat &value) = nullptr;
+        SimdFloat (*abs)(const SimdFloat &value) = nullptr;
+        SimdFloat (*compareGreaterThan)(const SimdFloat &a, const SimdFloat &b) = nullptr;
+        SimdFloat (*blend)(const SimdFloat &trueValue, const SimdFloat &falseValue, const SimdFloat &mask) = nullptr;
     };
 
     /**

@@ -11,7 +11,7 @@ namespace org::spartan::internal::machinelearning {
 
 namespace org::spartan::internal::machinelearning::persistence {
 
-    // Model type identifiers
+    // Model type identifier constants (short names for convenience)
     constexpr uint32_t MODEL_TYPE_RSAC = 1;
     constexpr uint32_t MODEL_TYPE_DDQN = 2;
     constexpr uint32_t MODEL_TYPE_AUTOENCODER = 3;

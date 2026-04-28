@@ -14,51 +14,51 @@ namespace org::spartan::internal::simd::implementations {
     #pragma clang attribute push(__attribute__((target("neon"))), apply_to=function)
 
     SimdFloat neon_load(const double* ptr) {
-        SimdFloat result;
+        SimdFloat result{};
         float64x2_t v = vld1q_f64(ptr);
         vst1q_f64(result.data, v);
         return result;
     }
 
-    void neon_store(double* ptr, SimdFloat value) {
+    void neon_store(double* ptr, const SimdFloat &value) {
         float64x2_t v = vld1q_f64(value.data);
         vst1q_f64(ptr, v);
     }
 
-    SimdFloat neon_add(SimdFloat a, SimdFloat b) {
-        SimdFloat result;
+    SimdFloat neon_add(const SimdFloat &a, const SimdFloat &b) {
+        SimdFloat result{};
         float64x2_t va = vld1q_f64(a.data);
         float64x2_t vb = vld1q_f64(b.data);
         vst1q_f64(result.data, vaddq_f64(va, vb));
         return result;
     }
 
-    SimdFloat neon_subtract(SimdFloat a, SimdFloat b) {
-        SimdFloat result;
+    SimdFloat neon_subtract(const SimdFloat &a, const SimdFloat &b) {
+        SimdFloat result{};
         float64x2_t va = vld1q_f64(a.data);
         float64x2_t vb = vld1q_f64(b.data);
         vst1q_f64(result.data, vsubq_f64(va, vb));
         return result;
     }
 
-    SimdFloat neon_multiply(SimdFloat a, SimdFloat b) {
-        SimdFloat result;
+    SimdFloat neon_multiply(const SimdFloat &a, const SimdFloat &b) {
+        SimdFloat result{};
         float64x2_t va = vld1q_f64(a.data);
         float64x2_t vb = vld1q_f64(b.data);
         vst1q_f64(result.data, vmulq_f64(va, vb));
         return result;
     }
 
-    SimdFloat neon_divide(SimdFloat a, SimdFloat b) {
-        SimdFloat result;
+    SimdFloat neon_divide(const SimdFloat &a, const SimdFloat &b) {
+        SimdFloat result{};
         float64x2_t va = vld1q_f64(a.data);
         float64x2_t vb = vld1q_f64(b.data);
         vst1q_f64(result.data, vdivq_f64(va, vb));
         return result;
     }
 
-    SimdFloat neon_fusedMultiplyAdd(SimdFloat mul1, SimdFloat mul2, SimdFloat add) {
-        SimdFloat result;
+    SimdFloat neon_fusedMultiplyAdd(const SimdFloat &mul1, const SimdFloat &mul2, const SimdFloat &add) {
+        SimdFloat result{};
         float64x2_t vm1 = vld1q_f64(mul1.data);
         float64x2_t vm2 = vld1q_f64(mul2.data);
         float64x2_t va = vld1q_f64(add.data);
@@ -66,55 +66,55 @@ namespace org::spartan::internal::simd::implementations {
         return result;
     }
 
-    SimdFloat neon_maximum(SimdFloat a, SimdFloat b) {
-        SimdFloat result;
+    SimdFloat neon_maximum(const SimdFloat &a, const SimdFloat &b) {
+        SimdFloat result{};
         float64x2_t va = vld1q_f64(a.data);
         float64x2_t vb = vld1q_f64(b.data);
         vst1q_f64(result.data, vmaxq_f64(va, vb));
         return result;
     }
 
-    SimdFloat neon_minimum(SimdFloat a, SimdFloat b) {
-        SimdFloat result;
+    SimdFloat neon_minimum(const SimdFloat &a, const SimdFloat &b) {
+        SimdFloat result{};
         float64x2_t va = vld1q_f64(a.data);
         float64x2_t vb = vld1q_f64(b.data);
         vst1q_f64(result.data, vminq_f64(va, vb));
         return result;
     }
 
-    SimdFloat neon_setZero(void) {
-        SimdFloat result;
+    SimdFloat neon_setZero() {
+        SimdFloat result{};
         vst1q_f64(result.data, vdupq_n_f64(0.0));
         return result;
     }
 
-    SimdFloat neon_broadcast(double scalar) {
-        SimdFloat result;
+    SimdFloat neon_broadcast(const double scalar) {
+        SimdFloat result{};
         vst1q_f64(result.data, vdupq_n_f64(scalar));
         return result;
     }
 
-    double neon_horizontalSum(SimdFloat value) {
+    double neon_horizontalSum(const SimdFloat &value) {
         float64x2_t v = vld1q_f64(value.data);
         return vaddvq_f64(v);
     }
 
-    SimdFloat neon_sqrt(SimdFloat value) {
-        SimdFloat result;
+    SimdFloat neon_sqrt(const SimdFloat &value) {
+        SimdFloat result{};
         float64x2_t v = vld1q_f64(value.data);
         vst1q_f64(result.data, vsqrtq_f64(v));
         return result;
     }
 
-    SimdFloat neon_abs(SimdFloat value) {
-        SimdFloat result;
+    SimdFloat neon_abs(const SimdFloat &value) {
+        SimdFloat result{};
         float64x2_t v = vld1q_f64(value.data);
         vst1q_f64(result.data, vabsq_f64(v));
         return result;
     }
 
-    SimdFloat neon_compareGreaterThan(SimdFloat a, SimdFloat b) {
-        SimdFloat result;
+    SimdFloat neon_compareGreaterThan(const SimdFloat &a, const SimdFloat &b) {
+        SimdFloat result{};
         float64x2_t va = vld1q_f64(a.data);
         float64x2_t vb = vld1q_f64(b.data);
         uint64x2_t mask = vcgtq_f64(va, vb);
@@ -123,8 +123,8 @@ namespace org::spartan::internal::simd::implementations {
         return result;
     }
 
-    SimdFloat neon_blend(SimdFloat trueValue, SimdFloat falseValue, SimdFloat mask) {
-        SimdFloat result;
+    SimdFloat neon_blend(const SimdFloat &trueValue, const SimdFloat &falseValue, const SimdFloat &mask) {
+        SimdFloat result{};
         float64x2_t vt = vld1q_f64(trueValue.data);
         float64x2_t vf = vld1q_f64(falseValue.data);
         float64x2_t vm = vld1q_f64(mask.data);

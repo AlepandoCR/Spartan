@@ -5,9 +5,7 @@
 
 namespace org::spartan::internal::machinelearning::persistence {
 
-    CuriosityRsacPersistenceModule::CuriosityRsacPersistenceModule() {
-        // Empty constructor - registration handled by initializeAndRegister()
-    }
+    CuriosityRsacPersistenceModule::CuriosityRsacPersistenceModule() = default;
 
     void CuriosityRsacPersistenceModule::initializeAndRegister() {
         static bool initialized = false;
@@ -19,7 +17,7 @@ namespace org::spartan::internal::machinelearning::persistence {
     }
 
     std::vector<double> CuriosityRsacPersistenceModule::serialize(
-            const machinelearning::SpartanModel* model) {
+            const SpartanModel* model) {
 
         const auto* curiosityModel =
             dynamic_cast<const CuriosityDrivenRecurrentSoftActorCriticSpartanModel*>(model);
@@ -47,7 +45,7 @@ namespace org::spartan::internal::machinelearning::persistence {
     }
 
     bool CuriosityRsacPersistenceModule::deserialize(
-            machinelearning::SpartanModel* model,
+            SpartanModel* model,
             const std::vector<double>& weights) {
 
         auto* curiosityModel =
@@ -60,13 +58,12 @@ namespace org::spartan::internal::machinelearning::persistence {
         const auto criticWeights = curiosityModel->getCriticWeights();
         const auto modelWeights = curiosityModel->getModelWeightsMutable();
 
-        size_t expectedSize = criticWeights.size() + modelWeights.size();
-        if (weights.size() != expectedSize) {
+        if (size_t expectedSize = criticWeights.size() + modelWeights.size(); weights.size() != expectedSize) {
             logging::SpartanLogger::error("CuriosityRsacPersistenceModule::deserialize: Size mismatch");
             return false;
         }
 
-        std::copy(weights.begin(), weights.begin() + criticWeights.size(),
+        std::copy_n(weights.begin(), criticWeights.size(),
                  curiosityModel->getCriticWeightsMutable().begin());
 
         std::copy(weights.begin() + criticWeights.size(), weights.end(),

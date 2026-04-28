@@ -31,12 +31,12 @@
 
         uint32_t compute_layout_signature() {
             uint32_t hash = 0x811C9DC5u;
-            hash = fnv1a(hash, static_cast<uint32_t>(sizeof(BaseHyperparameterConfig)));
-            hash = fnv1a(hash, static_cast<uint32_t>(sizeof(RecurrentSoftActorCriticHyperparameterConfig)));
-            hash = fnv1a(hash, static_cast<uint32_t>(sizeof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig)));
-            hash = fnv1a(hash, static_cast<uint32_t>(offsetof(RecurrentSoftActorCriticHyperparameterConfig, recurrentInputFeatureCount)));
-            hash = fnv1a(hash, static_cast<uint32_t>(offsetof(RecurrentSoftActorCriticHyperparameterConfig, targetSmoothingCoefficient)));
-            hash = fnv1a(hash, static_cast<uint32_t>(offsetof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig, forwardDynamicsHiddenLayerDimensionSize)));
+            hash = fnv1a(hash, sizeof(BaseHyperparameterConfig));
+            hash = fnv1a(hash, sizeof(RecurrentSoftActorCriticHyperparameterConfig));
+            hash = fnv1a(hash, sizeof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig));
+            hash = fnv1a(hash, offsetof(RecurrentSoftActorCriticHyperparameterConfig, recurrentInputFeatureCount));
+            hash = fnv1a(hash, offsetof(RecurrentSoftActorCriticHyperparameterConfig, targetSmoothingCoefficient));
+            hash = fnv1a(hash, offsetof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig, forwardDynamicsHiddenLayerDimensionSize));
             return hash;
         }
     }

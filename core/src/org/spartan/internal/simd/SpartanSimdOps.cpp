@@ -3,8 +3,8 @@
 //
 
 #include "SpartanSimdOps.h"
+#include "SpartanSimdDetector.h"
 #include "../logging/SpartanLogger.h"
-#include <format>
 #include <mutex>
 #include <atomic>
 
@@ -27,7 +27,7 @@ namespace org::spartan::internal::simd {
     namespace {
         // Thread-safe globals with mutex protection and atomic flag
         std::mutex g_simd_mutex;
-        std::atomic<bool> g_operations_initialized(false);
+        std::atomic g_operations_initialized(false);
         SimdOperations g_selectedOperations;
     }
 
@@ -46,14 +46,14 @@ namespace org::spartan::internal::simd {
             return;
         }
 
-        std::lock_guard<std::mutex> lock(g_simd_mutex);
+        std::lock_guard lock(g_simd_mutex);
 
         // Double-check inside lock: another thread might have initialized while we waited
         if (g_operations_initialized.load(std::memory_order_acquire)) {
             return;
         }
 
-        const auto& capabilities = getDetectedCapabilities();
+        const CpuCapabilities& capabilities = getDetectedCapabilities();
 
         using logging::SpartanLogger;
 
