@@ -27,13 +27,13 @@ Add Spartan to your `pom.xml`:
 <dependency>
     <groupId>io.github.alepandocr</groupId>
     <artifactId>spartan-api</artifactId>
-    <version>1.0.25</version>
+    <version>version</version>
 </dependency>
 <dependency>
     <groupId>io.github.alepandocr</groupId>
     <artifactId>spartan-internal</artifactId>
-    <version>1.0.25</version>
-    <scope>runtime</scope>
+    <version>version</version>
+    <classifier>OS</classifier> // change OS to windows, linux, or macos
 </dependency>
 ```
 
@@ -42,9 +42,9 @@ Or Gradle:
 ```gradle
 dependencies {
 
-    implementation("io.github.alepandocr:spartan-api:1.0.25")
+    implementation("io.github.alepandocr:spartan-api:version") // replace version with latest
     
-    runtimeOnly("io.github.alepandocr:spartan-internal:1.0.25")
+    runtimeOnly("io.github.alepandocr:spartan-internal:version:OS") // change OS to windows, linux, or macos
 }
 ```
 
@@ -56,7 +56,8 @@ import org.spartan.api.engine.context.SpartanContext;
 import org.spartan.api.engine.action.SpartanActionManager;
 import org.spartan.api.engine.config.DoubleDeepQNetworkConfig;
 
-try (SpartanApi api = SpartanApi.create()) {
+
+try (SpartanApi api = new SpartanApiImpl()) {
     // Create a context for managing state tensors
     SpartanContext context = api.createContext("my-configuration");                     
     

@@ -9,6 +9,7 @@ import org.spartan.api.engine.config.*;
 import org.spartan.api.engine.context.SpartanContext;
 import org.spartan.internal.engine.SpartanModelImpl;
 import org.spartan.internal.engine.action.SpartanActionManagerImpl;
+import org.spartan.internal.engine.config.spi.SpartanConfigFactoryServiceProviderImpl;
 import org.spartan.internal.engine.context.SpartanContextImpl;
 import org.spartan.internal.bridge.SpartanNative;
 import org.spartan.internal.engine.model.*;
@@ -24,6 +25,7 @@ public class SpartanApiImpl implements SpartanApi {
     public SpartanApiImpl() {
         this.arena = Arena.ofShared();
         // Ensure native is loaded
+        new SpartanConfigFactoryServiceProviderImpl(); // start spartan config spi
         SpartanNative.spartanInit();
     }
 
