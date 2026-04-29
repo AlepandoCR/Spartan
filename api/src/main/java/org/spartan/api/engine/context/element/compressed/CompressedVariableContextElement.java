@@ -30,14 +30,14 @@ import java.nio.file.Path;
  */
 public class CompressedVariableContextElement implements SpartanContextElement {
 
-    private final SpartanVariableContextElement rawElement;
+    private final SpartanContextElement rawElement;
     private final AutoEncoderCompressorModel compressor;
     private final SpartanContext internalContext;
     private final int compressedSize;
     private final double[] compressedBuffer;
 
     /**
-     * Constructs the compressed element - SELF-CONTAINED.
+     * Constructs the compressed element.
      * <b>No need to pass SpartanContext from parent</b> - we create our own minimal context internally.
      * The element is completely independent and can be used in any context.
      * <b>Important:</b> SpartanApi must be provided via dependency injection for safety.
@@ -48,7 +48,7 @@ public class CompressedVariableContextElement implements SpartanContextElement {
      * @throws IllegalArgumentException if any parameter is null
      */
     public CompressedVariableContextElement(
-        @NotNull SpartanVariableContextElement rawElement,
+        @NotNull SpartanContextElement rawElement,
         @NotNull AutoEncoderCompressorConfig compressorConfig,
         @NotNull SpartanApi api) {
 
@@ -61,7 +61,7 @@ public class CompressedVariableContextElement implements SpartanContextElement {
         // Register only the raw element in the internal context at logical index 0
         this.internalContext.addElement(rawElement, 0);
 
-        // Create a dummy action manager (compressor doesn't use it, but API requires it)
+        // Create a dummy action manager
         var dummyActions = api.createActionManager();
 
         // Create compressor model - it will read from our internal context
@@ -78,7 +78,7 @@ public class CompressedVariableContextElement implements SpartanContextElement {
 
     /**
      * Returns the compressed size (latent dimension).
-     * <b>KEY INSIGHT:</b> This returns COMPRESSED size, not raw size.
+     * This returns compressed size, not raw size.
      * This enables parent Context to calculate stable offsets.
      * Regardless of how many raw entities, output is always compressedSize.
      *
@@ -170,7 +170,7 @@ public class CompressedVariableContextElement implements SpartanContextElement {
      *
      * @return the underlying SpartanVariableContextElement
      */
-    public @NotNull SpartanVariableContextElement getRawElement() {
+    public @NotNull SpartanContextElement getRawElement() {
         return rawElement;
     }
 
