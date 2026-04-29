@@ -1,6 +1,7 @@
 import org.gradle.kotlin.dsl.invoke
 import org.gradle.kotlin.dsl.test
 import java.util.Properties
+import org.gradle.api.tasks.compile.JavaCompile
 
 plugins {
     id("java")
@@ -9,11 +10,13 @@ plugins {
 }
 
 group = "org.spartan.internal"
-version = "1.0.26"
+version = "1.0.27"
 
 java{
     withSourcesJar()
     withJavadocJar()
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
 }
 
 repositories {
@@ -86,6 +89,29 @@ val generateNativeBindings by tasks.registering(Exec::class) {
 tasks {
     compileJava {
         dependsOn(generateNativeBindings)
+        // Preserve parameter names in compiled bytecode
+        options.compilerArgs.addAll(listOf(
+            "-encoding", "UTF-8",
+            "-parameters",  // Include method parameter names
+            "-Xlint:all"    // Show all warnings
+        ))
+    }
+
+    withType<JavaCompile>().configureEach {
+        // Ensure all Java compilation includes parameter names
+        options.compilerArgs.addAll(listOf(
+            "-encoding", "UTF-8",
+            "-parameters"
+        ))
+    }
+
+    withType<Javadoc>().configureEach {
+        // Generate comprehensive Javadoc with parameter documentation
+        options {
+            encoding = "UTF-8"
+            showFromProtected()  // Show protected and public members
+            source = "25"  // Match Java version
+        }
     }
 
     withType<Jar>().configureEach {

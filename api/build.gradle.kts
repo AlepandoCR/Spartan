@@ -1,4 +1,5 @@
 import java.util.Properties
+import org.gradle.api.tasks.compile.JavaCompile
 
 plugins {
     id("java")
@@ -6,11 +7,13 @@ plugins {
 }
 
 group = "org.spartan.api"
-version = "1.0.26"
+version = "1.0.27"
 
 java {
     withSourcesJar()
     withJavadocJar()
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
 }
 
 repositories {
@@ -28,6 +31,23 @@ dependencies {
 tasks {
     test {
         useJUnitPlatform()
+    }
+
+    withType<JavaCompile>().configureEach {
+        // Preserve parameter names in compiled bytecode (needed for Javadoc and IDEs)
+        options.compilerArgs.addAll(listOf(
+            "-encoding", "UTF-8",
+            "-parameters"  // Include method parameter names
+        ))
+    }
+
+    withType<Javadoc>().configureEach {
+        // Generate comprehensive Javadoc with parameter documentation
+        options {
+            encoding = "UTF-8"
+            showFromProtected()  // Show protected and public members
+            source = "25"  // Match Java version
+        }
     }
 
     withType<GenerateModuleMetadata>().configureEach {

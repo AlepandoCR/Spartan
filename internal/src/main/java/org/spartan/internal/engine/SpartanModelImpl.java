@@ -35,7 +35,8 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
     private final MemorySegment modelWeightsBuffer;
     private final MemorySegment criticWeightsBuffer;
     private final MemorySegment actionOutputBuffer;
-    private final MemorySegment contextBuffer; // Reference to context's buffer
+    // contextBuffer is not cached here. Its fetched dynamically from context each tick
+    // to ensure we always have the current buffer after potential reallocations
 
     private final int modelWeightsCount;
     private final int criticWeightsCount;
@@ -49,6 +50,10 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
     private double pendingReward = 0.0;
     private double episodeReward = 0.0;
     private double accumulatedTickReward = 0.0;
+
+    // Track context buffer changes to notify C++ of reallocations
+    private MemorySegment lastSeenContextBuffer = null;
+    private int lastSeenContextSize = 0;
 
     public SpartanModelImpl(@NotNull String identifier, long agentId, SpartanModelConfigType config, SpartanContext context, Iterable<SpartanAction> actions) {
         this.identifier = identifier;
@@ -121,8 +126,6 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
         this.modelWeightsBuffer = SpartanModelAllocator.allocateModelWeightsBuffer(mWeights, arena);
         this.criticWeightsBuffer = SpartanModelAllocator.allocateCriticWeightsBuffer(cWeights, arena);
         this.actionOutputBuffer = SpartanModelAllocator.allocateActionOutputBuffer(arena, actionCount);
-
-        this.contextBuffer = this.context.getData(); // SpartanContextImpl.getData() returns MemorySegment
     }
 
     @Override
@@ -188,6 +191,11 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
 
        SpartanNative.spartanLog("[Spartan-Java] Config buffer initialized with signature=" + storedSignature);
 
+       // Get the contextBuffer from context, not a cached snapshot
+       // This ensures we have the current buffer even if the context resized during construction
+       MemorySegment currentContextBuffer = context.getData();
+       int currentContextSize = context.getSize();
+       
        int result = SpartanNative.spartanRegisterModel(
            agentId,
            configBuffer,
@@ -195,8 +203,8 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
            criticWeightsCount,
            modelWeightsBuffer,
            modelWeightsCount,
-           contextBuffer,
-           context.getSize(),
+           currentContextBuffer,
+           currentContextSize,
            actionOutputBuffer,
            actionCount
        );
@@ -253,6 +261,20 @@ public class SpartanModelImpl<SpartanModelConfigType extends SpartanModelConfig>
         if (!isRegistered) throw new IllegalStateException("Model not registered");
 
         context.update();
+
+        // CRITICAL FIX: Check if context buffer was reallocated and notify C++ of changes
+        // This prevents SIGSEGV when C++ holds stale pointers to old dataSegment
+        MemorySegment currentContextBuffer = context.getData();
+        int currentContextSize = context.getSize();
+        
+        if (lastSeenContextBuffer == null || !lastSeenContextBuffer.equals(currentContextBuffer) || lastSeenContextSize != currentContextSize) {
+            // Context buffer pointer or size changed - notify C++ engine immediately
+            SpartanNative.spartanLog("[Spartan-Java] [CRITICAL] Context buffer reallocation detected: " +
+                "agentId=" + agentId + ", oldSize=" + lastSeenContextSize + ", newSize=" + currentContextSize);
+            SpartanNative.updateContextPointer(agentId, currentContextBuffer, currentContextSize);
+            lastSeenContextBuffer = currentContextBuffer;
+            lastSeenContextSize = currentContextSize;
+        }
 
         SpartanNative.spartanTickAgent(agentId, currentReward);
 

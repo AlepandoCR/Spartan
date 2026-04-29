@@ -7,6 +7,9 @@ import org.spartan.api.engine.context.SpartanContext;
 import org.spartan.api.engine.context.element.SpartanContextElement;
 import org.spartan.api.engine.context.element.variable.SpartanVariableContextElement;
 import org.spartan.api.engine.model.AutoEncoderCompressorModel;
+import org.spartan.api.exception.SpartanPersistenceException;
+
+import java.nio.file.Path;
 
 /**
  * A VariableContextElement that wraps a compressor model internally.
@@ -107,7 +110,6 @@ public class CompressedVariableContextElement implements SpartanContextElement {
 
     /**
      * Updates the compressor with current data.
-     *
      * <b>Pipeline:</b>
      * <ol>
      *   <li>Update raw element (it was prepared already)</li>
@@ -115,6 +117,9 @@ public class CompressedVariableContextElement implements SpartanContextElement {
      *   <li>Run compressor inference</li>
      *   <li>Extract latent representation into cached buffer</li>
      * </ol>
+     *
+     * Validates buffer sizes before calling native code to prevent SIGSEGV
+     * from invalid pointers or zero-sized spans in C++. See: AutoEncoderCompressorSpartanModel.cpp:77
      */
     @Override
     public void tick() {
@@ -124,7 +129,15 @@ public class CompressedVariableContextElement implements SpartanContextElement {
         // Update internal context with new raw data
         this.internalContext.update();
 
-        // Run compressor on raw data
+        // Ensure context has valid data before calling native code
+        // This prevents SIGSEGV when C++ receives empty or invalidated buffers
+        if (internalContext.getSize() <= 0) {
+            // Log but don't crash - just leave compressedBuffer as-is from last valid tick
+            // C++ side also skips processTick if buffers empty (defensive check inside native)
+            return;
+        }
+
+        // Run compressor on raw data - now guaranteed valid buffers
         this.compressor.tick();
 
         // Extract compressed latent representation into cached buffer
@@ -142,7 +155,7 @@ public class CompressedVariableContextElement implements SpartanContextElement {
 
     /**
      * Returns the internal compressor for advanced use cases.
-     * <b>NOT typically needed</b> - the element handles compression transparently.
+     * <b>Not typically needed</b> - the element handles compression transparently.
      * Use this only if you need direct access to compressor state (e.g., reconstruction loss, latent inspection).
      *
      * @return the AutoEncoderCompressorModel managing compression
@@ -165,9 +178,9 @@ public class CompressedVariableContextElement implements SpartanContextElement {
      * Saves the internal compressor's state to a file.
      *
      * @param filePath the path to save to
-     * @throws org.spartan.api.exception.SpartanPersistenceException if save fails
+     * @throws SpartanPersistenceException if save fails
      */
-    public void save(@NotNull java.nio.file.Path filePath) throws org.spartan.api.exception.SpartanPersistenceException {
+    public void save(@NotNull Path filePath) throws SpartanPersistenceException {
         compressor.saveModel(filePath);
     }
 
@@ -175,9 +188,9 @@ public class CompressedVariableContextElement implements SpartanContextElement {
      * Loads the internal compressor's state from a file.
      *
      * @param filePath the path to load from
-     * @throws org.spartan.api.exception.SpartanPersistenceException if load fails
+     * @throws SpartanPersistenceException if load fails
      */
-    public void load(@NotNull java.nio.file.Path filePath) throws org.spartan.api.exception.SpartanPersistenceException {
+    public void load(@NotNull Path filePath) throws SpartanPersistenceException {
         compressor.loadModel(filePath);
     }
 
