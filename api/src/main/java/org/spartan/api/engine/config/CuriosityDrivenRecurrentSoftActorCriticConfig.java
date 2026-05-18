@@ -72,6 +72,37 @@ public non-sealed interface CuriosityDrivenRecurrentSoftActorCriticConfig extend
      * @return dynamics learning rate
      */
     double forwardDynamicsLearningRate();
+
+    /**
+     * Returns the size of the hidden layers in the Inverse Dynamics Model.
+     * <p>
+     * <b>Concept:</b> The "Inverse Dynamics" network tries to predict the action taken given current state + next state.
+     * This parameter controls how smart this predictor is.
+     * Used to learn action semantics and improve exploration efficiency.
+     *
+     * @return neuron count for inverse dynamics model
+     */
+    int inverseDynamicsHiddenLayerDimensionSize();
+
+    /**
+     * Returns the learning rate specifically for the Inverse Dynamics Model.
+     * <p>
+     * <b>Concept:</b> Controls how fast the inverse model learns to predict actions.
+     * Often set lower than forward dynamics to prevent overfitting to action prediction.
+     *
+     * @return inverse dynamics learning rate
+     */
+    double inverseDynamicsLearningRate();
+
+    /**
+     * Returns the weight applied to inverse loss during curiosity training.
+     * <p>
+     * <b>Concept:</b> Controls the importance of accurate inverse model predictions.
+     * Higher values emphasize learning action semantics; lower values focus on forward prediction.
+     *
+     * @return inverse loss weight
+     */
+    double inverseLossWeight();
     @Override
     default SpartanModelType modelType() {
         return SpartanModelType.CURIOSITY_DRIVEN_RECURRENT_SOFT_ACTOR_CRITIC;
@@ -119,6 +150,10 @@ public non-sealed interface CuriosityDrivenRecurrentSoftActorCriticConfig extend
         private double intrinsicRewardClampingMinimum = -1.0;
         private double intrinsicRewardClampingMaximum = 1.0;
         private double forwardDynamicsLearningRate = 3e-4;
+        // Inverse Dynamics parameters
+        private int inverseDynamicsHiddenLayerDimensionSize = 128;
+        private double inverseDynamicsLearningRate = 3e-4;
+        private double inverseLossWeight = 0.1;
         private RecurrentSoftActorCriticConfig recurrentSoftActorCriticConfig = null;
         public Builder() {}
         public Builder learningRate(double val) { this.learningRate = val; return this; }
@@ -151,6 +186,9 @@ public non-sealed interface CuriosityDrivenRecurrentSoftActorCriticConfig extend
         public Builder intrinsicRewardClampingMinimum(double val) { this.intrinsicRewardClampingMinimum = val; return this; }
         public Builder intrinsicRewardClampingMaximum(double val) { this.intrinsicRewardClampingMaximum = val; return this; }
         public Builder forwardDynamicsLearningRate(double val) { this.forwardDynamicsLearningRate = val; return this; }
+        public Builder inverseDynamicsHiddenLayerDimensionSize(int val) { this.inverseDynamicsHiddenLayerDimensionSize = val; return this; }
+        public Builder inverseDynamicsLearningRate(double val) { this.inverseDynamicsLearningRate = val; return this; }
+        public Builder inverseLossWeight(double val) { this.inverseLossWeight = val; return this; }
 
         public @NotNull CuriosityDrivenRecurrentSoftActorCriticConfig build() {
              RecurrentSoftActorCriticConfig rsac = this.recurrentSoftActorCriticConfig;
@@ -183,7 +221,9 @@ public non-sealed interface CuriosityDrivenRecurrentSoftActorCriticConfig extend
                 rsac,
                 forwardDynamicsHiddenLayerDimensionSize, intrinsicRewardScale,
                 intrinsicRewardClampingMinimum, intrinsicRewardClampingMaximum,
-                forwardDynamicsLearningRate
+                forwardDynamicsLearningRate,
+                inverseDynamicsHiddenLayerDimensionSize, inverseDynamicsLearningRate,
+                inverseLossWeight
             );
         }
     }

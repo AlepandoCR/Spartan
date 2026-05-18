@@ -8,6 +8,10 @@ public record CuriosityDrivenRecurrentSoftActorCriticConfigImpl(
         double intrinsicRewardScale,
         double intrinsicRewardClampingMinimum,
         double intrinsicRewardClampingMaximum,
-        double forwardDynamicsLearningRate
+        double forwardDynamicsLearningRate,
+        // Inverse dynamics network parameters (predict action from s, s')
+        int inverseDynamicsHiddenLayerDimensionSize,
+        double inverseDynamicsLearningRate,
+        double inverseLossWeight
 ) implements CuriosityDrivenRecurrentSoftActorCriticConfig {
 }

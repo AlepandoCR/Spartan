@@ -1,6 +1,7 @@
 #include "RsacPersistenceModule.h"
 #include "../model/RecurrentSoftActorCriticSpartanModel.h"
 #include "../../logging/SpartanLogger.h"
+#include <algorithm>
 #include <string>
 
 namespace org::spartan::internal::machinelearning::persistence {

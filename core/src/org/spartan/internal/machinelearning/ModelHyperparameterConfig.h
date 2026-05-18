@@ -155,6 +155,13 @@ extern "C" {
         double intrinsicRewardClampingMinimum;
         double intrinsicRewardClampingMaximum;
         double forwardDynamicsLearningRate;
+
+        // Inverse dynamics network parameters (predict action from s, s')
+        int32_t inverseDynamicsHiddenLayerDimensionSize;
+        int32_t _padding5; // Forces 8-byte alignment for the next double
+
+        double inverseDynamicsLearningRate;
+        double inverseLossWeight; // weight applied to inverse loss during curiosity training
     } PACKED;
     PACK_END
 
@@ -162,11 +169,12 @@ extern "C" {
     // These static_asserts ensure C++ struct layouts match Java FFM offsets exactly.
     static_assert(sizeof(BaseHyperparameterConfig) == 64, "BaseHyperparameterConfig must be 64 bytes");
     static_assert(sizeof(RecurrentSoftActorCriticHyperparameterConfig) == 424, "RecurrentSoftActorCriticHyperparameterConfig must be 424 bytes");
-    static_assert(sizeof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig) == 464, "CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig must be 464 bytes");
+    static_assert(sizeof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig) == 488, "CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig must be 488 bytes");
     static_assert(offsetof(RecurrentSoftActorCriticHyperparameterConfig, hiddenStateSize) == 64, "RSAC.hiddenStateSize offset must be 64 bytes");
     static_assert(offsetof(RecurrentSoftActorCriticHyperparameterConfig, recurrentInputFeatureCount) == 88, "RSAC.recurrentInputFeatureCount offset must be 88 bytes");
     static_assert(offsetof(RecurrentSoftActorCriticHyperparameterConfig, encoderSlots) == 168, "RSAC.encoderSlots offset must be 168 bytes");
     static_assert(offsetof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig, forwardDynamicsHiddenLayerDimensionSize) == 424, "CuriosityRSAC.forwardDynamicsHiddenLayerDimensionSize offset must be 424 bytes");
+    static_assert(offsetof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig, inverseDynamicsHiddenLayerDimensionSize) == 464, "CuriosityRSAC.inverseDynamicsHiddenLayerDimensionSize offset must be 464 bytes");
 
     //
     //  Multi-Agent Group Configuration

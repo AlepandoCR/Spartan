@@ -87,13 +87,20 @@ public final class SpartanConfigLayout {
     public static final long CURIOSITY_RSAC_EMBEDDED_RSAC_OFFSET                            = 0;
 
     public static final long CURIOSITY_RSAC_FORWARD_DYNAMICS_HIDDEN_SIZE_OFFSET             = 424; // int32_t
+    // Offset 428-431: _padding4 (4 bytes, zero-initialized)
     public static final long CURIOSITY_RSAC_INTRINSIC_REWARD_SCALE_OFFSET                   = 432; // double
     public static final long CURIOSITY_RSAC_INTRINSIC_REWARD_CLAMPING_MINIMUM_OFFSET        = 440; // double
     public static final long CURIOSITY_RSAC_INTRINSIC_REWARD_CLAMPING_MAXIMUM_OFFSET        = 448; // double
     public static final long CURIOSITY_RSAC_FORWARD_DYNAMICS_LEARNING_RATE_OFFSET           = 456; // double
 
-    /** Total byte size of Curiosity-Driven RSAC config: 424 + 40 = 464 bytes */
-    public static final long CURIOSITY_RSAC_CONFIG_TOTAL_SIZE = 464;
+    // Inverse dynamics network parameters (predict action from s, s')
+    public static final long CURIOSITY_RSAC_INVERSE_DYNAMICS_HIDDEN_SIZE_OFFSET             = 464; // int32_t
+    // Offset 468-471: _padding5 (4 bytes, zero-initialized)
+    public static final long CURIOSITY_RSAC_INVERSE_DYNAMICS_LEARNING_RATE_OFFSET           = 472; // double
+    public static final long CURIOSITY_RSAC_INVERSE_LOSS_WEIGHT_OFFSET                      = 480; // double
+
+    /** Total byte size of Curiosity-Driven RSAC config: 424 (RSAC) + 64 (curiosity fields) = 488 bytes */
+    public static final long CURIOSITY_RSAC_CONFIG_TOTAL_SIZE = 488;
     /**
      * Total size padded to 64 bytes (allocator writes this much to satisfy AVX alignment).
      */

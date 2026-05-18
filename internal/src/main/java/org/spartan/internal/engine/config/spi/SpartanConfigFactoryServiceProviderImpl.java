@@ -73,7 +73,10 @@ public class SpartanConfigFactoryServiceProviderImpl implements SpartanConfigFac
             double intrinsicRewardScale,
             double intrinsicRewardClampingMinimum,
             double intrinsicRewardClampingMaximum,
-            double forwardDynamicsLearningRate
+            double forwardDynamicsLearningRate,
+            int inverseDynamicsHiddenLayerDimensionSize,
+            double inverseDynamicsLearningRate,
+            double inverseLossWeight
     ) {
 
         return new CuriosityDrivenRecurrentSoftActorCriticConfigImpl(
@@ -82,7 +85,10 @@ public class SpartanConfigFactoryServiceProviderImpl implements SpartanConfigFac
                 intrinsicRewardScale,
                 intrinsicRewardClampingMinimum,
                 intrinsicRewardClampingMaximum,
-                forwardDynamicsLearningRate
+                forwardDynamicsLearningRate,
+                inverseDynamicsHiddenLayerDimensionSize,
+                inverseDynamicsLearningRate,
+                inverseLossWeight
         );
     }
 

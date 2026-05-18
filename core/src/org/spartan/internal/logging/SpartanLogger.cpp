@@ -43,4 +43,4 @@ namespace org::spartan::internal::logging {
 
 
 
-} // namespace org::spartan::core::logging
+}

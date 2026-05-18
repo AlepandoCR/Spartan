@@ -97,6 +97,16 @@ namespace org::spartan::internal::machinelearning {
             return;
         }
 
+        // DDQN ACTION SELECTION FLOW:
+        //  The online Q-network computes Q(s, a) for each discrete action a.
+        // Action selection strategy (epsilon-greedy) is an EXTERNAL policy that uses these predictions:
+        //    - EXPLOITATION (prob 1-ε): Select argmax_a Q(s, a) → network's best prediction
+        //    - EXPLORATION (prob ε):   Ignore Q-values, select uniformly random action → exploration boost
+        // Selected action is encoded as one-hot and written to actionOutputBuffer_.
+        // One-hot encoding is stored in replay buffer for training via applyReward().
+        //
+        // CRITICAL: The network PREDICTS; the policy DECIDES. Never random predictions, only exploration override.
+
         const int actionSize = config->baseConfig.actionSize;
 
 
@@ -116,13 +126,21 @@ namespace org::spartan::internal::machinelearning {
         const double explorationRoll = uniformDistribution(randomGenerator);
 
         if (config->baseConfig.isTraining && explorationRoll < config->baseConfig.epsilon) {
-            // Exploration: write random action values
-            std::uniform_real_distribution actionDistribution(-1.0, 1.0);
-            for (int actionIndex = 0; actionIndex < actionSize; ++actionIndex) {
-                actionOutputBuffer_[actionIndex] = actionDistribution(randomGenerator);
+            // EPSILON-GREEDY EXPLORATION POLICY :
+            // With probability epsilon, override the model's Q-value predictions and select a uniformly random action
+            // The network still learns from this decision via replay buffer, but action selection ignores predicted Q-values temporarily
+            std::uniform_int_distribution actionDistribution(0, actionSize - 1);
+            const int randomActionIndex = actionDistribution(randomGenerator);
+            writeDiscreteActionOneHot(randomActionIndex);
+
+            if (config->baseConfig.debugLogging) {
+                logging::SpartanLogger::debug(
+                    std::format("[DDQN] Exploration (epsilon-greedy override): selected random action index {}", randomActionIndex));
             }
         } else {
-
+            // exploitation:0 The network predicts Q-values for all discrete actions.
+            // We select the action with the highest predicted Q-value (argmax).
+            // The network's training via applyReward() refines these predictions over time.
             for (int actionIndex = 0; actionIndex < actionSize; ++actionIndex) {
                 // Create a one-hot action vector in the scratchpad
                 std::fill_n(scratchpadA_.begin(), actionSize, 0.0);
@@ -138,13 +156,16 @@ namespace org::spartan::internal::machinelearning {
                 onlineQValuesScratchpad_[actionIndex] = qValue;
             }
 
-            // Write Q-values to action output buffer so Java can read them
+            // Select the action index with the highest Q-value
             const size_t bestActionIndex = TensorOps::findArgmax(
                 std::span<const double>(onlineQValuesScratchpad_.data(), actionSize));
+            writeDiscreteActionOneHot(bestActionIndex);
 
-            // Write a one-hot encoding of the best action
-            std::ranges::fill(actionOutputBuffer_, 0.0);
-            actionOutputBuffer_[bestActionIndex] = 1.0;
+            if (config->baseConfig.debugLogging) {
+                logging::SpartanLogger::debug(
+                    std::format("[DDQN] Exploitation (argmax): selected best action index {} with Q-value {:.6f}",
+                    bestActionIndex, onlineQValuesScratchpad_[bestActionIndex]));
+            }
         }
 
         //
@@ -238,6 +259,20 @@ namespace org::spartan::internal::machinelearning {
             const auto stateView = std::span(statePointer, stateSize);
             const auto nextStateView = std::span(nextStatePointer, stateSize);
             const auto actionView = std::span(actionPointer, actionSize);
+
+            // Validate that the stored action is a valid one-hot encoding
+            // (exactly one 1.0, all others 0.0) to catch any data corruption
+            double actionSum = 0.0;
+            int oneHotCount = 0;
+            for (const double actionValue : actionView) {
+                actionSum += actionValue;
+                if (std::abs(actionValue - 1.0) < 1e-9) {
+                    ++oneHotCount;
+                }
+            }
+            assert(std::abs(actionSum - 1.0) < 1e-9 && oneHotCount == 1 &&
+                   "[DDQN TRAINING] Action encoding must be one-hot: exactly one 1.0, all others 0.0. "
+                   "This indicates a bug in processTick() or replay buffer corruption.");
 
             // Forward pass with activation caching for the taken action
             std::copy(stateView.begin(), stateView.end(), combinedInputBuffer_.begin());

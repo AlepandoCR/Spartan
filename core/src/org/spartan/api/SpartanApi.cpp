@@ -37,6 +37,7 @@
             hash = fnv1a(hash, offsetof(RecurrentSoftActorCriticHyperparameterConfig, recurrentInputFeatureCount));
             hash = fnv1a(hash, offsetof(RecurrentSoftActorCriticHyperparameterConfig, targetSmoothingCoefficient));
             hash = fnv1a(hash, offsetof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig, forwardDynamicsHiddenLayerDimensionSize));
+            hash = fnv1a(hash, offsetof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig, inverseDynamicsHiddenLayerDimensionSize));
             return hash;
         }
     }

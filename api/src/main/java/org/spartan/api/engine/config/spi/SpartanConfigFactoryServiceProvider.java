@@ -37,14 +37,17 @@ public interface SpartanConfigFactoryServiceProvider {
             double targetEntropy,
             double alphaLearningRate
     );
-    @Contract("_,_,_,_,_,_ -> new")
+    @Contract("_,_,_,_,_,_,_,_,_ -> new")
     @NotNull CuriosityDrivenRecurrentSoftActorCriticConfig createCuriosityDrivenRecurrentSoftActorCriticConfig(
             RecurrentSoftActorCriticConfig rsacConfig,
             int forwardDynamicsHiddenLayerDimensionSize,
             double intrinsicRewardScale,
             double intrinsicRewardClampingMinimum,
             double intrinsicRewardClampingMaximum,
-            double forwardDynamicsLearningRate
+            double forwardDynamicsLearningRate,
+            int inverseDynamicsHiddenLayerDimensionSize,
+            double inverseDynamicsLearningRate,
+            double inverseLossWeight
     );
 
     @Contract("_,_,_,_,_,_,_,_,_,_,_,_ -> new")

@@ -53,7 +53,7 @@ val generateNativeBindings by tasks.registering(Exec::class) {
             listOf("py", "python3", "python").firstOrNull { cmd ->
                 try {
                     ProcessBuilder(cmd, "--version").redirectError(ProcessBuilder.Redirect.DISCARD).start().waitFor() == 0
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     false
                 }
             } ?: "py"
@@ -62,7 +62,7 @@ val generateNativeBindings by tasks.registering(Exec::class) {
             listOf("python3", "python").firstOrNull { cmd ->
                 try {
                     ProcessBuilder(cmd, "--version").redirectError(ProcessBuilder.Redirect.DISCARD).start().waitFor() == 0
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     false
                 }
             } ?: "python3"

@@ -27,8 +27,10 @@ namespace org::spartan::internal::machinelearning {
                 std::span<const double> contextBuffer,
                 std::span<double> actionOutputBuffer,
                 std::span<double> recurrentSoftActorCriticCriticWeights,
-                std::span<double> forwardDynamicsWeights,
-                std::span<double> forwardDynamicsBiases,
+                // curiosityWeights contains forward+inverse dynamics weights concatenated
+                std::span<double> curiosityWeights,
+                // curiosityBiases contains forward+inverse dynamics biases concatenated
+                std::span<double> curiosityBiases,
                 std::unique_ptr<RecurrentSoftActorCriticSpartanModel> internalRecurrentSoftActorCriticModel);
 
         ~CuriosityDrivenRecurrentSoftActorCriticSpartanModel() override = default;
@@ -59,7 +61,9 @@ namespace org::spartan::internal::machinelearning {
         }
 
         void runForwardDynamicsNetworkInference();
+        void runInverseDynamicsNetworkInference();
         void trainForwardDynamicsNetwork(double predictionError);
+        void trainInverseDynamicsNetwork(double predictionError);
 
         std::unique_ptr<RecurrentSoftActorCriticSpartanModel> internalRecurrentSoftActorCriticModel_;
 
@@ -68,6 +72,8 @@ namespace org::spartan::internal::machinelearning {
 
         std::span<double> forwardDynamicsWeights_;
         std::span<double> forwardDynamicsBiases_;
+        std::span<double> inverseDynamicsWeights_;
+        std::span<double> inverseDynamicsBiases_;
 
         // =========================================================
         // STRICTLY ALIGNED MEMORY BLOCK FOR AVX2 (Safe move semantics)
@@ -89,6 +95,19 @@ namespace org::spartan::internal::machinelearning {
         std::span<double> forwardWeightsSecondMoment_;
         std::span<double> forwardBiasesFirstMoment_;
         std::span<double> forwardBiasesSecondMoment_;
+
+        // Inverse network buffers (predicts action from s and s')
+        std::span<double> inverseNetworkInputBuffer_;
+        std::span<double> inverseNetworkHiddenBuffer_;
+        std::span<double> predictedActionBuffer_;
+        std::span<double> inverseDynamicsWeightGradients_;
+        std::span<double> inverseDynamicsBiasGradients_;
+        std::span<double> inverseWeightsFirstMoment_;
+        std::span<double> inverseWeightsSecondMoment_;
+        std::span<double> inverseBiasesFirstMoment_;
+        std::span<double> inverseBiasesSecondMoment_;
+        std::span<double> inverseDynamicsHiddenActivationGradients_;
+        std::span<double> inverseNetworkInputGradientDummy_;
 
         double lastIntrinsicReward_ = 0.0;
         bool hasValidPreviousTick_ = false;

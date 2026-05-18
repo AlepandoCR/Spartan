@@ -303,16 +303,24 @@ namespace org::spartan::internal {
             rsacConfig->recurrentInputFeatureCount,
             rsacConfig->remorseTraceBufferCapacity));
 
-        // 1. Extract Curiosity (Forward Dynamics) dimensions
+        // 1. Extract Curiosity (Forward + Inverse Dynamics) dimensions
         const int32_t stateSize = config->recurrentSoftActorCriticConfig.baseConfig.stateSize;
         const int32_t actionSize = config->recurrentSoftActorCriticConfig.baseConfig.actionSize;
-        int32_t curiosityHiddenSize = config->forwardDynamicsHiddenLayerDimensionSize;
+        int32_t forwardHiddenSize = config->forwardDynamicsHiddenLayerDimensionSize;
+        int32_t inverseHiddenSize = config->inverseDynamicsHiddenLayerDimensionSize;
 
-        if (curiosityHiddenSize <= 0 || curiosityHiddenSize > stateSize * 1024) {
+        if (forwardHiddenSize <= 0 || forwardHiddenSize > stateSize * 1024) {
             logging::SpartanLogger::warn(std::format(
                 "Curiosity forwardDynamicsHiddenLayerDimensionSize looks invalid ({}); falling back to 128.",
-                curiosityHiddenSize));
-            curiosityHiddenSize = 128;
+                forwardHiddenSize));
+            forwardHiddenSize = 128;
+        }
+
+        if (inverseHiddenSize <= 0 || inverseHiddenSize > stateSize * 1024) {
+            logging::SpartanLogger::warn(std::format(
+                "Curiosity inverseDynamicsHiddenLayerDimensionSize looks invalid ({}); falling back to forwardHiddenSize ({}).",
+                inverseHiddenSize, forwardHiddenSize));
+            inverseHiddenSize = forwardHiddenSize;
         }
 
         // Guard against corrupted config fields (observed on Linux when layout is mismatched)
@@ -351,9 +359,19 @@ namespace org::spartan::internal {
             "[CURIOSITY-CONSTRUCT] GRU calculation: gruHiddenSize={}, gruInputSize={}, gruW_Count={}, gruB_Count={}, gruS_Count={}",
             gruHiddenSize, gruInputSize, gruW_Count, gruB_Count, gruS_Count));
 
-        const size_t curiosityWeights = static_cast<size_t>(stateSize + actionSize) * curiosityHiddenSize +
-                                        static_cast<size_t>(curiosityHiddenSize) * stateSize;
-        const size_t curiosityBiases = static_cast<size_t>(curiosityHiddenSize) + stateSize;
+        // Forward network weights: (state + action) -> hidden, hidden -> state
+        const size_t forwardWeightCount = static_cast<size_t>(stateSize + actionSize) * forwardHiddenSize +
+                                          static_cast<size_t>(forwardHiddenSize) * stateSize;
+        const size_t forwardBiasCount = static_cast<size_t>(forwardHiddenSize) + stateSize;
+
+        // Inverse network weights: (state + next_state) -> hidden, hidden -> action
+        const size_t inverseInputSize = static_cast<size_t>(stateSize) * 2; // s, s'
+        const size_t inverseWeightCount = inverseInputSize * static_cast<size_t>(inverseHiddenSize) +
+                                          static_cast<size_t>(inverseHiddenSize) * static_cast<size_t>(actionSize);
+        const size_t inverseBiasCount = static_cast<size_t>(inverseHiddenSize) + static_cast<size_t>(actionSize);
+
+        const size_t curiosityWeights = forwardWeightCount + inverseWeightCount;
+        const size_t curiosityBiases = forwardBiasCount + inverseBiasCount;
 
         const size_t criticIn = static_cast<size_t>(gruHiddenSize) + static_cast<size_t>(actionSize);
         size_t criticW_Count = (criticIn * static_cast<size_t>(criticHiddenSize)) +

@@ -11,7 +11,6 @@ import org.spartan.internal.bridge.SpartanNative;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.util.Arrays;
 
 /**
  * Concrete implementation of AutoEncoder Compressor model.
@@ -89,11 +88,7 @@ public class AutoEncoderCompressorModelImpl
     public double[] readAllLatent() {
         double[] latent = new double[config.latentDimensionSize()];
 
-        // Validate latentBuffer is accessible
-        return getDoubles(latent, latentBuffer);
-    }
-
-    private double[] getDoubles(double[] latent, MemorySegment latentBuffer) {
+        // CRITICAL SAFETY CHECK: Validate latentBuffer is accessible
         if (latentBuffer == null || latentBuffer.byteSize() == 0) {
             // Return zero array safely
             return latent;
@@ -107,11 +102,11 @@ public class AutoEncoderCompressorModelImpl
     }
 
     public void readLatentIntoBuffer(double @NotNull [] buffer) {
-        //  Validate that latentBuffer is accessible
+        // CRITICAL SAFETY CHECK: Validate that latentBuffer is accessible
         // This detects if C++ reallocated or invalidated the underlying buffer
         if (latentBuffer == null || latentBuffer.byteSize() == 0) {
             // Defensive: fill buffer with zeros rather than crash
-            Arrays.fill(buffer, 0.0);
+            java.util.Arrays.fill(buffer, 0.0);
             return;
         }
 
@@ -130,7 +125,7 @@ public class AutoEncoderCompressorModelImpl
     }
 
     public double readReconstruction(int index) {
-        // Validate reconstructionBuffer is accessible
+        // CRITICAL SAFETY CHECK: Validate reconstructionBuffer is accessible
         if (reconstructionBuffer == null || reconstructionBuffer.byteSize() == 0) {
             return 0.0;
         }
@@ -152,8 +147,16 @@ public class AutoEncoderCompressorModelImpl
     public double[] readAllReconstruction() {
         double[] recon = new double[context.getSize()];
         
-        // Validate reconstructionBuffer is accessible
-        return getDoubles(recon, reconstructionBuffer);
+        // CRITICAL SAFETY CHECK: Validate reconstructionBuffer is accessible
+        if (reconstructionBuffer == null || reconstructionBuffer.byteSize() == 0) {
+            return recon;
+        }
+        
+        int maxCount = (int)Math.min(recon.length, reconstructionBuffer.byteSize() / ValueLayout.JAVA_DOUBLE.byteSize());
+        for (int i = 0; i < maxCount; i++) {
+            recon[i] = reconstructionBuffer.getAtIndex(ValueLayout.JAVA_DOUBLE, i);
+        }
+        return recon;
     }
 
     /**

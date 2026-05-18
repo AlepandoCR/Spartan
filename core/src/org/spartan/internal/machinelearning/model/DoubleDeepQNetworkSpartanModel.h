@@ -18,15 +18,15 @@
 
 /**
  * @file DoubleDeepQNetworkSpartanModel.h
- * @brief Concrete Double Deep Q-Network agent  -  Frontier A facade.
+ * @brief Concrete Double Deep Q-Network agent. Frontier A facade.
  *
  * Exposes the standard @c SpartanAgent virtual interface to the registry
  * while composing Frontier-B Curiously Recurring Template Pattern Q-networks internally for compile-time
- * dispatch and Advanced Vector Extensions vectorisation.
+ * dispatch and Advanced Vector Extensions vectorization.
  *
  * Internal architecture:
  * - 1× ContinuousQNetwork   -  online Q-network  (selects actions)
- * - 1× ContinuousQNetwork   -  target Q-network  (stabilises training)
+ * - 1× ContinuousQNetwork   -  target Q-network  (stabilizes training)
  *
  * All weight/bias buffers are JVM-owned and mapped via @c std::span.
  */
@@ -38,7 +38,19 @@ namespace org::spartan::internal::machinelearning {
 
     /**
      * @class DoubleDeepQNetworkOnlineNetwork
-     * @brief Curiously Recurring Template Pattern leaf for the Double Deep Q-Network online (behaviour) Q-network.
+     * @brief CRTP leaf computing Q-values for each discrete action index.
+     *
+     * @invariant The @c actionVector parameter MUST be a one-hot encoding representing exactly which action
+     * was selected. Format:
+     *   - Exactly one element equals 1.0
+     *   - All other elements equal 0.0
+     *
+     * @note The network ALWAYS predicts Q-values. Action selection strategy (exploration vs exploitation)
+     * is an external policy applied after prediction:
+     *   - EXPLOITATION: Argmax over predicted Q-values → select action with highest Q.
+     *   - EXPLORATION (ε-greedy): Ignore predictions with prob ε, select uniformly random action.
+     *
+     * Both paths write the selected action as one-hot to actionOutputBuffer_ for replay buffer storage.
      */
     class DoubleDeepQNetworkOnlineNetwork final
         : public ContinuousQNetwork<DoubleDeepQNetworkOnlineNetwork> {
@@ -109,6 +121,12 @@ namespace org::spartan::internal::machinelearning {
     /**
      * @class DoubleDeepQNetworkTargetNetwork
      * @brief Curiously Recurring Template Pattern leaf for the Double Deep Q-Network target (frozen) Q-network.
+     *
+     * @invariant The @c actionVector parameter MUST be a one-hot encoding representing a discrete action selection:
+     *   - Exactly one element must equal 1.0
+     *   - All other elements must equal 0.0
+     *
+     * This constraint is maintained throughout applyReward() batch training.
      */
     class DoubleDeepQNetworkTargetNetwork final
         : public ContinuousQNetwork<DoubleDeepQNetworkTargetNetwork> {
@@ -238,11 +256,36 @@ namespace org::spartan::internal::machinelearning {
                 std::span<double>(const_cast<double*>(criticWeightsSpan_.data()), criticWeightsSpan_.size()) : std::span<double>();
         }
 
-    private:
-        [[nodiscard]] const DoubleDeepQNetworkHyperparameterConfig* typedConfig() const noexcept {
-            return static_cast<const DoubleDeepQNetworkHyperparameterConfig*>(
-                opaqueHyperparameterConfig_);
-        }
+     private:
+         [[nodiscard]] const DoubleDeepQNetworkHyperparameterConfig* typedConfig() const noexcept {
+             return static_cast<const DoubleDeepQNetworkHyperparameterConfig*>(
+                 opaqueHyperparameterConfig_);
+         }
+
+         /**
+          * @brief Encodes a discrete action selection into one-hot format in the action output buffer.
+          *
+          * Sets exactly one element to 1.0 at the specified index; all others to 0.0.
+          * Used by BOTH exploration and exploitation paths:
+          *   - EXPLOITATION: index = argmax(predicted Q-values)
+          *   - EXPLORATION: index = uniform random action (ε-greedy override)
+          *
+          * This ensures actionOutputBuffer_ always contains a valid one-hot encoding for replay buffer storage,
+          * regardless of whether the action was chosen by the network's predictions or by random exploration.
+          *
+          * @param actionIndex The zero-based index of the action to encode (must be < actionSize).
+          *
+          * @pre actionIndex < actionOutputBuffer_.size()
+          * @post actionOutputBuffer_[actionIndex] == 1.0 && sum of all others == 0.0
+          *
+          * @note ZERO-COPY: Operates directly on spanned actionOutputBuffer_ with no heap allocations.
+          * @note NOT thread-safe: Must not be invoked concurrently for the same agent instance.
+          */
+         void writeDiscreteActionOneHot(const size_t actionIndex) noexcept {
+             assert(actionIndex < actionOutputBuffer_.size() && "Action index out of bounds");
+             std::ranges::fill(actionOutputBuffer_, 0.0);
+             actionOutputBuffer_[actionIndex] = 1.0;
+         }
 
         /** @brief Tick counter for target-network sync scheduling. */
         int32_t ticksSinceLastTargetSync_ = 0;

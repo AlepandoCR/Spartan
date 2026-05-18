@@ -1,6 +1,7 @@
 #include "CuriosityRsacPersistenceModule.h"
 #include "../model/CuriosityDrivenRecurrentSoftActorCriticSpartanModel.h"
 #include "../../logging/SpartanLogger.h"
+#include <algorithm>
 #include <string>
 
 namespace org::spartan::internal::machinelearning::persistence {
@@ -58,7 +59,7 @@ namespace org::spartan::internal::machinelearning::persistence {
         const auto criticWeights = curiosityModel->getCriticWeights();
         const auto modelWeights = curiosityModel->getModelWeightsMutable();
 
-        if (size_t expectedSize = criticWeights.size() + modelWeights.size(); weights.size() != expectedSize) {
+        if (const size_t expectedSize = criticWeights.size() + modelWeights.size(); weights.size() != expectedSize) {
             logging::SpartanLogger::error("CuriosityRsacPersistenceModule::deserialize: Size mismatch");
             return false;
         }
