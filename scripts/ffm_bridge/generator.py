@@ -56,11 +56,13 @@ class FFMBridgeGenerator:
             handle_decls = self._generate_handle_declarations(functions)
             handle_inits = self._generate_handle_initializations(functions)
             sync_methods = self._generate_sync_methods(functions)
+            post_init = self._generate_post_initialization()
 
             # Render final class
             java_code = self.template.render(
                 handle_declarations=handle_decls,
                 handle_initializations=handle_inits,
+                post_initialization=post_init,
                 sync_methods=sync_methods
             )
 
@@ -96,6 +98,18 @@ class FFMBridgeGenerator:
             self.sync_emitter.emit(func)
             for func in functions
         )
+
+    def _generate_post_initialization(self) -> str:
+        """Generate post-initialization code to cache native layout signature."""
+        return '''try {
+            if (SPARTAN_GET_LAYOUT_SIGNATURE_HANDLE != null) {
+                int nativeSig = (int) SPARTAN_GET_LAYOUT_SIGNATURE_HANDLE.invokeExact();
+                org.spartan.internal.engine.model.SpartanModelAllocator.setNativeLayoutSignature(nativeSig);
+                System.out.println("[SpartanNative] Cached native layout signature: " + nativeSig);
+            }
+        } catch (Throwable t) {
+            System.err.println("[SpartanNative] Warning: failed to retrieve native layout signature: " + t.getMessage());
+        }'''
 
     def _write_output(self, content: str):
         """Write generated code to output file."""

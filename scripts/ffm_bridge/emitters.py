@@ -31,7 +31,7 @@ class MethodHandleEmitter(CodeEmitter):
 
     def emit_declaration(self, func: NativeFunction) -> str:
         """Generate static MethodHandle field declaration."""
-        return self._i(1) + f"private static final MethodHandle {func.handle_name};"
+        return self._i(1) + f"private static MethodHandle {func.handle_name};"
 
     def emit_initialization(self, func: NativeFunction) -> str:
         """Generate MethodHandle initialization in static block."""
@@ -45,12 +45,13 @@ class MethodHandleEmitter(CodeEmitter):
             desc = f"FunctionDescriptor.of({ret_layout}, {layouts_str})" if layouts_str else f"FunctionDescriptor.of({ret_layout})"
 
         lines = [
-            self._i(2) + "try {",
-            self._i(3) + f'var addr = loader.find("{func.name}").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: {func.name}"));',
-            self._i(3) + f"{func.handle_name} = linker.downcallHandle(addr, {desc});",
-            self._i(2) + "} catch (Exception e) {",
-            self._i(3) + f'throw new RuntimeException("Failed to bind native function: {func.name}", e);',
-            self._i(2) + "}"
+            self._i(2) + f'var _opt_{func.name} = loader.find("{func.name}");',
+            self._i(2) + f'if (_opt_{func.name}.isPresent()) {{',
+            self._i(3) + f'{func.handle_name} = linker.downcallHandle(_opt_{func.name}.get(), {desc});',
+            self._i(2) + '} else {',
+            self._i(3) + f'{func.handle_name} = null;',
+            self._i(3) + f'System.err.println("Warning: native symbol not found: {func.name}");',
+            self._i(2) + '}',
         ]
         return "\n".join(lines)
 
@@ -139,6 +140,20 @@ class SyncMethodEmitter(CodeEmitter):
 
     def _build_direct_body(self, func: NativeFunction, args_str: str, return_stmt: str, cast: str) -> str:
         """Build direct invocation body without marshalling."""
+        # Special-case the layout signature getter to provide a JVM-side fallback
+        if func.name == "spartan_get_layout_signature":
+            lines = [
+                self._i(2) + f"if ({func.handle_name} == null) {{",
+                self._i(3) + "return org.spartan.internal.engine.model.SpartanModelAllocator.getLayoutSignature();",
+                self._i(2) + "}",
+                self._i(2) + "try {",
+                self._i(3) + f"{return_stmt}{cast}{func.handle_name}.invokeExact({args_str});",
+                self._i(2) + "} catch (Throwable t) {",
+                self._i(3) + f'throw new RuntimeException("Native invocation failed: {func.name}", t);',
+                self._i(2) + "}"
+            ]
+            return "\n".join(lines)
+
         lines = [
             self._i(2) + "try {",
             self._i(3) + f"{return_stmt}{cast}{func.handle_name}.invokeExact({args_str});",

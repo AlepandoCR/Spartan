@@ -60,6 +60,17 @@
             machinelearning::persistence::initializePersistenceModules();
         }
 
+        /**
+         * @brief Returns the computed layout signature for hyperparameter configs.
+         *
+         * Exposed so the JVM can query the exact signature computed by the native
+         * build and avoid any platform-specific discrepancies when validating
+         * Java-allocated config buffers.
+         */
+        SPARTAN_API_EXPORT uint32_t spartan_get_layout_signature() {
+            return compute_layout_signature();
+        }
+
 
         /**
          * @brief Logs a UTF-8 message through the Spartan console pipeline.

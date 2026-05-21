@@ -22,130 +22,192 @@ public class SpartanNative {
     private static final Linker linker = Linker.nativeLinker();
     private static final SymbolLookup loader;
 
+    // --- FFM Method Handles (declared before static block so they can be initialized there) ---
+    private static MethodHandle SPARTAN_INIT_HANDLE;
+    private static MethodHandle SPARTAN_GET_LAYOUT_SIGNATURE_HANDLE;
+    private static MethodHandle SPARTAN_LOG_HANDLE;
+    private static MethodHandle SPARTAN_TEST_VECTOR_UNION_HANDLE;
+    private static MethodHandle SPARTAN_REGISTER_MODEL_HANDLE;
+    private static MethodHandle SPARTAN_UNREGISTER_MODEL_HANDLE;
+    private static MethodHandle SPARTAN_PROXIMAL_POLICY_OPTIMIZATION_DEBUG_GET_SCALAR_COUNT_HANDLE;
+    private static MethodHandle SPARTAN_PROXIMAL_POLICY_OPTIMIZATION_DEBUG_COPY_SCALARS_HANDLE;
+    private static MethodHandle SPARTAN_TICK_ALL_HANDLE;
+    private static MethodHandle UPDATECONTEXTPOINTER_HANDLE;
+    private static MethodHandle SPARTAN_UPDATE_CLEAN_SIZES_HANDLE;
+    private static MethodHandle SPARTAN_SAVE_MODEL_HANDLE;
+    private static MethodHandle SPARTAN_LOAD_MODEL_HANDLE;
+    private static MethodHandle SPARTAN_DECAY_EXPLORATION_HANDLE;
+    private static MethodHandle SPARTAN_TICK_AGENT_HANDLE;
+    private static MethodHandle SPARTAN_REGISTER_MULTI_AGENT_HANDLE;
+    private static MethodHandle SPARTAN_MULTI_AGENT_ADD_AGENT_HANDLE;
+    private static MethodHandle SPARTAN_MULTI_AGENT_REMOVE_AGENT_HANDLE;
+    private static MethodHandle SPARTAN_TICK_MULTI_AGENT_HANDLE;
+    private static MethodHandle SPARTAN_MULTI_AGENT_APPLY_REWARDS_HANDLE;
+    private static MethodHandle SPARTAN_UNREGISTER_MULTI_AGENT_HANDLE;
+
     static {
         loadNativeLibrary();
         loader = SymbolLookup.loaderLookup();
 
-        // Initialize Native Method Handles
-        try {
-            var addr = loader.find("spartan_init").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_init"));
-            SPARTAN_INIT_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.ofVoid());
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_init", e);
+        // Initialize Native Method Handles (must not invoke any before all are bound)
+        var _opt_spartan_init = loader.find("spartan_init");
+        if (_opt_spartan_init.isPresent()) {
+            SPARTAN_INIT_HANDLE = linker.downcallHandle(_opt_spartan_init.get(), FunctionDescriptor.ofVoid());
+        } else {
+            SPARTAN_INIT_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_init");
         }
-        try {
-            var addr = loader.find("spartan_log").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_log"));
-            SPARTAN_LOG_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_log", e);
+        var _opt_spartan_get_layout_signature = loader.find("spartan_get_layout_signature");
+        if (_opt_spartan_get_layout_signature.isPresent()) {
+            SPARTAN_GET_LAYOUT_SIGNATURE_HANDLE = linker.downcallHandle(_opt_spartan_get_layout_signature.get(), FunctionDescriptor.of(ValueLayout.JAVA_INT));
+        } else {
+            SPARTAN_GET_LAYOUT_SIGNATURE_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_get_layout_signature");
         }
-        try {
-            var addr = loader.find("spartan_test_vector_union").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_test_vector_union"));
-            SPARTAN_TEST_VECTOR_UNION_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_test_vector_union", e);
+        var _opt_spartan_log = loader.find("spartan_log");
+        if (_opt_spartan_log.isPresent()) {
+            SPARTAN_LOG_HANDLE = linker.downcallHandle(_opt_spartan_log.get(), FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
+        } else {
+            SPARTAN_LOG_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_log");
         }
-        try {
-            var addr = loader.find("spartan_register_model").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_register_model"));
-            SPARTAN_REGISTER_MODEL_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_register_model", e);
+        var _opt_spartan_test_vector_union = loader.find("spartan_test_vector_union");
+        if (_opt_spartan_test_vector_union.isPresent()) {
+            SPARTAN_TEST_VECTOR_UNION_HANDLE = linker.downcallHandle(_opt_spartan_test_vector_union.get(), FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
+        } else {
+            SPARTAN_TEST_VECTOR_UNION_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_test_vector_union");
         }
-        try {
-            var addr = loader.find("spartan_unregister_model").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_unregister_model"));
-            SPARTAN_UNREGISTER_MODEL_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_unregister_model", e);
+        var _opt_spartan_register_model = loader.find("spartan_register_model");
+        if (_opt_spartan_register_model.isPresent()) {
+            SPARTAN_REGISTER_MODEL_HANDLE = linker.downcallHandle(_opt_spartan_register_model.get(), FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+        } else {
+            SPARTAN_REGISTER_MODEL_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_register_model");
         }
-        try {
-            var addr = loader.find("spartan_proximal_policy_optimization_debug_get_scalar_count").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_proximal_policy_optimization_debug_get_scalar_count"));
-            SPARTAN_PROXIMAL_POLICY_OPTIMIZATION_DEBUG_GET_SCALAR_COUNT_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_proximal_policy_optimization_debug_get_scalar_count", e);
+        var _opt_spartan_unregister_model = loader.find("spartan_unregister_model");
+        if (_opt_spartan_unregister_model.isPresent()) {
+            SPARTAN_UNREGISTER_MODEL_HANDLE = linker.downcallHandle(_opt_spartan_unregister_model.get(), FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG));
+        } else {
+            SPARTAN_UNREGISTER_MODEL_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_unregister_model");
         }
-        try {
-            var addr = loader.find("spartan_proximal_policy_optimization_debug_copy_scalars").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_proximal_policy_optimization_debug_copy_scalars"));
-            SPARTAN_PROXIMAL_POLICY_OPTIMIZATION_DEBUG_COPY_SCALARS_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_proximal_policy_optimization_debug_copy_scalars", e);
+        var _opt_spartan_proximal_policy_optimization_debug_get_scalar_count = loader.find("spartan_proximal_policy_optimization_debug_get_scalar_count");
+        if (_opt_spartan_proximal_policy_optimization_debug_get_scalar_count.isPresent()) {
+            SPARTAN_PROXIMAL_POLICY_OPTIMIZATION_DEBUG_GET_SCALAR_COUNT_HANDLE = linker.downcallHandle(_opt_spartan_proximal_policy_optimization_debug_get_scalar_count.get(), FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG));
+        } else {
+            SPARTAN_PROXIMAL_POLICY_OPTIMIZATION_DEBUG_GET_SCALAR_COUNT_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_proximal_policy_optimization_debug_get_scalar_count");
         }
-        try {
-            var addr = loader.find("spartan_tick_all").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_tick_all"));
-            SPARTAN_TICK_ALL_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_tick_all", e);
+        var _opt_spartan_proximal_policy_optimization_debug_copy_scalars = loader.find("spartan_proximal_policy_optimization_debug_copy_scalars");
+        if (_opt_spartan_proximal_policy_optimization_debug_copy_scalars.isPresent()) {
+            SPARTAN_PROXIMAL_POLICY_OPTIMIZATION_DEBUG_COPY_SCALARS_HANDLE = linker.downcallHandle(_opt_spartan_proximal_policy_optimization_debug_copy_scalars.get(), FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+        } else {
+            SPARTAN_PROXIMAL_POLICY_OPTIMIZATION_DEBUG_COPY_SCALARS_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_proximal_policy_optimization_debug_copy_scalars");
         }
-        try {
-            var addr = loader.find("updateContextPointer").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: updateContextPointer"));
-            UPDATECONTEXTPOINTER_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: updateContextPointer", e);
+        var _opt_spartan_tick_all = loader.find("spartan_tick_all");
+        if (_opt_spartan_tick_all.isPresent()) {
+            SPARTAN_TICK_ALL_HANDLE = linker.downcallHandle(_opt_spartan_tick_all.get(), FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+        } else {
+            SPARTAN_TICK_ALL_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_tick_all");
         }
-        try {
-            var addr = loader.find("spartan_update_clean_sizes").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_update_clean_sizes"));
-            SPARTAN_UPDATE_CLEAN_SIZES_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_update_clean_sizes", e);
+        var _opt_updateContextPointer = loader.find("updateContextPointer");
+        if (_opt_updateContextPointer.isPresent()) {
+            UPDATECONTEXTPOINTER_HANDLE = linker.downcallHandle(_opt_updateContextPointer.get(), FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+        } else {
+            UPDATECONTEXTPOINTER_HANDLE = null;
+            System.err.println("Warning: native symbol not found: updateContextPointer");
         }
-        try {
-            var addr = loader.find("spartan_save_model").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_save_model"));
-            SPARTAN_SAVE_MODEL_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_save_model", e);
+        var _opt_spartan_update_clean_sizes = loader.find("spartan_update_clean_sizes");
+        if (_opt_spartan_update_clean_sizes.isPresent()) {
+            SPARTAN_UPDATE_CLEAN_SIZES_HANDLE = linker.downcallHandle(_opt_spartan_update_clean_sizes.get(), FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+        } else {
+            SPARTAN_UPDATE_CLEAN_SIZES_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_update_clean_sizes");
         }
-        try {
-            var addr = loader.find("spartan_load_model").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_load_model"));
-            SPARTAN_LOAD_MODEL_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_load_model", e);
+        var _opt_spartan_save_model = loader.find("spartan_save_model");
+        if (_opt_spartan_save_model.isPresent()) {
+            SPARTAN_SAVE_MODEL_HANDLE = linker.downcallHandle(_opt_spartan_save_model.get(), FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+        } else {
+            SPARTAN_SAVE_MODEL_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_save_model");
         }
-        try {
-            var addr = loader.find("spartan_decay_exploration").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_decay_exploration"));
-            SPARTAN_DECAY_EXPLORATION_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_decay_exploration", e);
+        var _opt_spartan_load_model = loader.find("spartan_load_model");
+        if (_opt_spartan_load_model.isPresent()) {
+            SPARTAN_LOAD_MODEL_HANDLE = linker.downcallHandle(_opt_spartan_load_model.get(), FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+        } else {
+            SPARTAN_LOAD_MODEL_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_load_model");
         }
-        try {
-            var addr = loader.find("spartan_tick_agent").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_tick_agent"));
-            SPARTAN_TICK_AGENT_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.JAVA_DOUBLE));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_tick_agent", e);
+        var _opt_spartan_decay_exploration = loader.find("spartan_decay_exploration");
+        if (_opt_spartan_decay_exploration.isPresent()) {
+            SPARTAN_DECAY_EXPLORATION_HANDLE = linker.downcallHandle(_opt_spartan_decay_exploration.get(), FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG));
+        } else {
+            SPARTAN_DECAY_EXPLORATION_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_decay_exploration");
         }
-        try {
-            var addr = loader.find("spartan_register_multi_agent").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_register_multi_agent"));
-            SPARTAN_REGISTER_MULTI_AGENT_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_register_multi_agent", e);
+        var _opt_spartan_tick_agent = loader.find("spartan_tick_agent");
+        if (_opt_spartan_tick_agent.isPresent()) {
+            SPARTAN_TICK_AGENT_HANDLE = linker.downcallHandle(_opt_spartan_tick_agent.get(), FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.JAVA_DOUBLE));
+        } else {
+            SPARTAN_TICK_AGENT_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_tick_agent");
         }
-        try {
-            var addr = loader.find("spartan_multi_agent_add_agent").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_multi_agent_add_agent"));
-            SPARTAN_MULTI_AGENT_ADD_AGENT_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_multi_agent_add_agent", e);
+        var _opt_spartan_register_multi_agent = loader.find("spartan_register_multi_agent");
+        if (_opt_spartan_register_multi_agent.isPresent()) {
+            SPARTAN_REGISTER_MULTI_AGENT_HANDLE = linker.downcallHandle(_opt_spartan_register_multi_agent.get(), FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
+        } else {
+            SPARTAN_REGISTER_MULTI_AGENT_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_register_multi_agent");
         }
-        try {
-            var addr = loader.find("spartan_multi_agent_remove_agent").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_multi_agent_remove_agent"));
-            SPARTAN_MULTI_AGENT_REMOVE_AGENT_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_multi_agent_remove_agent", e);
+        var _opt_spartan_multi_agent_add_agent = loader.find("spartan_multi_agent_add_agent");
+        if (_opt_spartan_multi_agent_add_agent.isPresent()) {
+            SPARTAN_MULTI_AGENT_ADD_AGENT_HANDLE = linker.downcallHandle(_opt_spartan_multi_agent_add_agent.get(), FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+        } else {
+            SPARTAN_MULTI_AGENT_ADD_AGENT_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_multi_agent_add_agent");
         }
-        try {
-            var addr = loader.find("spartan_tick_multi_agent").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_tick_multi_agent"));
-            SPARTAN_TICK_MULTI_AGENT_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_tick_multi_agent", e);
+        var _opt_spartan_multi_agent_remove_agent = loader.find("spartan_multi_agent_remove_agent");
+        if (_opt_spartan_multi_agent_remove_agent.isPresent()) {
+            SPARTAN_MULTI_AGENT_REMOVE_AGENT_HANDLE = linker.downcallHandle(_opt_spartan_multi_agent_remove_agent.get(), FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG));
+        } else {
+            SPARTAN_MULTI_AGENT_REMOVE_AGENT_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_multi_agent_remove_agent");
         }
-        try {
-            var addr = loader.find("spartan_multi_agent_apply_rewards").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_multi_agent_apply_rewards"));
-            SPARTAN_MULTI_AGENT_APPLY_REWARDS_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_multi_agent_apply_rewards", e);
+        var _opt_spartan_tick_multi_agent = loader.find("spartan_tick_multi_agent");
+        if (_opt_spartan_tick_multi_agent.isPresent()) {
+            SPARTAN_TICK_MULTI_AGENT_HANDLE = linker.downcallHandle(_opt_spartan_tick_multi_agent.get(), FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG));
+        } else {
+            SPARTAN_TICK_MULTI_AGENT_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_tick_multi_agent");
         }
-        try {
-            var addr = loader.find("spartan_unregister_multi_agent").orElseThrow(() -> new RuntimeException("Native symbol resolution failed: spartan_unregister_multi_agent"));
-            SPARTAN_UNREGISTER_MULTI_AGENT_HANDLE = linker.downcallHandle(addr, FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to bind native function: spartan_unregister_multi_agent", e);
+        var _opt_spartan_multi_agent_apply_rewards = loader.find("spartan_multi_agent_apply_rewards");
+        if (_opt_spartan_multi_agent_apply_rewards.isPresent()) {
+            SPARTAN_MULTI_AGENT_APPLY_REWARDS_HANDLE = linker.downcallHandle(_opt_spartan_multi_agent_apply_rewards.get(), FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+        } else {
+            SPARTAN_MULTI_AGENT_APPLY_REWARDS_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_multi_agent_apply_rewards");
+        }
+        var _opt_spartan_unregister_multi_agent = loader.find("spartan_unregister_multi_agent");
+        if (_opt_spartan_unregister_multi_agent.isPresent()) {
+            SPARTAN_UNREGISTER_MULTI_AGENT_HANDLE = linker.downcallHandle(_opt_spartan_unregister_multi_agent.get(), FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG));
+        } else {
+            SPARTAN_UNREGISTER_MULTI_AGENT_HANDLE = null;
+            System.err.println("Warning: native symbol not found: spartan_unregister_multi_agent");
+        }
+
+        // After all handles are bound, retrieve and cache the native layout signature
+        // This ensures Java uses the authoritative native signature when available
+try {
+            if (SPARTAN_GET_LAYOUT_SIGNATURE_HANDLE != null) {
+                int nativeSig = (int) SPARTAN_GET_LAYOUT_SIGNATURE_HANDLE.invokeExact();
+                org.spartan.internal.engine.model.SpartanModelAllocator.setNativeLayoutSignature(nativeSig);
+                System.out.println("[SpartanNative] Cached native layout signature: " + nativeSig);
+            }
+        } catch (Throwable t) {
+            System.err.println("[SpartanNative] Warning: failed to retrieve native layout signature: " + t.getMessage());
         }
     }
 
@@ -188,31 +250,9 @@ public class SpartanNative {
         } catch (IOException e) {
             throw new RuntimeException("Failed to load native library: " + LIB_NAME, e);
         }
-    }
+     }
 
-    // --- FFM Method Handles ---
-    private static final MethodHandle SPARTAN_INIT_HANDLE;
-    private static final MethodHandle SPARTAN_LOG_HANDLE;
-    private static final MethodHandle SPARTAN_TEST_VECTOR_UNION_HANDLE;
-    private static final MethodHandle SPARTAN_REGISTER_MODEL_HANDLE;
-    private static final MethodHandle SPARTAN_UNREGISTER_MODEL_HANDLE;
-    private static final MethodHandle SPARTAN_PROXIMAL_POLICY_OPTIMIZATION_DEBUG_GET_SCALAR_COUNT_HANDLE;
-    private static final MethodHandle SPARTAN_PROXIMAL_POLICY_OPTIMIZATION_DEBUG_COPY_SCALARS_HANDLE;
-    private static final MethodHandle SPARTAN_TICK_ALL_HANDLE;
-    private static final MethodHandle UPDATECONTEXTPOINTER_HANDLE;
-    private static final MethodHandle SPARTAN_UPDATE_CLEAN_SIZES_HANDLE;
-    private static final MethodHandle SPARTAN_SAVE_MODEL_HANDLE;
-    private static final MethodHandle SPARTAN_LOAD_MODEL_HANDLE;
-    private static final MethodHandle SPARTAN_DECAY_EXPLORATION_HANDLE;
-    private static final MethodHandle SPARTAN_TICK_AGENT_HANDLE;
-    private static final MethodHandle SPARTAN_REGISTER_MULTI_AGENT_HANDLE;
-    private static final MethodHandle SPARTAN_MULTI_AGENT_ADD_AGENT_HANDLE;
-    private static final MethodHandle SPARTAN_MULTI_AGENT_REMOVE_AGENT_HANDLE;
-    private static final MethodHandle SPARTAN_TICK_MULTI_AGENT_HANDLE;
-    private static final MethodHandle SPARTAN_MULTI_AGENT_APPLY_REWARDS_HANDLE;
-    private static final MethodHandle SPARTAN_UNREGISTER_MULTI_AGENT_HANDLE;
-
-    // --- Native API ---
+     // --- Native API ---
 
     /**
      * Initializes the Spartan native engine.
@@ -222,6 +262,20 @@ public class SpartanNative {
             SPARTAN_INIT_HANDLE.invokeExact();
         } catch (Throwable t) {
             throw new RuntimeException("Native invocation failed: spartan_init", t);
+        }
+    }
+
+    /**
+     * Returns the computed layout signature for hyperparameter configs.
+     */
+    public static int spartanGetLayoutSignature() {
+        if (SPARTAN_GET_LAYOUT_SIGNATURE_HANDLE == null) {
+            return org.spartan.internal.engine.model.SpartanModelAllocator.getLayoutSignature();
+        }
+        try {
+            return (int) SPARTAN_GET_LAYOUT_SIGNATURE_HANDLE.invokeExact();
+        } catch (Throwable t) {
+            throw new RuntimeException("Native invocation failed: spartan_get_layout_signature", t);
         }
     }
 

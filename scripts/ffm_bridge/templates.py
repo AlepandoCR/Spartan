@@ -34,12 +34,19 @@ public class {class_name} {{
     private static final Linker linker = Linker.nativeLinker();
     private static final SymbolLookup loader;
 
+    // --- FFM Method Handles (declared before static block so they can be initialized there) ---
+{handle_declarations}
+
     static {{
         loadNativeLibrary();
         loader = SymbolLookup.loaderLookup();
 
-        // Initialize Native Method Handles
+        // Initialize Native Method Handles (must not invoke any before all are bound)
 {handle_initializations}
+
+        // After all handles are bound, retrieve and cache the native layout signature
+        // This ensures Java uses the authoritative native signature when available
+{post_initialization}
     }}
 
     /**
@@ -81,12 +88,9 @@ public class {class_name} {{
         }} catch (IOException e) {{
             throw new RuntimeException("Failed to load native library: " + LIB_NAME, e);
         }}
-    }}
+     }}
 
-    // --- FFM Method Handles ---
-{handle_declarations}
-
-    // --- Native API ---
+     // --- Native API ---
 {sync_methods}
 }}
 '''
@@ -98,7 +102,8 @@ public class {class_name} {{
         self,
         handle_declarations: str,
         handle_initializations: str,
-        sync_methods: str
+        sync_methods: str,
+        post_initialization: str = ""
     ) -> str:
         """Render the complete Java class."""
         return self.HEADER.format(
@@ -107,6 +112,7 @@ public class {class_name} {{
             lib_name=self.config.lib_name,
             handle_declarations=handle_declarations,
             handle_initializations=handle_initializations,
+            post_initialization=post_initialization,
             sync_methods=sync_methods
         )
 
