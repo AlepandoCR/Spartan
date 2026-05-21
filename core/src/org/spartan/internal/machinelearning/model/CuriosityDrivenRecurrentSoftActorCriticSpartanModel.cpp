@@ -103,7 +103,7 @@ namespace org::spartan::internal::machinelearning {
             throw std::invalid_argument("hiddenSize must be > 0");
         }
 
-        // DEBUG: Log extracted dimensions
+        // Log extracted dimensions
         logging::SpartanLogger::debug(std::format(
             "[CURIOSITY-CONSTRUCT] Dimensions: stateSize={}, actionSize={}, hiddenSize={}",
             stateSize, actionSize, hiddenSize));
@@ -149,6 +149,12 @@ namespace org::spartan::internal::machinelearning {
         totalDoublesNeeded += alignSize(forwardWeightCount);         // forwardWeightsSecondMoment_
         totalDoublesNeeded += alignSize(forwardBiasCount);           // forwardBiasesFirstMoment_
         totalDoublesNeeded += alignSize(forwardBiasCount);           // forwardBiasesSecondMoment_
+        // Inverse network primary buffers
+        totalDoublesNeeded += alignSize(stateSize * 2);              // inverseNetworkInputBuffer_
+        totalDoublesNeeded += alignSize(inverseHiddenSize);          // inverseNetworkHiddenBuffer_
+        totalDoublesNeeded += alignSize(actionSize);                 // predictedActionBuffer_
+        totalDoublesNeeded += alignSize(inverseHiddenSize);          // inverseDynamicsHiddenActivationGradients_
+        totalDoublesNeeded += alignSize(stateSize * 2);              // inverseNetworkInputGradientDummy_
         totalDoublesNeeded += alignSize(forwardWeightCount);         // internalForwardDynamicsWeights
         totalDoublesNeeded += alignSize(forwardBiasCount);           // internalForwardDynamicsBiases
 
