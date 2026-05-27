@@ -191,6 +191,21 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
      */
     double remorseMinimumSimilarityThreshold();
 
+    /**
+     * Returns whether tanh squashing is enabled for policy actions.
+     * <p>
+     * <b>Concept:</b> When enabled (non-zero), sampled actions are squashed through tanh before being sent
+     * to the environment. This makes actions bounded to [-1, 1] and improves numerical stability.
+     * The log-probabilities are corrected with Jacobian terms for accurate entropy and gradient calculations.
+     * <p>
+     * When disabled (0.0), actions are unbounded Gaussian samples.
+     * <p>
+     * <b>Default:</b> 1.0 (enabled)
+     *
+     * @return 1.0 (approximately) if tanh squashing is enabled, 0.0 if disabled
+     */
+    double squashActionsWithTanh();
+
     @Override
     default SpartanModelType modelType() {
         return SpartanModelType.RECURRENT_SOFT_ACTOR_CRITIC;
@@ -230,6 +245,7 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
         private double remorseMinimumSimilarityThreshold = 0.7;
         private double targetEntropy = -1.0;  // Will be computed as -log(actionSize)
         private double alphaLearningRate = 1e-4;
+        private double squashActionsWithTanh = 1.0;
 
         private Builder() {}
 
@@ -257,6 +273,7 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
         public Builder remorseMinimumSimilarityThreshold(double val) { this.remorseMinimumSimilarityThreshold = val; return this; }
         public Builder targetEntropy(double val) { this.targetEntropy = val; return this; }
         public Builder alphaLearningRate(double val) { this.alphaLearningRate = val; return this; }
+        public Builder squashActionsWithTanh(double val) { this.squashActionsWithTanh = val; return this; }
 
         @Contract(" -> new")
         public @NotNull RecurrentSoftActorCriticConfig build() {
@@ -267,7 +284,7 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
                  criticHiddenLayerNeuronCount, criticHiddenLayerCount, targetSmoothingCoefficient,
                  entropyTemperatureAlpha, firstCriticLearningRate, secondCriticLearningRate,
                  policyNetworkLearningRate, recurrentInputFeatureCount, remorseTraceBufferCapacity,
-                 remorseMinimumSimilarityThreshold, targetEntropy, alphaLearningRate
+                 remorseMinimumSimilarityThreshold, targetEntropy, alphaLearningRate, squashActionsWithTanh
              );
         }
     }

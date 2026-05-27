@@ -119,6 +119,8 @@ namespace org::spartan::internal::machinelearning {
         totalDoublesNeeded += alignSize(actionSize);     // actionStdScratchpad_
         totalDoublesNeeded += alignSize(actionSize);     // actionNoiseScratchpad_
         totalDoublesNeeded += alignSize(actionSize);     // actionGradientScratchpad_
+        totalDoublesNeeded += alignSize(actionSize);     // preSquashActionU_
+        totalDoublesNeeded += alignSize(actionSize);     // squashedActionA_
         totalDoublesNeeded += alignSize(actionSize);     // policyLogStdCache_
         totalDoublesNeeded += alignSize(hiddenSize);     // policyHiddenActivationCache_
 
@@ -172,6 +174,16 @@ namespace org::spartan::internal::machinelearning {
         totalDoublesNeeded += alignSize(2); // alphaMomentum_
         totalDoublesNeeded += alignSize(2); // alphaVelocity_
 
+        // GRU gate parameter gradients and Adam optimizer state for BPTT
+        const size_t gruGateWeightCount = gruGateWeights.size();
+        const size_t gruGateBiasCount = gruGateBiases.size();
+        totalDoublesNeeded += alignSize(gruGateWeightCount); // gruGateWeightGradient_
+        totalDoublesNeeded += alignSize(gruGateBiasCount);   // gruGateBiasGradient_
+        totalDoublesNeeded += alignSize(gruGateWeightCount); // gruGateWeightMomentum_
+        totalDoublesNeeded += alignSize(gruGateWeightCount); // gruGateWeightVelocity_
+        totalDoublesNeeded += alignSize(gruGateBiasCount);   // gruGateBiasMomentum_
+        totalDoublesNeeded += alignSize(gruGateBiasCount);   // gruGateBiasVelocity_
+
         // Allocate
         void* rawMemory = nullptr;
 #if defined(_WIN32)
@@ -209,6 +221,8 @@ namespace org::spartan::internal::machinelearning {
         actionStdScratchpad_ = bindSpan(actionSize);
         actionNoiseScratchpad_ = bindSpan(actionSize);
         actionGradientScratchpad_ = bindSpan(actionSize);
+        preSquashActionU_ = bindSpan(actionSize);
+        squashedActionA_ = bindSpan(actionSize);
         policyLogStdCache_ = bindSpan(actionSize);
         policyHiddenActivationCache_ = bindSpan(hiddenSize);
 
@@ -256,6 +270,14 @@ namespace org::spartan::internal::machinelearning {
         // Alpha-learner optimizer state
         alphaMomentum_ = bindSpan(2);
         alphaVelocity_ = bindSpan(2);
+
+        // GRU gate parameter gradients and Adam optimizer state for BPTT
+        gruGateWeightGradient_ = bindSpan(gruGateWeightCount);
+        gruGateBiasGradient_ = bindSpan(gruGateBiasCount);
+        gruGateWeightMomentum_ = bindSpan(gruGateWeightCount);
+        gruGateWeightVelocity_ = bindSpan(gruGateWeightCount);
+        gruGateBiasMomentum_ = bindSpan(gruGateBiasCount);
+        gruGateBiasVelocity_ = bindSpan(gruGateBiasCount);
 
         // Pre-allocate target critic weight/bias storage as C++-owned copies.
         // Initialise from the online critic weights so target starts identical.
@@ -338,31 +360,60 @@ namespace org::spartan::internal::machinelearning {
         std::copy_n(actionLogStdScratchpad_.data(), actionSize, policyLogStdCache_.data());
 
         // Convert log-std to std in-place via exp
-        if (config->baseConfig.isTraining) {
-            TensorOps::applyExpExact(std::span(actionLogStdScratchpad_));
-        } else {
-            TensorOps::applyExpFast(std::span(actionLogStdScratchpad_));
-        }
+        // applyExpExact for both training and inference to ensure consistent accuracy.
+        // applyExpFast has ~15% error for |x| > 2, which degrades std computation if log-std drifts.
+        TensorOps::applyExpExact(std::span(actionLogStdScratchpad_));
         std::copy_n(actionLogStdScratchpad_.data(), actionSize, actionStdScratchpad_.begin());
 
-        // Phase E: Write the final noisy action into the JVM-owned action output buffer.
-        TensorOps::applyGaussianNoise(
-            std::span<const double>(actionMeanScratchpad_),
-            std::span<const double>(actionStdScratchpad_),
-            actionOutputBuffer_);
+        // sample action pre-squash u ~ N(mean, std) and optionally squash via tanh
+        const bool squashEnabled = (config->squashActionsWithTanh != 0.0);
+        if (squashEnabled) {
+            // Sample pre-squash u into dedicated buffer
+            TensorOps::applyGaussianNoise(
+                std::span<const double>(actionMeanScratchpad_),
+                std::span<const double>(actionStdScratchpad_),
+                std::span<double>(preSquashActionU_));
 
-        // Cache noise = (action - mean) / std for policy gradients
-        for (int i = 0; i < actionSize; ++i) {
-            const double stdValue = actionStdScratchpad_[i];
-            actionNoiseScratchpad_[i] = stdValue > 1e-8
-                ? (actionOutputBuffer_[i] - actionMeanScratchpad_[i]) / stdValue
-                : 0.0;
+            // Compute a = tanh(u) into squashedActionA_
+            std::copy_n(preSquashActionU_.data(), actionSize, squashedActionA_.data());
+            if (config->baseConfig.isTraining) {
+                TensorOps::applyTanhExact(std::span(squashedActionA_));
+            } else {
+                TensorOps::applyTanh(std::span(squashedActionA_));
+            }
+
+            // write squashed actions to JVM-owned output buffer
+            for (int i = 0; i < actionSize; ++i) actionOutputBuffer_[i] = squashedActionA_[i];
+
+            // cache noise = (u - mean) / std for policy gradients
+            for (int i = 0; i < actionSize; ++i) {
+                const double stdValue = actionStdScratchpad_[i];
+                const double uVal = preSquashActionU_[i];
+                actionNoiseScratchpad_[i] = stdValue > 1e-8 ? (uVal - actionMeanScratchpad_[i]) / stdValue : 0.0;
+            }
+        } else {
+            // legacy behavior: sample directly into the JVM buffer (unbounded Gaussian)
+            TensorOps::applyGaussianNoise(
+                std::span<const double>(actionMeanScratchpad_),
+                std::span<const double>(actionStdScratchpad_),
+                actionOutputBuffer_);
+
+            // mirror preSquash and squashed buffers for downstream code to remain consistent
+            std::copy_n(actionOutputBuffer_.data(), actionSize, preSquashActionU_.data());
+            std::copy_n(actionOutputBuffer_.data(), actionSize, squashedActionA_.data());
+
+            // Cache noise = (action - mean) / std for policy gradients
+            for (int i = 0; i < actionSize; ++i) {
+                const double stdValue = actionStdScratchpad_[i];
+                actionNoiseScratchpad_[i] = stdValue > 1e-8
+                    ? (actionOutputBuffer_[i] - actionMeanScratchpad_[i]) / stdValue
+                    : 0.0;
+            }
         }
         hasPolicySnapshot_ = true;
 
-        //
-        // Phase F: Record the current cognitive snapshot for temporal credit assignment.
-        //
+
+        // record the current cognitive snapshot for temporal credit assignment.
         const int selectedActionIndex = static_cast<int>(
             TensorOps::findArgmax(
                 std::span<const double>(actionOutputBuffer_.data(), actionSize)));
@@ -374,9 +425,9 @@ namespace org::spartan::internal::machinelearning {
 
 
 
-        //
-        // Phase H (training only): Sync online critics -> target critics via Polyak averaging.
-        //
+
+        //(training only): Sync online critics -> target critics via Polyak averaging.
+
         if (config->baseConfig.isTraining) {
             constexpr double targetCriticSmoothingCoefficient = 0.005;
 
@@ -457,16 +508,33 @@ namespace org::spartan::internal::machinelearning {
 
         // Calculate target entropy H(π(·|s'))
         double targetStateEntropy = 0.0;
+        const bool squashEnabled = (config->squashActionsWithTanh != 0.0);
+        double correctionSum = 0.0;
+        const double eps = 1e-6;
+        if (squashEnabled) {
+            // Compute squashed actions a = tanh(u) into inferenceScratchpadA_.subspan(actionSize)
+            auto targetActionA = inferenceScratchpadA_.subspan(actionSize, actionSize);
+            for (int i = 0; i < actionSize; ++i) {
+                const double u = targetActionSampled[i];
+                const double a = std::tanh(u);
+                targetActionA[i] = a;
+                // Jacobian correction term: -log(1 - tanh(u)^2)
+                correctionSum += std::log(1.0 - (a * a) + eps);
+            }
+        }
+
         for (int i = 0; i < actionSize; ++i) {
             targetStateEntropy += targetActionLogStd[i] + kHalfLog2PiE;
         }
+        if (squashEnabled) targetStateEntropy -= correctionSum;
         if (!std::isfinite(targetStateEntropy)) {
             targetStateEntropy = -static_cast<double>(actionSize);
         }
 
-        // Evaluate target Q-networks with sampled a'
-        const std::span<const double> targetActionView = targetActionSampled;
-
+        // Evaluate target Q-networks with sampled a' (squashed if enabled)
+        const std::span<const double> targetActionView = squashEnabled
+            ? std::span<const double>(inferenceScratchpadA_.data() + actionSize, actionSize)
+            : targetActionSampled;
         const double firstTargetQValue = firstTargetCriticNetwork_.computeQValue(
             targetStateView, targetActionView, config,
             std::span(inferenceScratchpadA_),
@@ -480,10 +548,21 @@ namespace org::spartan::internal::machinelearning {
         const double minimumTargetQValue = std::min(firstTargetQValue, secondTargetQValue);
 
         // Calculate Current Policy Entropy
-        // Differential entropy of Gaussian: H(a|s) = log(std) + 0.5*log(2*pi*e)
+        // Differential entropy of Gaussian: H(u|s) = log(std) + 0.5*log(2*pi*e)
+        // if tanh squashing is enabled, apply change-of-variables correction:
+        // H(a|s) = H(u|s) - E[ sum log(1 - tanh(u)^2) ] (we approximate using the sampled u)
         double entropyEstimate = 0.0;
         for (int dimensionIndex = 0; dimensionIndex < actionSize; ++dimensionIndex) {
             entropyEstimate += policyLogStdCache_[dimensionIndex] + kHalfLog2PiE;
+        }
+        if (config->squashActionsWithTanh != 0.0) {
+            const double eps = 1e-6;
+            double corr = 0.0;
+            for (int i = 0; i < actionSize; ++i) {
+                const double a = squashedActionA_[i];
+                corr += std::log(1.0 - (a * a) + eps);
+            }
+            entropyEstimate -= corr;
         }
 
         // Clip entropy to avoid NaN
@@ -502,12 +581,11 @@ namespace org::spartan::internal::machinelearning {
         const int criticHiddenSize = config->criticHiddenLayerNeuronCount;
         const int criticLayerCount = config->criticHiddenLayerCount;
 
-        auto forwardCriticWithCache = [&](auto& criticNetwork, std::span<double> activationCache, std::span<const double> stateView) {
+        auto forwardCriticWithCache = [&](auto& criticNetwork, std::span<double> activationCache, std::span<const double> stateView, std::span<const double> actionView) {
             const int currentCombinedInputSize = static_cast<int>(stateView.size()) + actionSize;
 
             if (currentCombinedInputSize > static_cast<int>(criticCombinedInputBuffer_.size())) return 0.0;
 
-            const std::span<const double> actionView(actionOutputBuffer_.data(), actionSize);
             std::copy(stateView.begin(), stateView.end(), criticCombinedInputBuffer_.begin());
             std::copy(actionView.begin(), actionView.end(), criticCombinedInputBuffer_.begin() + stateView.size());
 
@@ -574,8 +652,8 @@ namespace org::spartan::internal::machinelearning {
             const int combinedInputSize = static_cast<int>(pastStateView.size()) + actionSize;
             if (combinedInputSize > static_cast<int>(criticCombinedInputBuffer_.size())) continue;
 
-            const double firstQValue = forwardCriticWithCache(firstCriticNetwork_, firstCriticActivationCache_, pastStateView);
-            const double secondQValue = forwardCriticWithCache(secondCriticNetwork_, secondCriticActivationCache_, pastStateView);
+            const double firstQValue = forwardCriticWithCache(firstCriticNetwork_, firstCriticActivationCache_, pastStateView, actionView);
+            const double secondQValue = forwardCriticWithCache(secondCriticNetwork_, secondCriticActivationCache_, pastStateView, actionView);
 
             ++criticTrainingStepCounter_;
 
@@ -591,8 +669,10 @@ namespace org::spartan::internal::machinelearning {
                 std::ranges::fill(criticWeightGradientScratchpad_, 0.0);
                 std::ranges::fill(criticBiasGradientScratchpad_, 0.0);
 
-                // MSE gradient dL/dQ = (Q - target) already has 2x from d(Q-target)²/dQ
-                const double tdError = (qValue - temporalDifferenceTarget);
+                // Using the exact MSE gradient: d/dQ (Q - target)^2 = 2*(Q - target)
+                // This doubles the critic gradient compared to the 0.5*(Q-target)^2 formulation
+                // if training is too aggressive, reduce the critic learning rate accordingly
+                const double tdError = 2.0 * (qValue - temporalDifferenceTarget);
 
                 // Compute offsets
                 size_t weightOffset = 0;
@@ -709,8 +789,9 @@ namespace org::spartan::internal::machinelearning {
         if (hasPolicySnapshot_) {
             const int currentCombinedInputSize = static_cast<int>(currentHiddenStateView.size()) + actionSize;
 
-            const double firstActorQValue = forwardCriticWithCache(firstCriticNetwork_, firstCriticActivationCache_, currentHiddenStateView);
-            const double secondActorQValue = forwardCriticWithCache(secondCriticNetwork_, secondCriticActivationCache_, currentHiddenStateView);
+            const std::span<const double> currentActionView(actionOutputBuffer_.data(), actionSize);
+            const double firstActorQValue = forwardCriticWithCache(firstCriticNetwork_, firstCriticActivationCache_, currentHiddenStateView, currentActionView);
+            const double secondActorQValue = forwardCriticWithCache(secondCriticNetwork_, secondCriticActivationCache_, currentHiddenStateView, currentActionView);
 
             auto computeActionGradient = [&](auto& criticNet, std::span<double> criticCache) {
                 // Compute dQ/da via backprop to critic input
@@ -778,19 +859,42 @@ namespace org::spartan::internal::machinelearning {
                 computeActionGradient(secondCriticNetwork_, secondCriticActivationCache_);
             }
 
+            // if actions are squashed through tanh, convert dQ/da -> dQ/du via chain rule:
+            // dQ/du = dQ/da * (1 - tanh(u)^2) where a = tanh(u) is stored in squashedActionA_.
+            if (config->squashActionsWithTanh != 0.0) {
+                for (int i = 0; i < actionSize; ++i) {
+                    const double a = squashedActionA_[i];
+                    actionGradientScratchpad_[i] *= (1.0 - a * a);
+                }
+            }
+
             // Policy gradients (mean/logstd heads)
             std::ranges::fill(policyWeightGradientScratchpad_, 0.0);
             std::ranges::fill(policyBiasGradientScratchpad_, 0.0);
 
-            // Full SAC Actor Loss: J(pi) = -Q(s,a) + clampedAlpha*log(pi(a|s))
+            // SAC Actor Loss: J(pi) = -Q(s,a) + clampedAlpha*log(pi(a|s))
             // Gradients: dJ/dmean = -dQ/da (maximize Q, minimize negative)
-            //           dJ/dlogStd = -dQ/da * (std * noise) + clampedAlpha (entropy regularization)
+            //           dJ/dlogStd = -dQ/du * (std * noise) + alpha * d(log pi)/dlogStd
+            //
+            // When tanh squashing is DISABLED: d(log pi)/dlogstd = (z^2 - 1)
+            // When tanh squashing is ENABLED: d(log pi)/dlogstd = (z^2 - 1) + 2*a*std*noise
+            //   where the +2*a*std*noise term comes from the Jacobian correction d(-log(1-a^2))/dlogstd
+            //   (since u depends on std which depends on logstd)
+            const bool squashEnabled = (config->squashActionsWithTanh != 0.0);
             for (int i = 0; i < actionSize; ++i) {
                 const double dQda = actionGradientScratchpad_[i];
                 const double stdValue = actionStdScratchpad_[i];
                 const double noise = actionNoiseScratchpad_[i];
                 const double dMean = -dQda;  // Negative because we MAXIMIZE Q (which is MSE loss)
-                const double dLogStd = -dQda * (stdValue * noise) + clampedAlpha;
+
+                // Compute exact entropy gradient w.r.t logStd
+                double entropyGradient = noise * noise - 1.0;  // Gaussian part: (z^2 - 1)
+                if (squashEnabled) {
+                    // Add Jacobian derivative of -log(1 - a^2) w.r.t. logstd
+                    const double a = squashedActionA_[i];
+                    entropyGradient += 2.0 * a * stdValue * noise;
+                }
+                const double dLogStd = -dQda * (stdValue * noise) + clampedAlpha * entropyGradient;
 
                 // Mean head gradients
                 size_t meanWeightOffset = static_cast<size_t>(hiddenSize) * hiddenSize;
@@ -812,6 +916,7 @@ namespace org::spartan::internal::machinelearning {
 
             // Hidden layer gradient (tanh backprop)
             std::ranges::fill(policyHiddenGradientScratchpad_, 0.0);
+            const bool squashEnabled2 = (config->squashActionsWithTanh != 0.0);
             for (int h = 0; h < hiddenSize; ++h) {
                 double grad = 0.0;
                 for (int i = 0; i < actionSize; ++i) {
@@ -819,7 +924,14 @@ namespace org::spartan::internal::machinelearning {
                     const double stdValue = actionStdScratchpad_[i];
                     const double noise = actionNoiseScratchpad_[i];
                     const double dMean = -dQda;
-                    const double dLogStd = -dQda * (stdValue * noise) + clampedAlpha;
+
+                    // Exact entropy gradient (see comment above in mean/logstd section)
+                    double entropyGradient = noise * noise - 1.0;
+                    if (squashEnabled2) {
+                        const double a = squashedActionA_[i];
+                        entropyGradient += 2.0 * a * stdValue * noise;
+                    }
+                    const double dLogStd = -dQda * (stdValue * noise) + clampedAlpha * entropyGradient;
 
                     const size_t meanWeightOffset = static_cast<size_t>(hiddenSize) * hiddenSize
                         + static_cast<size_t>(i) * hiddenSize + static_cast<size_t>(h);
@@ -860,6 +972,131 @@ namespace org::spartan::internal::machinelearning {
                 policyBiasVelocity_,
                 config->policyNetworkLearningRate, 0.9, 0.999, 1e-8,
                 policyTrainingStepCounter_);
+
+            // BPTT (Backpropagation Through Time) for GRU Gate Parameters
+            // Compute gradients of the GRU gate weights and biases using the hidden state gradients
+            // from the actor loss. This is a truncated BPTT with depth 1 (current timestep only).
+            if (gruGateWeightGradient_.size() > 0 && gruGateBiasGradient_.size() > 0) {
+                const int gruInputSize = static_cast<int>(contextBuffer_.size());
+                const int gruConcatSize = hiddenSize + gruInputSize;
+
+                // Clear gradient accumulators
+                std::ranges::fill(gruGateWeightGradient_, 0.0);
+                std::ranges::fill(gruGateBiasGradient_, 0.0);
+
+                // Gradient source: hidden state gradients from actor loss
+                // These represent dL/d(h_t) from the policy and Q-network updates
+                const std::span<const double> hiddenStateGradient = policyHiddenGradientScratchpad_;
+
+                // Get the concatenated input [h_{t-1}, x_t] from the recurrent gate memory buffer
+                const int gruConcatSize_actual = gruInputSize + hiddenSize;
+                const std::span<const double> gateMemory = recurrentGateMemoryBuffer_;
+                const std::span<const double> concatenatedInput = gateMemory.subspan(0, gruConcatSize_actual);
+
+                // Extract gate values from the memory buffer
+                // Layout: [concat(hidden, input)] + [Z] + [R] + [H~]
+                const std::span<const double> updateGateZ = gateMemory.subspan(gruConcatSize_actual, hiddenSize);
+                const std::span<const double> resetGateR = gateMemory.subspan(gruConcatSize_actual + hiddenSize, hiddenSize);
+                const std::span<const double> candidateStateH = gateMemory.subspan(gruConcatSize_actual + (hiddenSize * 2), hiddenSize);
+
+                // Scale hidden state gradient by the update gate (how much of the gradient flows through the new state)
+                std::vector<double> scaledGradient(hiddenSize);
+                for (int i = 0; i < hiddenSize; ++i) {
+                    scaledGradient[i] = hiddenStateGradient[i] * updateGateZ[i];
+                }
+
+                // Compute gradients w.r.t. candidate state (H~) gradient pass
+                std::vector<double> candidateGradient(hiddenSize);
+                for (int i = 0; i < hiddenSize; ++i) {
+                    // tanh derivative: (1 - h^2)
+                    const double tanhDerivative = 1.0 - (candidateStateH[i] * candidateStateH[i]);
+                    candidateGradient[i] = scaledGradient[i] * tanhDerivative;
+                }
+
+                // Candidate state weight gradient: dL/dW_h = candidateGradient ⊗ [R⊙h_{t-1}, x_t]
+                // First, compute the effective input: [R⊙h_{t-1}, x_t]
+                std::vector<double> candidateInput(gruConcatSize_actual);
+                // R⊙h_{t-1} (element-wise product of reset gate with old hidden state)
+                for (int i = 0; i < hiddenSize; ++i) {
+                    candidateInput[i] = resetGateR[i] * concatenatedInput[i];
+                }
+                // x_t part
+                std::copy(concatenatedInput.begin() + hiddenSize, concatenatedInput.end(), candidateInput.begin() + hiddenSize);
+
+                // Accumulate gradients for candidate gate weights: W_h
+                size_t weightOffset = 2 * (hiddenSize * gruConcatSize_actual); // Skip W_z and W_r
+                for (int i = 0; i < hiddenSize; ++i) {
+                    for (int j = 0; j < gruConcatSize_actual; ++j) {
+                        gruGateWeightGradient_[weightOffset + i * gruConcatSize_actual + j] += candidateGradient[i] * candidateInput[j];
+                    }
+                    gruGateBiasGradient_[2 * hiddenSize + i] += candidateGradient[i];
+                }
+
+                // Gradient for reset gate (R)
+                // dL/dR = (gradient from candidate) * (concatenated_input[0:hiddenSize])
+                // dL/dZ = (hiddenStateGradient) * (old_hidden_state - candidate_state)
+                std::vector<double> resetGateGradient(hiddenSize);
+                for (int i = 0; i < hiddenSize; ++i) {
+                    resetGateGradient[i] = candidateGradient[i] * concatenatedInput[i];
+                }
+
+                std::vector<double> updateGateGradient(hiddenSize);
+                for (int i = 0; i < hiddenSize; ++i) {
+                    // dL/dZ = dL/dh_t * (h~_t - h_{t-1})
+                    updateGateGradient[i] = hiddenStateGradient[i] * (candidateStateH[i] - concatenatedInput[i]);
+                }
+
+                // Sigmoid derivative: σ(x)(1-σ(x)) = σ(x) * (1 - σ(x))
+                std::vector<double> sigmoidDerivZ(hiddenSize), sigmoidDerivR(hiddenSize);
+                for (int i = 0; i < hiddenSize; ++i) {
+                    sigmoidDerivZ[i] = updateGateZ[i] * (1.0 - updateGateZ[i]);
+                    sigmoidDerivR[i] = resetGateR[i] * (1.0 - resetGateR[i]);
+                }
+
+                // Apply sigmoid derivative to gate gradients
+                for (int i = 0; i < hiddenSize; ++i) {
+                    updateGateGradient[i] *= sigmoidDerivZ[i];
+                    resetGateGradient[i] *= sigmoidDerivR[i];
+                }
+
+                // Update gate weight gradient: dL/dW_z = updateGateGradient ⊗ concatenatedInput
+                weightOffset = 0; // W_z is at offset 0
+                for (int i = 0; i < hiddenSize; ++i) {
+                    for (int j = 0; j < gruConcatSize_actual; ++j) {
+                        gruGateWeightGradient_[weightOffset + i * gruConcatSize_actual + j] += updateGateGradient[i] * concatenatedInput[j];
+                    }
+                    gruGateBiasGradient_[i] += updateGateGradient[i];
+                }
+
+                // Reset gate weight gradient: dL/dW_r = resetGateGradient ⊗ concatenatedInput
+                weightOffset = (hiddenSize * gruConcatSize_actual); // W_r is after W_z
+                for (int i = 0; i < hiddenSize; ++i) {
+                    for (int j = 0; j < gruConcatSize_actual; ++j) {
+                        gruGateWeightGradient_[weightOffset + i * gruConcatSize_actual + j] += resetGateGradient[i] * concatenatedInput[j];
+                    }
+                    gruGateBiasGradient_[hiddenSize + i] += resetGateGradient[i];
+                }
+
+                // Apply Adam update to GRU gate weights and biases
+                ++criticTrainingStepCounter_; // Reuse critic training counter for GRU updates
+                TensorOps::applyAdamUpdate(
+                    recurrentLayer_.getMutableGateWeights(),
+                    std::span<const double>(gruGateWeightGradient_),
+                    gruGateWeightMomentum_,
+                    gruGateWeightVelocity_,
+                    config->policyNetworkLearningRate * 0.5, // Use half the policy learning rate for GRU
+                    0.9, 0.999, 1e-8,
+                    criticTrainingStepCounter_);
+
+                TensorOps::applyAdamUpdate(
+                    recurrentLayer_.getMutableGateBiases(),
+                    std::span<const double>(gruGateBiasGradient_),
+                    gruGateBiasMomentum_,
+                    gruGateBiasVelocity_,
+                    config->policyNetworkLearningRate * 0.5,
+                    0.9, 0.999, 1e-8,
+                    criticTrainingStepCounter_);
+            }
 
             // Automatic Entropy Temperature (Alpha) Tuning
             // objective: L(alpha) = -alpha * (entropy - targetEntropy)

@@ -473,6 +473,9 @@ namespace org::spartan::internal::machinelearning {
         std::span<double> actionStdScratchpad_;
         std::span<double> actionNoiseScratchpad_;
         std::span<double> actionGradientScratchpad_;
+        // Pre-squash and post-squash action buffers (used when tanh squashing is enabled)
+        std::span<double> preSquashActionU_;
+        std::span<double> squashedActionA_;
         std::span<double> policyLogStdCache_;
         std::span<double> policyHiddenActivationCache_;
 
@@ -537,6 +540,14 @@ namespace org::spartan::internal::machinelearning {
         // Adam optimizer state for log-alpha
         std::span<double> alphaMomentum_;
         std::span<double> alphaVelocity_;
+
+        // GRU gate parameter gradients and Adam optimizer state for BPTT
+        std::span<double> gruGateWeightGradient_;
+        std::span<double> gruGateBiasGradient_;
+        std::span<double> gruGateWeightMomentum_;
+        std::span<double> gruGateWeightVelocity_;
+        std::span<double> gruGateBiasMomentum_;
+        std::span<double> gruGateBiasVelocity_;
 
         // Flag to indicate terminal state for correct TD bootstrapping
         bool isTerminalState_ = false;

@@ -11,7 +11,7 @@ import org.spartan.api.engine.config.*;
  */
 public interface SpartanConfigFactoryServiceProvider {
 
-    @Contract("_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_ -> new")
+    @Contract("_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_ -> new")
     @NotNull RecurrentSoftActorCriticConfig createRecurrentSoftActorCriticConfig(
             double learningRate,
             double gamma,
@@ -35,7 +35,8 @@ public interface SpartanConfigFactoryServiceProvider {
             int remorseTraceBufferCapacity,
             double remorseMinimumSimilarityThreshold,
             double targetEntropy,
-            double alphaLearningRate
+            double alphaLearningRate,
+            double squashActionsWithTanh
     );
     @Contract("_,_,_,_,_,_,_,_,_ -> new")
     @NotNull CuriosityDrivenRecurrentSoftActorCriticConfig createCuriosityDrivenRecurrentSoftActorCriticConfig(

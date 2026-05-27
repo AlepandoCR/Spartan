@@ -1,4 +1,4 @@
-//
+ //
 // Created by Alepando on 10/3/2026.
 //
 
@@ -247,7 +247,7 @@ namespace org::spartan::internal::math::tensor {
                 std::span<double> outActions,
                 std::uint64_t seed = 0);
 
-        static void applyLogExact(std::span<double> tensor);
+        static void applyLogApproximate(std::span<double> tensor);
 
         static void computeGaussianLogProbabilities(
                 std::span<const double> actions,

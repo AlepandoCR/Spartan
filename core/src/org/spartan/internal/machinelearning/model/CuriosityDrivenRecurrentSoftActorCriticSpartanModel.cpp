@@ -480,6 +480,10 @@ namespace org::spartan::internal::machinelearning {
         TensorOps::denseForwardPass(
             forwardNetworkInputBuffer_, inputToHiddenWeights, hiddenBiases, forwardNetworkHiddenBuffer_
         );
+        // apply non-linearity to enable the forward dynamics network to model nonlinear transitions
+        // Previously this activation was missing which reduced the two-layer network to a single linear
+        // mapping. Use LeakyReLU for stability consistent with the inverse dynamics network.
+        TensorOps::applyLeakyReLU(forwardNetworkHiddenBuffer_, 0.01);
 
         logging::SpartanLogger::debug("[CURIOSITY-INFERENCE] Input->Hidden forward pass complete");
 

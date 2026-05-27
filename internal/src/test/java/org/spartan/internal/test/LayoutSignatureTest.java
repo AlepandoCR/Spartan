@@ -19,4 +19,3 @@ public class LayoutSignatureTest {
         assertEquals(nativeSig, jvmSig, "Native layout signature and JVM-computed signature must match");
     }
 }
-

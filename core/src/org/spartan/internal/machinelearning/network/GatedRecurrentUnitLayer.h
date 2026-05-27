@@ -116,6 +116,16 @@ namespace org::spartan::internal::machinelearning {
             return hiddenStateBuffer_;
         }
 
+        /** @brief Returns a mutable span over the gate weights buffer for BPTT updates. */
+        [[nodiscard]] std::span<double> getMutableGateWeights() noexcept {
+            return gateWeights_;
+        }
+
+        /** @brief Returns a mutable span over the gate biases buffer for BPTT updates. */
+        [[nodiscard]] std::span<double> getMutableGateBiases() noexcept {
+            return gateBiases_;
+        }
+
     protected:
         std::span<double> gateWeights_;
         std::span<double> gateBiases_;

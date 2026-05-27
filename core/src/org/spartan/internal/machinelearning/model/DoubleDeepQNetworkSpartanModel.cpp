@@ -98,12 +98,12 @@ namespace org::spartan::internal::machinelearning {
         }
 
         // DDQN ACTION SELECTION FLOW:
-        //  The online Q-network computes Q(s, a) for each discrete action a.
-        // Action selection strategy (epsilon-greedy) is an EXTERNAL policy that uses these predictions:
+        // 1. The online Q-network ALWAYS computes Q(s, a) for each discrete action a.
+        // 2. Action selection strategy (epsilon-greedy) is an EXTERNAL policy that uses these predictions:
         //    - EXPLOITATION (prob 1-ε): Select argmax_a Q(s, a) → network's best prediction
         //    - EXPLORATION (prob ε):   Ignore Q-values, select uniformly random action → exploration boost
-        // Selected action is encoded as one-hot and written to actionOutputBuffer_.
-        // One-hot encoding is stored in replay buffer for training via applyReward().
+        // 3. Selected action is encoded as one-hot and written to actionOutputBuffer_.
+        // 4. One-hot encoding is stored in replay buffer for training via applyReward().
         //
         // CRITICAL: The network PREDICTS; the policy DECIDES. Never random predictions, only exploration override.
 
@@ -126,10 +126,10 @@ namespace org::spartan::internal::machinelearning {
         const double explorationRoll = uniformDistribution(randomGenerator);
 
         if (config->baseConfig.isTraining && explorationRoll < config->baseConfig.epsilon) {
-            // EPSILON-GREEDY EXPLORATION POLICY :
-            // With probability epsilon, override the model's Q-value predictions and select a uniformly random action
-            // The network still learns from this decision via replay buffer, but action selection ignores predicted Q-values temporarily
-            std::uniform_int_distribution actionDistribution(0, actionSize - 1);
+            // EPSILON-GREEDY EXPLORATION POLICY (external strategy, not model prediction):
+            // With probability epsilon, override the model's Q-value predictions and select a uniformly random action.
+            // The network still learns from this decision via replay buffer, but action selection ignores predicted Q-values temporarily.
+            std::uniform_int_distribution<int> actionDistribution(0, actionSize - 1);
             const int randomActionIndex = actionDistribution(randomGenerator);
             writeDiscreteActionOneHot(randomActionIndex);
 
@@ -138,7 +138,7 @@ namespace org::spartan::internal::machinelearning {
                     std::format("[DDQN] Exploration (epsilon-greedy override): selected random action index {}", randomActionIndex));
             }
         } else {
-            // exploitation:0 The network predicts Q-values for all discrete actions.
+            // EXPLOITATION: The network predicts Q-values for all discrete actions.
             // We select the action with the highest predicted Q-value (argmax).
             // The network's training via applyReward() refines these predictions over time.
             for (int actionIndex = 0; actionIndex < actionSize; ++actionIndex) {

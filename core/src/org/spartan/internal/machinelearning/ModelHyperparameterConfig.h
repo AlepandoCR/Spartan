@@ -103,6 +103,11 @@ extern "C" {
         double targetEntropy;
         double alphaLearningRate;
         double remorseMinimumSimilarityThreshold;
+        // When true (non-zero), the Gaussian policy samples u ~ N(mu, sigma)
+        // and outputs actions a = tanh(u). The log-probabilities and entropy
+        // are corrected with the tanh change-of-variables Jacobian.
+        // Default: 1.0 (enabled)
+        double squashActionsWithTanh;
 
         //  Array at end
         NestedEncoderSlotDescriptor encoderSlots[SPARTAN_MAX_NESTED_ENCODER_SLOTS];
@@ -168,13 +173,13 @@ extern "C" {
     //  Compile-Time Layout Validation
     // These static_asserts ensure C++ struct layouts match Java FFM offsets exactly.
     static_assert(sizeof(BaseHyperparameterConfig) == 64, "BaseHyperparameterConfig must be 64 bytes");
-    static_assert(sizeof(RecurrentSoftActorCriticHyperparameterConfig) == 424, "RecurrentSoftActorCriticHyperparameterConfig must be 424 bytes");
-    static_assert(sizeof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig) == 488, "CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig must be 488 bytes");
+    static_assert(sizeof(RecurrentSoftActorCriticHyperparameterConfig) == 432, "RecurrentSoftActorCriticHyperparameterConfig must be 432 bytes");
+    static_assert(sizeof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig) == 496, "CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig must be 496 bytes");
     static_assert(offsetof(RecurrentSoftActorCriticHyperparameterConfig, hiddenStateSize) == 64, "RSAC.hiddenStateSize offset must be 64 bytes");
     static_assert(offsetof(RecurrentSoftActorCriticHyperparameterConfig, recurrentInputFeatureCount) == 88, "RSAC.recurrentInputFeatureCount offset must be 88 bytes");
-    static_assert(offsetof(RecurrentSoftActorCriticHyperparameterConfig, encoderSlots) == 168, "RSAC.encoderSlots offset must be 168 bytes");
-    static_assert(offsetof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig, forwardDynamicsHiddenLayerDimensionSize) == 424, "CuriosityRSAC.forwardDynamicsHiddenLayerDimensionSize offset must be 424 bytes");
-    static_assert(offsetof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig, inverseDynamicsHiddenLayerDimensionSize) == 464, "CuriosityRSAC.inverseDynamicsHiddenLayerDimensionSize offset must be 464 bytes");
+    static_assert(offsetof(RecurrentSoftActorCriticHyperparameterConfig, encoderSlots) == 176, "RSAC.encoderSlots offset must be 176 bytes");
+    static_assert(offsetof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig, forwardDynamicsHiddenLayerDimensionSize) == 432, "CuriosityRSAC.forwardDynamicsHiddenLayerDimensionSize offset must be 432 bytes");
+    static_assert(offsetof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig, inverseDynamicsHiddenLayerDimensionSize) == 472, "CuriosityRSAC.inverseDynamicsHiddenLayerDimensionSize offset must be 472 bytes");
 
     //
     //  Multi-Agent Group Configuration

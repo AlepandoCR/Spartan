@@ -566,7 +566,17 @@ namespace org::spartan::internal::math::tensor {
         }
     }
 
-    void TensorOps::applyLogExact(const std::span<double> tensor) {
+    /**
+        * Applies logarithm with a mixed precision approach.
+        * - SIMD path: Uses a Taylor series approximation for performance on normalized inputs.
+        * - Tail path: Uses exact std::log for consistency on edge cases.
+        *
+        * This method prioritizes vectorization speed on SIMD-aligned elements while ensuring
+        * accuracy and stability across the entire input range.
+        *
+        */
+    void TensorOps::applyLogApproximate(const std::span<double> tensor) {
+
         const auto& ops = getSelectedSimdOperations();
         const int laneCount = getSimdLaneCount();
 
