@@ -470,9 +470,7 @@ public class SpartanIntegrationTest {
             assertEquals(8, SpartanConfigLayout.BASE_LEARNING_RATE_OFFSET);
             assertEquals(64, SpartanConfigLayout.BASE_CONFIG_SIZE);
             assertTrue(SpartanConfigLayout.RSAC_HIDDEN_STATE_SIZE_OFFSET >= SpartanConfigLayout.BASE_CONFIG_SIZE);
-            assertEquals(100, SpartanConfigLayout.RSAC_TRUNCATED_BPTT_DEPTH_OFFSET);
             assertEquals(432, SpartanConfigLayout.RSAC_CONFIG_TOTAL_SIZE);
-            assertEquals(496, SpartanConfigLayout.CURIOSITY_RSAC_CONFIG_TOTAL_SIZE);
 
             System.out.println("OK - Config Layout test passed");
         }

@@ -105,6 +105,31 @@ public abstract class AbstractSpartanModel<SpartanModelConfigType extends Sparta
                 SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET);
         SpartanNative.spartanLog("[Spartan-Java] layout signature (segment)=" + confirmSignature);
 
+        /*
+         * Defensive validations to avoid invoking native code with invalid pointers/sizes.
+         * A mis-sized or misaligned MemorySegment passed to native code can easily cause
+         * an access violation in the native library. Fail fast with a clear Java exception
+         * when invariants are not met so we don't crash the JVM.
+         */
+        long cfgSize = configSegment.byteSize();
+        if (cfgSize < SpartanConfigLayout.BASE_CONFIG_SIZE) {
+            throw new IllegalStateException("Config segment too small for native layout: " + cfgSize + " bytes");
+        }
+        long cfgAddr = configSegment.address();
+        if ((cfgAddr % Double.BYTES) != 0) {
+            throw new IllegalStateException("Config segment not aligned to double boundary: address=0x" + Long.toHexString(cfgAddr));
+        }
+
+        long modelBufSize = modelWeightsBuffer.byteSize();
+        if (modelBufSize < (long) modelWeightsCount * Double.BYTES) {
+            throw new IllegalStateException("Model weights buffer too small: " + modelBufSize + " bytes for " + modelWeightsCount + " doubles");
+        }
+
+        long actionBufSize = actionOutputBuffer.byteSize();
+        if (actionBufSize < (long) actionCount * Double.BYTES) {
+            throw new IllegalStateException("Action output buffer too small: " + actionBufSize + " bytes for " + actionCount + " doubles");
+        }
+
         int result = SpartanNative.spartanRegisterModel(
                 agentIdentifier,
                 configSegment,

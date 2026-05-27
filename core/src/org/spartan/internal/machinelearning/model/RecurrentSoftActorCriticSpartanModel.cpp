@@ -7,8 +7,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <cstdlib>
-#include <string>
 #include <format>
 
 #include "internal/math/reinforcement/SpartanReinforcement.h"
@@ -90,20 +88,6 @@ namespace org::spartan::internal::machinelearning {
         const int traceCapacity = config->remorseTraceBufferCapacity > 0
             ? config->remorseTraceBufferCapacity : 256;
         remorseTraceBuffer_ = RemorseTraceBuffer(traceCapacity, hiddenSize);
-        remorseTraceCapacity_ = traceCapacity;
-        // Configure truncated BPTT depth from serialized config (minimum 1).
-        truncatedBPTTDepth_ = std::max(1, config->truncatedBPTTDepth);
-
-        // Optional local override from environment variable.
-        const char* bpttEnv = std::getenv("SPARTAN_TRUNCATED_BPTT_DEPTH");
-        if (bpttEnv) {
-            try {
-                int parsed = std::stoi(std::string(bpttEnv));
-                if (parsed > 0) truncatedBPTTDepth_ = parsed;
-            } catch (...) {
-                // ignore parse errors and keep default
-            }
-        }
 
         // Helper to ensure SIMD alignment (64 bytes = 8 doubles)
         auto alignSize = [](size_t size) -> size_t {
@@ -148,10 +132,6 @@ namespace org::spartan::internal::machinelearning {
         // GRU gate memory: [concat(hidden, input)] + [Z] + [R] + [H~]
         size_t gruMemSize = (hiddenSize + compressedObservationSize) + (hiddenSize * 3);
         totalDoublesNeeded += alignSize(gruMemSize);
-
-        // Store per-snapshot gate memory size for truncated BPTT and allocate the archive
-        gruGateMemSize_ = gruMemSize;
-        gateMemoryArchive_.assign(static_cast<size_t>(traceCapacity) * gruGateMemSize_, 0.0);
 
         // Blame scores scratchpad (one per trace entry)
         totalDoublesNeeded += alignSize(traceCapacity);
@@ -252,9 +232,6 @@ namespace org::spartan::internal::machinelearning {
 
         // GRU gate memory: [concat(hidden, input)] + [Z] + [R] + [H~]
         recurrentGateMemoryBuffer_ = bindSpan(gruMemSize);
-
-        // Initialize ring write head for gate memory archive (keeps in sync with remorseTraceBuffer_ calls)
-        remorseArchiveWriteHead_ = 0;
 
         // Blame scores scratchpad (one per trace entry)
         blameScoresScratchpad_ = bindSpan(traceCapacity);
@@ -441,22 +418,10 @@ namespace org::spartan::internal::machinelearning {
             TensorOps::findArgmax(
                 std::span<const double>(actionOutputBuffer_.data(), actionSize)));
 
-        // Archive the recurrent gate memory for truncated BPTT (keeps per-timestep gate values)
-        if (gruGateMemSize_ > 0 && remorseTraceCapacity_ > 0) {
-            const size_t archiveOffset = static_cast<size_t>(remorseArchiveWriteHead_) * gruGateMemSize_;
-            std::copy_n(recurrentGateMemoryBuffer_.data(), gruGateMemSize_, gateMemoryArchive_.data() + archiveOffset);
-        }
-
         remorseTraceBuffer_.recordSnapshot(
             currentTickNumber_,
             selectedActionIndex,
             hiddenStateView);
-
-        // Advance our gate memory write head to stay in sync with the remorse trace buffer
-        if (remorseTraceCapacity_ > 0) {
-            ++remorseArchiveWriteHead_;
-            if (remorseArchiveWriteHead_ >= remorseTraceCapacity_) remorseArchiveWriteHead_ = 0;
-        }
 
 
 
@@ -1009,142 +974,128 @@ namespace org::spartan::internal::machinelearning {
                 policyTrainingStepCounter_);
 
             // BPTT (Backpropagation Through Time) for GRU Gate Parameters
-            // Compute gradients over a truncated window of past timesteps using archived gate memory.
-            if (gruGateWeightGradient_.size() > 0 && gruGateBiasGradient_.size() > 0 && gruGateMemSize_ > 0) {
-                const int availableEntries = remorseTraceBuffer_.currentEntryCount();
-                const int depth = std::min(static_cast<int>(truncatedBPTTDepth_), availableEntries);
+            // Compute gradients of the GRU gate weights and biases using the hidden state gradients
+            // from the actor loss. This is a truncated BPTT with depth 1 (current timestep only).
+            if (gruGateWeightGradient_.size() > 0 && gruGateBiasGradient_.size() > 0) {
+                const int gruInputSize = static_cast<int>(contextBuffer_.size());
+                const int gruConcatSize = hiddenSize + gruInputSize;
 
-                if (depth > 0) {
-                    // Clear gradient accumulators
-                    std::ranges::fill(gruGateWeightGradient_, 0.0);
-                    std::ranges::fill(gruGateBiasGradient_, 0.0);
+                // Clear gradient accumulators
+                std::ranges::fill(gruGateWeightGradient_, 0.0);
+                std::ranges::fill(gruGateBiasGradient_, 0.0);
 
-                    // Initial gradient source at time t (current timestep)
-                    std::vector<double> gradPrev(hiddenSize);
-                    for (int i = 0; i < hiddenSize; ++i) gradPrev[i] = policyHiddenGradientScratchpad_[i];
+                // Gradient source: hidden state gradients from actor loss
+                // These represent dL/d(h_t) from the policy and Q-network updates
+                const std::span<const double> hiddenStateGradient = policyHiddenGradientScratchpad_;
 
-                    // Precompute sizes and offsets for gate weights layout
-                    const int concatSize = static_cast<int>(gruGateMemSize_) - (hiddenSize * 3);
-                    const size_t wzOffset = 0;
-                    const size_t wrOffset = static_cast<size_t>(hiddenSize) * concatSize;
-                    const size_t whOffset = 2 * static_cast<size_t>(hiddenSize) * concatSize;
+                // Get the concatenated input [h_{t-1}, x_t] from the recurrent gate memory buffer
+                const int gruConcatSize_actual = gruInputSize + hiddenSize;
+                const std::span<const double> gateMemory = recurrentGateMemoryBuffer_;
+                const std::span<const double> concatenatedInput = gateMemory.subspan(0, gruConcatSize_actual);
 
-                    // Local reference to gate weights for read access
-                    const auto gateWeights = recurrentLayer_.getMutableGateWeights();
+                // Extract gate values from the memory buffer
+                // Layout: [concat(hidden, input)] + [Z] + [R] + [H~]
+                const std::span<const double> updateGateZ = gateMemory.subspan(gruConcatSize_actual, hiddenSize);
+                const std::span<const double> resetGateR = gateMemory.subspan(gruConcatSize_actual + hiddenSize, hiddenSize);
+                const std::span<const double> candidateStateH = gateMemory.subspan(gruConcatSize_actual + (hiddenSize * 2), hiddenSize);
 
-                    // Iterate backwards through time: most recent -> older
-                    for (int step = 0; step < depth; ++step) {
-                        // logical index where 0 = oldest, so newest = availableEntries - 1
-                        int logicalIndex = availableEntries - 1 - step;
-
-                        // Resolve physical index into our gateMemoryArchive_
-                        int32_t physicalIndex;
-                        if (availableEntries < remorseTraceCapacity_) {
-                            physicalIndex = logicalIndex;
-                        } else {
-                            physicalIndex = remorseArchiveWriteHead_ + logicalIndex;
-                            if (physicalIndex >= remorseTraceCapacity_) physicalIndex -= remorseTraceCapacity_;
-                        }
-
-                        const size_t archiveOffset = static_cast<size_t>(physicalIndex) * gruGateMemSize_;
-                        const double* archivePtr = gateMemoryArchive_.data() + archiveOffset;
-
-                        // Slice the archived gate memory: [concat | Z | R | H~]
-                        const double* concatPtr = archivePtr;
-                        const double* zPtr = archivePtr + concatSize;
-                        const double* rPtr = archivePtr + concatSize + hiddenSize;
-                        const double* hTildePtr = archivePtr + concatSize + (hiddenSize * 2);
-
-                        // Compute scaledGradient = gradPrev ⊙ Z
-                        std::vector<double> scaledGradient(hiddenSize);
-                        for (int i = 0; i < hiddenSize; ++i) scaledGradient[i] = gradPrev[i] * zPtr[i];
-
-                        // Candidate gradient: tanh derivative
-                        std::vector<double> candidateGradient(hiddenSize);
-                        for (int i = 0; i < hiddenSize; ++i) candidateGradient[i] = scaledGradient[i] * (1.0 - hTildePtr[i] * hTildePtr[i]);
-
-                        // Candidate input: [R ⊙ h_{t-1}, x_t]
-                        std::vector<double> candidateInput(concatSize);
-                        for (int i = 0; i < hiddenSize; ++i) candidateInput[i] = rPtr[i] * concatPtr[i];
-                        for (int i = hiddenSize; i < concatSize; ++i) candidateInput[i] = concatPtr[i];
-
-                        // Accumulate W_h gradients and bias
-                        for (int i = 0; i < hiddenSize; ++i) {
-                            for (int j = 0; j < concatSize; ++j) {
-                                gruGateWeightGradient_[whOffset + static_cast<size_t>(i) * concatSize + j] += candidateGradient[i] * candidateInput[j];
-                            }
-                            gruGateBiasGradient_[2 * hiddenSize + i] += candidateGradient[i];
-                        }
-
-                        // Reset gate gradient: candidateGradient ⊙ h_{t-1}
-                        std::vector<double> resetGateGradient(hiddenSize);
-                        for (int i = 0; i < hiddenSize; ++i) resetGateGradient[i] = candidateGradient[i] * concatPtr[i];
-
-                        // Update gate gradient: gradPrev ⊙ (h~ - h_{t-1})
-                        std::vector<double> updateGateGradient(hiddenSize);
-                        for (int i = 0; i < hiddenSize; ++i) updateGateGradient[i] = gradPrev[i] * (hTildePtr[i] - concatPtr[i]);
-
-                        // Apply sigmoid derivative to gate gradients
-                        for (int i = 0; i < hiddenSize; ++i) {
-                            const double z = zPtr[i];
-                            updateGateGradient[i] *= z * (1.0 - z);
-                            const double r = rPtr[i];
-                            resetGateGradient[i] *= r * (1.0 - r);
-                        }
-
-                        // Accumulate W_z and W_r gradients and biases
-                        for (int i = 0; i < hiddenSize; ++i) {
-                            for (int j = 0; j < concatSize; ++j) {
-                                gruGateWeightGradient_[wzOffset + static_cast<size_t>(i) * concatSize + j] += updateGateGradient[i] * concatPtr[j];
-                                gruGateWeightGradient_[wrOffset + static_cast<size_t>(i) * concatSize + j] += resetGateGradient[i] * concatPtr[j];
-                            }
-                            gruGateBiasGradient_[i] += updateGateGradient[i];
-                            gruGateBiasGradient_[hiddenSize + i] += resetGateGradient[i];
-                        }
-
-                        // Compute gradient to propagate to previous hidden state h_{t-1}
-                        std::vector<double> dPrev(hiddenSize);
-                        for (int p = 0; p < hiddenSize; ++p) {
-                            // Start with contribution through the (1 - z) term
-                            double acc = gradPrev[p] * (1.0 - zPtr[p]);
-
-                            // Add contributions from W_h, W_z, W_r (columns corresponding to h_{t-1})
-                            for (int j = 0; j < hiddenSize; ++j) {
-                                const size_t idxWh = whOffset + static_cast<size_t>(j) * concatSize + static_cast<size_t>(p);
-                                const size_t idxWz = wzOffset + static_cast<size_t>(j) * concatSize + static_cast<size_t>(p);
-                                const size_t idxWr = wrOffset + static_cast<size_t>(j) * concatSize + static_cast<size_t>(p);
-
-                                acc += candidateGradient[j] * gateWeights[idxWh] * rPtr[j];
-                                acc += updateGateGradient[j] * gateWeights[idxWz];
-                                acc += resetGateGradient[j] * gateWeights[idxWr];
-                            }
-                            dPrev[p] = acc;
-                        }
-
-                        // Prepare for next (earlier) timestep
-                        gradPrev = std::move(dPrev);
-                    }
-
-                    // Apply Adam update to GRU gate weights and biases after accumulation
-                    ++criticTrainingStepCounter_; // Reuse critic training counter for GRU updates
-                    TensorOps::applyAdamUpdate(
-                        recurrentLayer_.getMutableGateWeights(),
-                        std::span<const double>(gruGateWeightGradient_),
-                        gruGateWeightMomentum_,
-                        gruGateWeightVelocity_,
-                        config->policyNetworkLearningRate * 0.5, // Use half the policy learning rate for GRU
-                        0.9, 0.999, 1e-8,
-                        criticTrainingStepCounter_);
-
-                    TensorOps::applyAdamUpdate(
-                        recurrentLayer_.getMutableGateBiases(),
-                        std::span<const double>(gruGateBiasGradient_),
-                        gruGateBiasMomentum_,
-                        gruGateBiasVelocity_,
-                        config->policyNetworkLearningRate * 0.5,
-                        0.9, 0.999, 1e-8,
-                        criticTrainingStepCounter_);
+                // Scale hidden state gradient by the update gate (how much of the gradient flows through the new state)
+                std::vector<double> scaledGradient(hiddenSize);
+                for (int i = 0; i < hiddenSize; ++i) {
+                    scaledGradient[i] = hiddenStateGradient[i] * updateGateZ[i];
                 }
+
+                // Compute gradients w.r.t. candidate state (H~) gradient pass
+                std::vector<double> candidateGradient(hiddenSize);
+                for (int i = 0; i < hiddenSize; ++i) {
+                    // tanh derivative: (1 - h^2)
+                    const double tanhDerivative = 1.0 - (candidateStateH[i] * candidateStateH[i]);
+                    candidateGradient[i] = scaledGradient[i] * tanhDerivative;
+                }
+
+                // Candidate state weight gradient: dL/dW_h = candidateGradient ⊗ [R⊙h_{t-1}, x_t]
+                // First, compute the effective input: [R⊙h_{t-1}, x_t]
+                std::vector<double> candidateInput(gruConcatSize_actual);
+                // R⊙h_{t-1} (element-wise product of reset gate with old hidden state)
+                for (int i = 0; i < hiddenSize; ++i) {
+                    candidateInput[i] = resetGateR[i] * concatenatedInput[i];
+                }
+                // x_t part
+                std::copy(concatenatedInput.begin() + hiddenSize, concatenatedInput.end(), candidateInput.begin() + hiddenSize);
+
+                // Accumulate gradients for candidate gate weights: W_h
+                size_t weightOffset = 2 * (hiddenSize * gruConcatSize_actual); // Skip W_z and W_r
+                for (int i = 0; i < hiddenSize; ++i) {
+                    for (int j = 0; j < gruConcatSize_actual; ++j) {
+                        gruGateWeightGradient_[weightOffset + i * gruConcatSize_actual + j] += candidateGradient[i] * candidateInput[j];
+                    }
+                    gruGateBiasGradient_[2 * hiddenSize + i] += candidateGradient[i];
+                }
+
+                // Gradient for reset gate (R)
+                // dL/dR = (gradient from candidate) * (concatenated_input[0:hiddenSize])
+                // dL/dZ = (hiddenStateGradient) * (old_hidden_state - candidate_state)
+                std::vector<double> resetGateGradient(hiddenSize);
+                for (int i = 0; i < hiddenSize; ++i) {
+                    resetGateGradient[i] = candidateGradient[i] * concatenatedInput[i];
+                }
+
+                std::vector<double> updateGateGradient(hiddenSize);
+                for (int i = 0; i < hiddenSize; ++i) {
+                    // dL/dZ = dL/dh_t * (h~_t - h_{t-1})
+                    updateGateGradient[i] = hiddenStateGradient[i] * (candidateStateH[i] - concatenatedInput[i]);
+                }
+
+                // Sigmoid derivative: σ(x)(1-σ(x)) = σ(x) * (1 - σ(x))
+                std::vector<double> sigmoidDerivZ(hiddenSize), sigmoidDerivR(hiddenSize);
+                for (int i = 0; i < hiddenSize; ++i) {
+                    sigmoidDerivZ[i] = updateGateZ[i] * (1.0 - updateGateZ[i]);
+                    sigmoidDerivR[i] = resetGateR[i] * (1.0 - resetGateR[i]);
+                }
+
+                // Apply sigmoid derivative to gate gradients
+                for (int i = 0; i < hiddenSize; ++i) {
+                    updateGateGradient[i] *= sigmoidDerivZ[i];
+                    resetGateGradient[i] *= sigmoidDerivR[i];
+                }
+
+                // Update gate weight gradient: dL/dW_z = updateGateGradient ⊗ concatenatedInput
+                weightOffset = 0; // W_z is at offset 0
+                for (int i = 0; i < hiddenSize; ++i) {
+                    for (int j = 0; j < gruConcatSize_actual; ++j) {
+                        gruGateWeightGradient_[weightOffset + i * gruConcatSize_actual + j] += updateGateGradient[i] * concatenatedInput[j];
+                    }
+                    gruGateBiasGradient_[i] += updateGateGradient[i];
+                }
+
+                // Reset gate weight gradient: dL/dW_r = resetGateGradient ⊗ concatenatedInput
+                weightOffset = (hiddenSize * gruConcatSize_actual); // W_r is after W_z
+                for (int i = 0; i < hiddenSize; ++i) {
+                    for (int j = 0; j < gruConcatSize_actual; ++j) {
+                        gruGateWeightGradient_[weightOffset + i * gruConcatSize_actual + j] += resetGateGradient[i] * concatenatedInput[j];
+                    }
+                    gruGateBiasGradient_[hiddenSize + i] += resetGateGradient[i];
+                }
+
+                // Apply Adam update to GRU gate weights and biases
+                ++criticTrainingStepCounter_; // Reuse critic training counter for GRU updates
+                TensorOps::applyAdamUpdate(
+                    recurrentLayer_.getMutableGateWeights(),
+                    std::span<const double>(gruGateWeightGradient_),
+                    gruGateWeightMomentum_,
+                    gruGateWeightVelocity_,
+                    config->policyNetworkLearningRate * 0.5, // Use half the policy learning rate for GRU
+                    0.9, 0.999, 1e-8,
+                    criticTrainingStepCounter_);
+
+                TensorOps::applyAdamUpdate(
+                    recurrentLayer_.getMutableGateBiases(),
+                    std::span<const double>(gruGateBiasGradient_),
+                    gruGateBiasMomentum_,
+                    gruGateBiasVelocity_,
+                    config->policyNetworkLearningRate * 0.5,
+                    0.9, 0.999, 1e-8,
+                    criticTrainingStepCounter_);
             }
 
             // Automatic Entropy Temperature (Alpha) Tuning

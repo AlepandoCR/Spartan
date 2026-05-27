@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "org.spartan.api"
-version = "1.0.33"
+version = "1.0.34"
 
 java {
     withSourcesJar()

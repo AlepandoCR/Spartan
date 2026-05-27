@@ -45,7 +45,7 @@ public final class SpartanConfigLayout {
     public static final long RSAC_RECURRENT_INPUT_FEATURE_COUNT_OFFSET    = 88; // int32_t
     public static final long RSAC_NESTED_ENCODER_COUNT_OFFSET             = 92;
     public static final long RSAC_REMORSE_BUFFER_CAPACITY_OFFSET          = 96;
-    public static final long RSAC_TRUNCATED_BPTT_DEPTH_OFFSET             = 100;
+    // 4 bytes padding at 100-103
      public static final long RSAC_TARGET_SMOOTHING_OFFSET                 = 104;  // double
      public static final long RSAC_ENTROPY_ALPHA_OFFSET                    = 112;
      public static final long RSAC_FIRST_CRITIC_LR_OFFSET                  = 120;

@@ -262,7 +262,15 @@ public class SpartanContextImpl implements SpartanContext {
 
     private void ensureCapacity(int requiredCapacity) {
         if (requiredCapacity > capacity) {
-            int newCapacity = Math.max(capacity * 2, requiredCapacity);
+            // Use long to prevent integer overflow when doubling capacity
+            long newCapacityLong = Math.max((long)capacity * 2L, requiredCapacity);
+
+            // Cap at Integer.MAX_VALUE to ensure we can store in capacity field
+            if (newCapacityLong > Integer.MAX_VALUE) {
+                throw new OutOfMemoryError("Context buffer capacity would exceed maximum allowed size: " + newCapacityLong);
+            }
+
+            int newCapacity = (int) newCapacityLong;
 
             // Allocate new segment with SIMD padding and alignment via SpartanModelAllocator
             MemorySegment newSegment = SpartanModelAllocator.allocateContextBuffer(arena, newCapacity);
