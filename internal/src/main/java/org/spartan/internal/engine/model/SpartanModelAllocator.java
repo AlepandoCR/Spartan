@@ -55,9 +55,6 @@ public final class SpartanModelAllocator {
               return nativeLayoutSignature;
           }
 
-          // Compatibility fallback for the currently shipped native DLL.
-          // The native export that would provide the authoritative value is not
-          // present in that binary, so we return the signature it expects.
           return 773344685;
       }
 

@@ -549,6 +549,19 @@ namespace org::spartan::internal::machinelearning {
         std::span<double> gruGateBiasMomentum_;
         std::span<double> gruGateBiasVelocity_;
 
+        // Archived per-timestep gate memory for truncated BPTT
+        // Layout: ring buffer of size traceCapacity_ * gruGateMemSize_
+        std::vector<double> gateMemoryArchive_;
+        // Size of a single gate memory snapshot (concatSize + hidden*3)
+        size_t gruGateMemSize_ = 0;
+        // Ring buffer write head for gateMemoryArchive_ (points to next write index)
+        int32_t remorseArchiveWriteHead_ = 0;
+        // Capacity of the remorse trace (copied from config at construction)
+        int32_t remorseTraceCapacity_ = 0;
+
+        // Truncated BPTT depth: number of past timesteps to backpropagate through (>=1)
+        int32_t truncatedBPTTDepth_ = 1;
+
         // Flag to indicate terminal state for correct TD bootstrapping
         bool isTerminalState_ = false;
 

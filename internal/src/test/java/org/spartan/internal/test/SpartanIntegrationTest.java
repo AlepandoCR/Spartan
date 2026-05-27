@@ -1,5 +1,6 @@
 package org.spartan.internal.test;
 
+import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.*;
 import org.spartan.api.engine.action.SpartanActionManager;
 import org.spartan.api.engine.action.type.SpartanAction;
@@ -483,7 +484,7 @@ public class SpartanIntegrationTest {
         @Override public double getValue() { return health; }
         @Override public int getSize() { return 1; }
         @Override public void tick() { }
-        @Override public String getIdentifier() { return "mock_health"; }
+        @Override public @NotNull String getIdentifier() { return "mock_health"; }
 
         void simulateDamage(int tick) {
             health = Math.max(0.1, health - 0.01);
