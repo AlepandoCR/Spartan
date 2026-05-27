@@ -208,8 +208,9 @@ namespace org::spartan::internal::machinelearning {
             std::span(advantages_.data(), trajectorySize));
 
         {
+            const auto advantagesView = std::span<const double>(advantages_.data(), trajectorySize);
             const double meanAdv =
-                std::accumulate(advantages_.begin(), advantages_.begin() + trajectorySize, 0.0)
+                std::accumulate(advantagesView.begin(), advantagesView.end(), 0.0)
                 / static_cast<double>(trajectorySize);
             double varAdv = 0.0;
             for (size_t i = 0; i < trajectorySize; ++i) {
@@ -232,8 +233,8 @@ namespace org::spartan::internal::machinelearning {
             actorTrunkBiasCount   += aHidden;
         }
         // Each output head: aHidden -> actionSize
-        const size_t actorHeadWeightCount = static_cast<size_t>(actionSize * aHidden);
-        const size_t actorHeadBiasCount   = static_cast<size_t>(actionSize);
+        const auto actorHeadWeightCount = static_cast<size_t>(actionSize) * static_cast<size_t>(aHidden);
+        const auto actorHeadBiasCount   = static_cast<size_t>(actionSize);
 
         // Critic trunk layers; then 1-neuron output head
         size_t criticTrunkWeightCount = 0;
@@ -244,7 +245,7 @@ namespace org::spartan::internal::machinelearning {
             criticTrunkBiasCount   += cHidden;
         }
         // Output head: cHidden -> 1
-        const size_t criticHeadWeightCount = static_cast<size_t>(cHidden);
+        const auto criticHeadWeightCount = static_cast<size_t>(cHidden);
 
         // Bias spans (mutable, JVM-owned memory)
         std::span<double> actorBiases  = actorNetwork_.getPolicyBiases();
@@ -342,7 +343,7 @@ namespace org::spartan::internal::machinelearning {
                             std::span postOut(actorPostActs.data() + postOff, aHidden);
 
                             TensorOps::denseForwardPass(layerIn, lw, lb, preOut);
-                            std::ranges::copy(preOut, postOut.begin());
+                            std::copy_n(preOut.begin(), preOut.size(), postOut.begin());
                             TensorOps::applyLeakyReLU(postOut, 0.01);
 
                             wOff    += aHidden * inS;
@@ -492,7 +493,7 @@ namespace org::spartan::internal::machinelearning {
                             std::span postOut(criticPostActs.data() + postOff, cHidden);
 
                             TensorOps::denseForwardPass(layerIn, lw, lb, preOut);
-                            std::ranges::copy(preOut, postOut.begin());
+                            std::copy_n(preOut.begin(), preOut.size(), postOut.begin());
                             TensorOps::applyLeakyReLU(postOut, 0.01);
 
                             wOff    += cHidden * inS;
@@ -641,7 +642,7 @@ namespace org::spartan::internal::machinelearning {
     }
 
     std::span<const double> ProximalPolicyOptimizationSpartanModel::getActorBiases() const noexcept {
-        return std::span<const double>(actorNetworkBiases_.data(), actorNetworkBiases_.size());
+        return {actorNetworkBiases_.data(), actorNetworkBiases_.size()};
     }
 
     std::span<double> ProximalPolicyOptimizationSpartanModel::getActorBiasesMutable() const noexcept {
@@ -657,7 +658,7 @@ namespace org::spartan::internal::machinelearning {
     }
 
     std::span<const double> ProximalPolicyOptimizationSpartanModel::getCriticBiases() const noexcept {
-        return std::span<const double>(criticNetworkBiases_.data(), criticNetworkBiases_.size());
+        return {criticNetworkBiases_.data(), criticNetworkBiases_.size()};
     }
 
     std::span<double> ProximalPolicyOptimizationSpartanModel::getCriticBiasesMutable() const noexcept {

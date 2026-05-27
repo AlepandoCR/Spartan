@@ -206,6 +206,13 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
      */
     double squashActionsWithTanh();
 
+    /**
+     * Returns truncated BPTT depth for GRU training.
+     *
+     * @return number of timesteps to backpropagate (>=1)
+     */
+    int truncatedBPTTDepth();
+
     @Override
     default SpartanModelType modelType() {
         return SpartanModelType.RECURRENT_SOFT_ACTOR_CRITIC;
@@ -246,6 +253,7 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
         private double targetEntropy = -1.0;  // Will be computed as -log(actionSize)
         private double alphaLearningRate = 1e-4;
         private double squashActionsWithTanh = 1.0;
+        private int truncatedBPTTDepth = 1;
 
         private Builder() {}
 
@@ -274,6 +282,7 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
         public Builder targetEntropy(double val) { this.targetEntropy = val; return this; }
         public Builder alphaLearningRate(double val) { this.alphaLearningRate = val; return this; }
         public Builder squashActionsWithTanh(double val) { this.squashActionsWithTanh = val; return this; }
+        public Builder truncatedBPTTDepth(int val) { this.truncatedBPTTDepth = val; return this; }
 
         @Contract(" -> new")
         public @NotNull RecurrentSoftActorCriticConfig build() {
@@ -284,7 +293,8 @@ public non-sealed interface RecurrentSoftActorCriticConfig extends SpartanModelC
                  criticHiddenLayerNeuronCount, criticHiddenLayerCount, targetSmoothingCoefficient,
                  entropyTemperatureAlpha, firstCriticLearningRate, secondCriticLearningRate,
                  policyNetworkLearningRate, recurrentInputFeatureCount, remorseTraceBufferCapacity,
-                 remorseMinimumSimilarityThreshold, targetEntropy, alphaLearningRate, squashActionsWithTanh
+                 remorseMinimumSimilarityThreshold, targetEntropy, alphaLearningRate, squashActionsWithTanh,
+                 truncatedBPTTDepth
              );
         }
     }

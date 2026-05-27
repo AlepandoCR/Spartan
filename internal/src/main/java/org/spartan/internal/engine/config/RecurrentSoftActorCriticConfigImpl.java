@@ -27,6 +27,7 @@ public record RecurrentSoftActorCriticConfigImpl(
         double remorseMinimumSimilarityThreshold,
         double targetEntropy,
         double alphaLearningRate,
-        double squashActionsWithTanh
+        double squashActionsWithTanh,
+        int truncatedBPTTDepth
 ) implements RecurrentSoftActorCriticConfig {
 }

@@ -91,8 +91,10 @@ namespace org::spartan::internal::machinelearning {
             ? config->remorseTraceBufferCapacity : 256;
         remorseTraceBuffer_ = RemorseTraceBuffer(traceCapacity, hiddenSize);
         remorseTraceCapacity_ = traceCapacity;
-        // Configure truncated BPTT depth from environment variable if present
-        // Default: 1 (current timestep only). This can be set to >1 for multi-step truncated BPTT.
+        // Configure truncated BPTT depth from serialized config (minimum 1).
+        truncatedBPTTDepth_ = std::max(1, config->truncatedBPTTDepth);
+
+        // Optional local override from environment variable.
         const char* bpttEnv = std::getenv("SPARTAN_TRUNCATED_BPTT_DEPTH");
         if (bpttEnv) {
             try {

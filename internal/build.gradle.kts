@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "org.spartan.internal"
-version = "1.0.32"
+version = "1.0.33"
 
 java{
     withSourcesJar()
@@ -141,7 +141,7 @@ tasks {
 
         val nativeLibDir = providers.gradleProperty("nativeLibDir").orNull
         val coreLibrarySource = if (nativeLibDir.isNullOrBlank()) {
-            rootProject.projectDir.resolve("core/cmake-build-debug/bin")
+            rootProject.projectDir.resolve("core/cmake-build-debug-c26/bin")
         } else {
             rootProject.projectDir.resolve(nativeLibDir)
         }

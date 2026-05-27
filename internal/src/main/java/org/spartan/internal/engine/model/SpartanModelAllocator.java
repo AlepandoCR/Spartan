@@ -224,7 +224,7 @@ public final class SpartanModelAllocator {
                 layoutSignature());
 
         // Write RSAC-specific fields IN THE CORRECT ORDER
-        // int32_t fields (64-99)
+        // int32_t fields (64-103)
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_HIDDEN_STATE_SIZE_OFFSET,
                 config.hiddenStateSize());
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_RECURRENT_LAYER_DEPTH_OFFSET,
@@ -243,6 +243,8 @@ public final class SpartanModelAllocator {
                 0); // Nested encoders no longer supported - always 0
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_REMORSE_BUFFER_CAPACITY_OFFSET,
                 config.remorseTraceBufferCapacity());
+        segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.RSAC_TRUNCATED_BPTT_DEPTH_OFFSET,
+                Math.max(1, config.truncatedBPTTDepth()));
 
         // double fields (104+)
         segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.RSAC_TARGET_SMOOTHING_OFFSET,
@@ -261,6 +263,19 @@ public final class SpartanModelAllocator {
                 config.alphaLearningRate());
         segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.RSAC_REMORSE_SIMILARITY_THRESHOLD_OFFSET,
                 config.remorseMinimumSimilarityThreshold());
+        segment.set(ValueLayout.JAVA_DOUBLE, SpartanConfigLayout.RSAC_SQUASH_ACTIONS_WITH_TANH_OFFSET,
+                config.squashActionsWithTanh());
+
+        // Nested encoders are not used by RSAC right now; keep slot descriptors zeroed for ABI determinism.
+        final int slotCount = SpartanConfigLayout.MAX_NESTED_ENCODER_SLOTS;
+        for (int s = 0; s < slotCount; s++) {
+            long slotOffset = SpartanConfigLayout.RSAC_ENCODER_SLOTS_OFFSET
+                    + (long) s * SpartanConfigLayout.SLOT_DESCRIPTOR_SIZE;
+            segment.set(ValueLayout.JAVA_INT, slotOffset + SpartanConfigLayout.SLOT_START_INDEX_OFFSET, 0);
+            segment.set(ValueLayout.JAVA_INT, slotOffset + SpartanConfigLayout.SLOT_ELEMENT_COUNT_OFFSET, 0);
+            segment.set(ValueLayout.JAVA_INT, slotOffset + SpartanConfigLayout.SLOT_LATENT_DIM_OFFSET, 0);
+            segment.set(ValueLayout.JAVA_INT, slotOffset + SpartanConfigLayout.SLOT_HIDDEN_COUNT_OFFSET, 0);
+        }
 
         return segment;
     }
@@ -827,21 +842,21 @@ public final class SpartanModelAllocator {
      * <p>
      * Memory Layout (Strict C++ Standard Layout compliance):
      * <pre>
-     * Offset 0-423:   RecurrentSoftActorCriticHyperparameterConfig (424 bytes)
+     * Offset 0-431:   RecurrentSoftActorCriticHyperparameterConfig (432 bytes)
      *                 - BaseHyperparameterConfig: 0-63 (64 bytes)
-     *                 - RSAC fields: 64-167 (104 bytes)
-     *                 - NestedEncoderSlots: 168-423 (256 bytes)
-     * Offset 424-427: forwardDynamicsHiddenLayerDimensionSize (int32_t)
-     * Offset 428-431: _padding4 (4 bytes, zero-initialized)
-     * Offset 432-439: intrinsicRewardScale (double)
-     * Offset 440-447: intrinsicRewardClampingMinimum (double)
-     * Offset 448-455: intrinsicRewardClampingMaximum (double)
-     * Offset 456-463: forwardDynamicsLearningRate (double)
-     * Offset 464-467: inverseDynamicsHiddenLayerDimensionSize (int32_t)
-     * Offset 468-471: _padding5 (4 bytes, zero-initialized)
-     * Offset 472-479: inverseDynamicsLearningRate (double)
-     * Offset 480-487: inverseLossWeight (double)
-     * Total: 488 bytes (must match CURIOSITY_RSAC_CONFIG_TOTAL_SIZE)
+     *                 - RSAC fields: 64-175 (112 bytes)
+     *                 - NestedEncoderSlots: 176-431 (256 bytes)
+     * Offset 432-435: forwardDynamicsHiddenLayerDimensionSize (int32_t)
+     * Offset 436-439: _padding4 (4 bytes, zero-initialized)
+     * Offset 440-447: intrinsicRewardScale (double)
+     * Offset 448-455: intrinsicRewardClampingMinimum (double)
+     * Offset 456-463: intrinsicRewardClampingMaximum (double)
+     * Offset 464-471: forwardDynamicsLearningRate (double)
+     * Offset 472-475: inverseDynamicsHiddenLayerDimensionSize (int32_t)
+     * Offset 476-479: _padding5 (4 bytes, zero-initialized)
+     * Offset 480-487: inverseDynamicsLearningRate (double)
+     * Offset 488-495: inverseLossWeight (double)
+     * Total: 496 bytes (must match CURIOSITY_RSAC_CONFIG_TOTAL_SIZE)
      * </pre>
      *
      * @param arena  the Arena for allocation
@@ -860,7 +875,7 @@ public final class SpartanModelAllocator {
 
         // Use a ConfiningArena to ensure temporary RSAC segment stays valid during the copy operation
         try (Arena temporaryArena = Arena.ofConfined()) {
-            // Serialize the RSAC config into a temporary segment (generates 424 bytes)
+            // Serialize the RSAC config into a temporary segment (generates 432 bytes)
             MemorySegment rsacSegment = writeRSACConfig(temporaryArena, config.recurrentSoftActorCriticConfig(), stateSize, actionSize);
 
             // Copy the RSAC segment to the beginning of our shared-arena segment
@@ -875,7 +890,7 @@ public final class SpartanModelAllocator {
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.BASE_LAYOUT_SIGNATURE_OFFSET,
                 layoutSignature());
 
-        // Write Curiosity-specific fields (starting at offset 424)
+        // Write Curiosity-specific fields (starting at offset 432)
 
         // Forward Dynamics Config
         segment.set(ValueLayout.JAVA_INT, SpartanConfigLayout.CURIOSITY_RSAC_FORWARD_DYNAMICS_HIDDEN_SIZE_OFFSET,

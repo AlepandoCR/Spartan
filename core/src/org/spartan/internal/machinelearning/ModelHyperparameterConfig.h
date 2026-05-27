@@ -92,7 +92,9 @@ extern "C" {
         int32_t recurrentInputFeatureCount;
         int32_t nestedEncoderCount;
         int32_t remorseTraceBufferCapacity;
-        int32_t _padding2; // Forces 8-byte alignment for the next double
+        // Number of timesteps to unroll during truncated BPTT (>=1).
+        // Kept in the former padding slot to preserve binary size/offset stability.
+        int32_t truncatedBPTTDepth;
 
         // All double fields together (8-byte aligned)
         double targetSmoothingCoefficient;
@@ -177,6 +179,7 @@ extern "C" {
     static_assert(sizeof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig) == 496, "CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig must be 496 bytes");
     static_assert(offsetof(RecurrentSoftActorCriticHyperparameterConfig, hiddenStateSize) == 64, "RSAC.hiddenStateSize offset must be 64 bytes");
     static_assert(offsetof(RecurrentSoftActorCriticHyperparameterConfig, recurrentInputFeatureCount) == 88, "RSAC.recurrentInputFeatureCount offset must be 88 bytes");
+    static_assert(offsetof(RecurrentSoftActorCriticHyperparameterConfig, truncatedBPTTDepth) == 100, "RSAC.truncatedBPTTDepth offset must be 100 bytes");
     static_assert(offsetof(RecurrentSoftActorCriticHyperparameterConfig, encoderSlots) == 176, "RSAC.encoderSlots offset must be 176 bytes");
     static_assert(offsetof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig, forwardDynamicsHiddenLayerDimensionSize) == 432, "CuriosityRSAC.forwardDynamicsHiddenLayerDimensionSize offset must be 432 bytes");
     static_assert(offsetof(CuriosityDrivenRecurrentSoftActorCriticHyperparameterConfig, inverseDynamicsHiddenLayerDimensionSize) == 472, "CuriosityRSAC.inverseDynamicsHiddenLayerDimensionSize offset must be 472 bytes");

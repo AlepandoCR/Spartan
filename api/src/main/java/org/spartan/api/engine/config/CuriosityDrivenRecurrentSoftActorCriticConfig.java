@@ -145,6 +145,10 @@ public non-sealed interface CuriosityDrivenRecurrentSoftActorCriticConfig extend
         private int recurrentInputFeatureCount = 64;
         private int remorseTraceBufferCapacity = 1000;
         private double remorseMinimumSimilarityThreshold = 0.7;
+        private double targetEntropy = -1.0;
+        private double alphaLearningRate = 1e-4;
+        private double squashActionsWithTanh = 1.0;
+        private int truncatedBPTTDepth = 1;
         private int forwardDynamicsHiddenLayerDimensionSize = 128;
         private double intrinsicRewardScale = 0.01;
         private double intrinsicRewardClampingMinimum = -1.0;
@@ -177,6 +181,10 @@ public non-sealed interface CuriosityDrivenRecurrentSoftActorCriticConfig extend
         public Builder recurrentInputFeatureCount(int val) { this.recurrentInputFeatureCount = val; return this; }
         public Builder remorseTraceBufferCapacity(int val) { this.remorseTraceBufferCapacity = val; return this; }
         public Builder remorseMinimumSimilarityThreshold(double val) { this.remorseMinimumSimilarityThreshold = val; return this; }
+        public Builder targetEntropy(double val) { this.targetEntropy = val; return this; }
+        public Builder alphaLearningRate(double val) { this.alphaLearningRate = val; return this; }
+        public Builder squashActionsWithTanh(double val) { this.squashActionsWithTanh = val; return this; }
+        public Builder truncatedBPTTDepth(int val) { this.truncatedBPTTDepth = val; return this; }
         public Builder recurrentSoftActorCriticConfig(RecurrentSoftActorCriticConfig config) {
             this.recurrentSoftActorCriticConfig = config;
             return this;
@@ -215,6 +223,10 @@ public non-sealed interface CuriosityDrivenRecurrentSoftActorCriticConfig extend
                         .recurrentInputFeatureCount(recurrentInputFeatureCount)
                         .remorseTraceBufferCapacity(remorseTraceBufferCapacity)
                         .remorseMinimumSimilarityThreshold(remorseMinimumSimilarityThreshold)
+                        .targetEntropy(targetEntropy)
+                        .alphaLearningRate(alphaLearningRate)
+                        .squashActionsWithTanh(squashActionsWithTanh)
+                        .truncatedBPTTDepth(truncatedBPTTDepth)
                         .build();
              }
             return SpartanConfigRegistry.get().createCuriosityDrivenRecurrentSoftActorCriticConfig(
