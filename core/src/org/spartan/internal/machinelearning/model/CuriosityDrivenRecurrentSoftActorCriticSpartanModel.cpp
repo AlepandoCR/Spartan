@@ -9,6 +9,8 @@
 #include <format>
 #include <cmath>
 #include <random>
+#include <optional>
+#include <limits>
 
 #ifdef _WIN32
 #endif
@@ -40,6 +42,13 @@ namespace org::spartan::internal::machinelearning {
             for (double& value : values) {
                 value = dist(rng);
             }
+        }
+
+        std::optional<size_t> safeAdd(size_t a, size_t b) {
+            if (a > std::numeric_limits<size_t>::max() - b) {
+                return std::nullopt;
+            }
+            return a + b;
         }
     }
 
@@ -133,40 +142,57 @@ namespace org::spartan::internal::machinelearning {
         };
 
         // Calculate total memory with mandatory alignment padding for SIMD safety
+        // Use safe arithmetic to prevent overflows
         size_t totalDoublesNeeded = 0;
-        totalDoublesNeeded += alignSize(stateSize);                 // previousStateBuffer_
-        totalDoublesNeeded += alignSize(actionSize);                // previousActionBuffer_
-        totalDoublesNeeded += alignSize(stateSize);                 // predictedNextStateBuffer_
-        totalDoublesNeeded += alignSize(stateSize + actionSize);    // forwardNetworkInputBuffer_
-        totalDoublesNeeded += alignSize(hiddenSize);               // forwardNetworkHiddenBuffer_
-        totalDoublesNeeded += alignSize(stateSize);                 // forwardNetworkOutputGradient_
-        totalDoublesNeeded += alignSize(hiddenSize);               // forwardDynamicsHiddenActivationGradients_
-        totalDoublesNeeded += alignSize(stateSize + actionSize);    // forwardNetworkInputGradientDummy_
-        // Forward dynamics gradients/moments and internal params
-        totalDoublesNeeded += alignSize(forwardWeightCount);         // forwardDynamicsWeightGradients_
-        totalDoublesNeeded += alignSize(forwardBiasCount);           // forwardDynamicsBiasGradients_
-        totalDoublesNeeded += alignSize(forwardWeightCount);         // forwardWeightsFirstMoment_
-        totalDoublesNeeded += alignSize(forwardWeightCount);         // forwardWeightsSecondMoment_
-        totalDoublesNeeded += alignSize(forwardBiasCount);           // forwardBiasesFirstMoment_
-        totalDoublesNeeded += alignSize(forwardBiasCount);           // forwardBiasesSecondMoment_
-        // Inverse network primary buffers
-        totalDoublesNeeded += alignSize(stateSize * 2);              // inverseNetworkInputBuffer_
-        totalDoublesNeeded += alignSize(inverseHiddenSize);          // inverseNetworkHiddenBuffer_
-        totalDoublesNeeded += alignSize(actionSize);                 // predictedActionBuffer_
-        totalDoublesNeeded += alignSize(inverseHiddenSize);          // inverseDynamicsHiddenActivationGradients_
-        totalDoublesNeeded += alignSize(stateSize * 2);              // inverseNetworkInputGradientDummy_
-        totalDoublesNeeded += alignSize(forwardWeightCount);         // internalForwardDynamicsWeights
-        totalDoublesNeeded += alignSize(forwardBiasCount);           // internalForwardDynamicsBiases
 
+        #define SAFE_ADD_ALIGNED_SIZE(var, size_expr, label) \
+            do { \
+                size_t temp = alignSize(size_expr); \
+                auto new_total = safeAdd(totalDoublesNeeded, temp); \
+                if (!new_total) { \
+                    logging::SpartanLogger::error(std::format( \
+                        "[CURIOSITY-CONSTRUCT] Memory accumulation overflow at: {}", label)); \
+                    throw std::overflow_error("Memory size calculation overflow"); \
+                } \
+                totalDoublesNeeded = *new_total; \
+                logging::SpartanLogger::debug(std::format( \
+                    "[CURIOSITY-CONSTRUCT] Added {} (aligned {}), total now {}", label, temp, totalDoublesNeeded)); \
+            } while(0)
+
+        SAFE_ADD_ALIGNED_SIZE(var, stateSize, "previousStateBuffer_");
+        SAFE_ADD_ALIGNED_SIZE(var, actionSize, "previousActionBuffer_");
+        SAFE_ADD_ALIGNED_SIZE(var, stateSize, "predictedNextStateBuffer_");
+        SAFE_ADD_ALIGNED_SIZE(var, stateSize + actionSize, "forwardNetworkInputBuffer_");
+        SAFE_ADD_ALIGNED_SIZE(var, hiddenSize, "forwardNetworkHiddenBuffer_");
+        SAFE_ADD_ALIGNED_SIZE(var, stateSize, "forwardNetworkOutputGradient_");
+        SAFE_ADD_ALIGNED_SIZE(var, hiddenSize, "forwardDynamicsHiddenActivationGradients_");
+        SAFE_ADD_ALIGNED_SIZE(var, stateSize + actionSize, "forwardNetworkInputGradientDummy_");
+        // Forward dynamics gradients/moments and internal params
+        SAFE_ADD_ALIGNED_SIZE(var, forwardWeightCount, "forwardDynamicsWeightGradients_");
+        SAFE_ADD_ALIGNED_SIZE(var, forwardBiasCount, "forwardDynamicsBiasGradients_");
+        SAFE_ADD_ALIGNED_SIZE(var, forwardWeightCount, "forwardWeightsFirstMoment_");
+        SAFE_ADD_ALIGNED_SIZE(var, forwardWeightCount, "forwardWeightsSecondMoment_");
+        SAFE_ADD_ALIGNED_SIZE(var, forwardBiasCount, "forwardBiasesFirstMoment_");
+        SAFE_ADD_ALIGNED_SIZE(var, forwardBiasCount, "forwardBiasesSecondMoment_");
+        // Inverse network primary buffers
+        SAFE_ADD_ALIGNED_SIZE(var, inverseInputSize, "inverseNetworkInputBuffer_");
+        SAFE_ADD_ALIGNED_SIZE(var, inverseHiddenSize, "inverseNetworkHiddenBuffer_");
+        SAFE_ADD_ALIGNED_SIZE(var, actionSize, "predictedActionBuffer_");
+        SAFE_ADD_ALIGNED_SIZE(var, inverseHiddenSize, "inverseDynamicsHiddenActivationGradients_");
+        SAFE_ADD_ALIGNED_SIZE(var, inverseInputSize, "inverseNetworkInputGradientDummy_");
+        SAFE_ADD_ALIGNED_SIZE(var, forwardWeightCount, "internalForwardDynamicsWeights");
+        SAFE_ADD_ALIGNED_SIZE(var, forwardBiasCount, "internalForwardDynamicsBiases");
         // Inverse dynamics gradients/moments and internal params
-        totalDoublesNeeded += alignSize(inverseWeightCount);         // inverseDynamicsWeightGradients_
-        totalDoublesNeeded += alignSize(inverseBiasCount);           // inverseDynamicsBiasGradients_
-        totalDoublesNeeded += alignSize(inverseWeightCount);         // inverseWeightsFirstMoment_
-        totalDoublesNeeded += alignSize(inverseWeightCount);         // inverseWeightsSecondMoment_
-        totalDoublesNeeded += alignSize(inverseBiasCount);           // inverseBiasesFirstMoment_
-        totalDoublesNeeded += alignSize(inverseBiasCount);           // inverseBiasesSecondMoment_
-        totalDoublesNeeded += alignSize(inverseWeightCount);         // internalInverseDynamicsWeights
-        totalDoublesNeeded += alignSize(inverseBiasCount);           // internalInverseDynamicsBiases
+        SAFE_ADD_ALIGNED_SIZE(var, inverseWeightCount, "inverseDynamicsWeightGradients_");
+        SAFE_ADD_ALIGNED_SIZE(var, inverseBiasCount, "inverseDynamicsBiasGradients_");
+        SAFE_ADD_ALIGNED_SIZE(var, inverseWeightCount, "inverseWeightsFirstMoment_");
+        SAFE_ADD_ALIGNED_SIZE(var, inverseWeightCount, "inverseWeightsSecondMoment_");
+        SAFE_ADD_ALIGNED_SIZE(var, inverseBiasCount, "inverseBiasesFirstMoment_");
+        SAFE_ADD_ALIGNED_SIZE(var, inverseBiasCount, "inverseBiasesSecondMoment_");
+        SAFE_ADD_ALIGNED_SIZE(var, inverseWeightCount, "internalInverseDynamicsWeights");
+        SAFE_ADD_ALIGNED_SIZE(var, inverseBiasCount, "internalInverseDynamicsBiases");
+
+        #undef SAFE_ADD_ALIGNED_SIZE
 
         // DEBUG: Log total memory allocation
         logging::SpartanLogger::debug(std::format(
@@ -415,7 +441,21 @@ namespace org::spartan::internal::machinelearning {
 
     std::span<const double> CuriosityDrivenRecurrentSoftActorCriticSpartanModel::getCriticWeights() const noexcept {
         const auto innerCriticWeights = internalRecurrentSoftActorCriticModel_->getCriticWeights();
-        const size_t totalSize = innerCriticWeights.size() + forwardDynamicsWeights_.size() + forwardDynamicsBiases_.size();
+        const size_t totalSize = innerCriticWeights.size()
+            + forwardDynamicsWeights_.size()
+            + forwardDynamicsBiases_.size()
+            + inverseDynamicsWeights_.size()
+            + inverseDynamicsBiases_.size();
+
+        logging::SpartanLogger::debug(std::format(
+            "[CURIOSITY-SAVE] critic blob sizes: inner={}, forwardW={}, forwardB={}, inverseW={}, inverseB={}, total={}",
+            innerCriticWeights.size(),
+            forwardDynamicsWeights_.size(),
+            forwardDynamicsBiases_.size(),
+            inverseDynamicsWeights_.size(),
+            inverseDynamicsBiases_.size(),
+            totalSize));
+
         fullCriticSaveBuffer_.resize(totalSize);
 
         size_t offset = 0;
